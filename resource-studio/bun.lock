@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "doraemon-monopoly-glyph-viewer",
+      "name": "doraemon-monopoly-resource-studio",
       "dependencies": {
         "@huggingface/transformers": "3.8.1",
       },

@@ -1,28 +1,38 @@
-# Doraemon Monopoly string translator
+# Doraemon Monopoly resource studio
 
-This standalone Svelte 5 app decodes `strings.dat` into selectable Traditional
-Chinese text using a built-in, context-checked map of the game's custom glyph
-IDs. Font files are reference data only and are never loaded or modified. The
-selected `strings.dat` stays local to your computer.
+This Svelte 5 application inspects and rebuilds GameOne string archives and
+displays the game's bitmap and transparent sprite resources. Selected files
+stay local to the computer.
 
 ## Run it
 
 ```sh
-cd glyph-viewer
+cd resource-studio
 bun install
 bun run dev
 ```
 
 Open the local address Vite prints in the terminal.
 
+| Route | Tool |
+| --- | --- |
+| `/` | String archive inspector/editor |
+| `/assets` | `bitmaps.dat` and `Sprite1.dat` viewer |
+
+Machine translation uses the local Bun service in a second terminal:
+
+```sh
+bun run translate-server
+```
+
 ## Build static HTML
 
 ```sh
-cd glyph-viewer
+cd resource-studio
 bun run build
 ```
 
-The static site is written to `glyph-viewer/dist/`. It does not bundle game
+The static site is written to `resource-studio/dist/`. It does not bundle game
 strings; drag `strings.dat` into the page after opening it.
 
 ## Using it
@@ -41,8 +51,16 @@ preserves unfinished records in their original Chinese form, rebuilds the
 nested archive offsets, verifies the result, and downloads
 `strings-exported.dat`.
 
-**Translate all Vietnamese** runs the direct Chinese-to-Vietnamese
-`Xenova/m2m100_418M` model inside the browser with Transformers.js.
-The first run downloads the model into the browser cache. Record IDs and
-newlines remain controlled, Vietnamese accents are removed for the ASCII game
-font, and the built-in Doraemon terminology overrides are applied afterward.
+Translation requests are processed sequentially by the local Bun service using
+the selected Transformers.js model. Model files are downloaded and cached by
+the server runtime. Record IDs and newlines remain controlled, and target-specific
+ASCII cleanup is applied before results return to the editor.
+
+## Generated font metrics
+
+The width table used by pixel-aware text reflow is generated from the flattened
+canonical resource at `../source/sysfont.dat`:
+
+```sh
+bun run generate:sysfont
+```

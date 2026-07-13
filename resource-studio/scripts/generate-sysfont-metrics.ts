@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-const fontPath = resolve(import.meta.dir, '../../source/Doraemon/sysfont.dat');
+const fontPath = resolve(import.meta.dir, '../../source/sysfont.dat');
 const destination = resolve(import.meta.dir, '../src/lib/generated/sysfont-metrics.ts');
 const font = new Uint8Array(await readFile(fontPath));
 

@@ -1,10 +1,11 @@
 {
-  "name": "doraemon-monopoly-glyph-viewer",
+  "name": "doraemon-monopoly-resource-studio",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "generate:sysfont": "bun scripts/generate-sysfont-metrics.ts",
     "translate-server": "bun scripts/translate-server.ts",
     "build": "vite build",
     "preview": "vite preview"

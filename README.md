@@ -31,7 +31,7 @@ glyph-patching tests, and reimplementing the game's decompressor.
 │   └── … other CN .dat resources
 ├── output/
 │   └── strings-en.dat      retained experimental output
-├── glyph-viewer/           Svelte 5 inspection application
+├── resource-studio/        Svelte 5 resource application
 └── images/                 comparison screenshots
 ```
 
@@ -43,7 +43,7 @@ installer, and index files are intentionally absent.
 The inspection UI is a Svelte 5 application with two routes:
 
 ```sh
-cd glyph-viewer
+cd resource-studio
 bun install
 bun run dev
 ```
@@ -56,9 +56,9 @@ source installation.
 
 The main format implementations are:
 
-- `glyph-viewer/src/lib/formats.ts` — GameOne archive, LZW codec, string
+- `resource-studio/src/lib/formats.ts` — GameOne archive, LZW codec, string
   records, `sysfont.dat`, and archive reconstruction
-- `glyph-viewer/src/lib/asset-formats.ts` — PCX bitmap and transparent sprite
+- `resource-studio/src/lib/asset-formats.ts` — PCX bitmap and transparent sprite
   decoding
 
 ## Known-file index
