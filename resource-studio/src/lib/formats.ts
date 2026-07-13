@@ -305,16 +305,16 @@ export function rebuildStrings(original: Uint8Array, records: StringRecord[], tr
     replacements.set(id, original.slice(node.offset, end));
   }
   for (const record of records) {
-    const translation = translations[record.id]?.trim();
-    if (translation) replacements.set(record.id, compress(encodeTranslation(translation)));
+    const translation = translations[record.id];
+    if (translation !== undefined && translation.length > 0) replacements.set(record.id, compress(encodeTranslation(translation)));
   }
   const rebuilt = rebuildContainer(original, 0, [], replacements);
   const verified = parseStrings(rebuilt);
   if (verified.length !== records.length) throw new Error(`Rebuilt archive has ${verified.length} records instead of ${records.length}.`);
   const verifiedById = new Map(verified.map((record) => [record.id, record.bytes]));
   for (const record of records) {
-    const translation = translations[record.id]?.trim();
-    if (!translation) continue;
+    const translation = translations[record.id];
+    if (translation === undefined || translation.length === 0) continue;
     const expected = encodeTranslation(translation);
     const actual = verifiedById.get(record.id);
     if (!actual || actual.length !== expected.length || !actual.every((byte, index) => byte === expected[index])) {
