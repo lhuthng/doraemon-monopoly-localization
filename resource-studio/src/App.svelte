@@ -56,7 +56,7 @@
   let replaceWith = $state('');
   let layoutWidth = $state(GADGETS_LAYOUT.maxWidth);
   let layoutVariant = $state(GADGETS_LAYOUT.variant);
-  let layoutSplitsWords = $state(false);
+  let layoutPreset = $state<'gadgets' | 'dialog'>('gadgets');
 
   onMount(() => { void loadBundledOriginal(); });
 
@@ -151,11 +151,11 @@
   function reflowTranslation(record: StringRecord) {
     const original = translations[record.id];
     if (!original?.trim() || isLockedForQueue(record.id)) return;
-    const result = reflowGameText(original, layoutWidth, layoutVariant, layoutSplitsWords);
+    const result = reflowGameText(original, layoutWidth, layoutVariant, false);
     saveTranslation(record.id, result.text);
     exportStatus = result.oversizedWords.length
       ? `Reflowed ${record.id} to ${layoutWidth}px. These words are wider than the box: ${[...new Set(result.oversizedWords)].join(', ')}.`
-      : `Reflowed ${record.id} to ${layoutWidth}px using ${layoutSplitsWords ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
+      : `Reflowed ${record.id} to ${layoutWidth}px using ${layoutPreset === 'dialog' ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
   }
 
   async function loadArchive(file: Blob, name: string) {
@@ -707,8 +707,8 @@
                 <p>Uppercase sysfont advances are used for measuring only; the text’s capitalization is preserved.</p>
                 <label>Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label>
                 <div class="reflow-popover-actions">
-                  <button type="button" class="quiet" onclick={() => { layoutWidth = GADGETS_LAYOUT.maxWidth; layoutVariant = GADGETS_LAYOUT.variant; layoutSplitsWords = false; }}>Gadgets preset · 91px</button>
-                  <button type="button" class="quiet" onclick={() => { layoutWidth = DIALOG_LAYOUT.maxWidth; layoutVariant = DIALOG_LAYOUT.variant; layoutSplitsWords = DIALOG_LAYOUT.splitWords; }}>Dialog preset · 310px</button>
+                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'gadgets'; layoutWidth = GADGETS_LAYOUT.maxWidth; layoutVariant = GADGETS_LAYOUT.variant; }}>Gadgets preset · 91px</button>
+                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'dialog'; layoutWidth = DIALOG_LAYOUT.maxWidth; layoutVariant = DIALOG_LAYOUT.variant; }}>Dialog preset · 310px</button>
                   <button type="button" class="primary" onclick={() => reflowTranslation(record)}>Reflow text</button>
                 </div>
               </div>

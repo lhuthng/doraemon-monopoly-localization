@@ -12,7 +12,7 @@ export const DIALOG_LAYOUT = {
   label: 'Dialog',
   maxWidth: 310,
   variant: 2,
-  splitWords: true
+  splitWords: false
 } as const;
 
 export function sysfontWidth(text: string, variant = GADGETS_LAYOUT.variant) {
