@@ -27,6 +27,9 @@ const MODELS: Record<ModelId, {
 };
 
 const translatorPromises = new Map<ModelId, ReturnType<typeof pipeline>>();
+const modelStates = new Map<ModelId, { state: 'idle' | 'loading' | 'ready' | 'error'; message?: string; startedAt?: number; finishedAt?: number }>(
+  Object.keys(MODELS).map((id) => [id as ModelId, { state: 'idle' }])
+);
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -70,16 +73,21 @@ async function translator(modelId: ModelId) {
   let translatorPromise = translatorPromises.get(modelId);
   if (!translatorPromise) {
     const model = MODELS[modelId];
+    modelStates.set(modelId, { state: 'loading', startedAt: Date.now(), message: `Loading ${model.label}…` });
     env.allowLocalModels = false;
     env.useBrowserCache = false;
     env.useFSCache = true;
     translatorPromise = pipeline('translation', model.model, {
       dtype: model.dtype
+    }).then((loaded) => {
+      modelStates.set(modelId, { state: 'ready', finishedAt: Date.now(), message: `${model.label} ready.` });
+      return loaded;
     }).catch((error) => {
       // Do not retain a rejected model promise: a transient download or ONNX
       // cache failure must be recoverable on the next request.
       translatorPromises.delete(modelId);
       const detail = error instanceof Error ? error.message : String(error);
+      modelStates.set(modelId, { state: 'error', finishedAt: Date.now(), message: detail });
       throw new Error(`Could not load ${model.label}. The local model cache may be incomplete or corrupted; retry to download it again. Details: ${detail}`);
     });
     translatorPromises.set(modelId, translatorPromise);
@@ -113,6 +121,20 @@ Bun.serve({
         ok: true,
         models: Object.entries(MODELS).map(([id, model]) => ({ id, label: model.label, model: model.model }))
       });
+    }
+    if (url.pathname === '/api/status' && request.method === 'GET') {
+      return json({ models: Object.fromEntries([...modelStates].map(([id, state]) => [id, state])) });
+    }
+    if (url.pathname === '/api/warmup' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const model = body?.model || 'nllb';
+        if (model !== 'nllb' && model !== 'm2m100') throw new Error('model must be "nllb" or "m2m100".');
+        void translator(model).catch(() => undefined);
+        return json({ accepted: true, model }, 202);
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+      }
     }
     if (url.pathname !== '/api/translate' || request.method !== 'POST') return json({ error: 'Not found.' }, 404);
 

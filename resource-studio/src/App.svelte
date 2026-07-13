@@ -362,6 +362,34 @@
     return translated;
   }
 
+  async function prepareTranslationServer() {
+    translationStage = `Preparing ${MODELS.find((model) => model.id === selectedModel)?.label}… queued records will wait until the server is ready.`;
+    const warmup = await fetch('/api/warmup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: selectedModel })
+    });
+    if (!warmup.ok && warmup.status !== 202) {
+      const payload = await warmup.json().catch(() => ({}));
+      throw new Error(payload?.error || `Translation server warmup returned HTTP ${warmup.status}.`);
+    }
+    const started = Date.now();
+    while (Date.now() - started < 15 * 60_000) {
+      const response = await fetch('/api/status');
+      if (!response.ok) throw new Error(`Translation server status returned HTTP ${response.status}.`);
+      const payload = await response.json();
+      const state = payload?.models?.[selectedModel];
+      if (state?.state === 'ready') {
+        translationStage = 'Translation server ready. Starting queued records…';
+        return;
+      }
+      if (state?.state === 'error') throw new Error(state.message || 'Translation server failed to load the model.');
+      translationStage = state?.message || 'Waiting for the translation server…';
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
+    }
+    throw new Error('Translation server did not become ready within 15 minutes.');
+  }
+
   function recordById(id: string) {
     return records.find((record) => record.id === id);
   }
@@ -401,6 +429,7 @@
     loadError = '';
     exportStatus = '';
     try {
+      await prepareTranslationServer();
       while (queuedRecordIds.length && !generationPaused && !stopRequested) {
         const [id, ...rest] = queuedRecordIds;
         queuedRecordIds = rest;
