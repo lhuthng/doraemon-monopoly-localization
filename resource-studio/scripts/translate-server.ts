@@ -75,6 +75,12 @@ async function translator(modelId: ModelId) {
     env.useFSCache = true;
     translatorPromise = pipeline('translation', model.model, {
       dtype: model.dtype
+    }).catch((error) => {
+      // Do not retain a rejected model promise: a transient download or ONNX
+      // cache failure must be recoverable on the next request.
+      translatorPromises.delete(modelId);
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Could not load ${model.label}. The local model cache may be incomplete or corrupted; retry to download it again. Details: ${detail}`);
     });
     translatorPromises.set(modelId, translatorPromise);
   }
