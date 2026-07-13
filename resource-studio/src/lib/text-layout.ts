@@ -3,14 +3,14 @@ import { SYSFONT_WIDTHS } from './generated/sysfont-metrics';
 export const GADGETS_LAYOUT = {
   id: 'gadgets',
   label: 'Gadgets',
-  maxWidth: 91,
+  maxWidth: 87,
   variant: 0
 } as const;
 
 export const DIALOG_LAYOUT = {
   id: 'dialog',
   label: 'Dialog',
-  maxWidth: 310,
+  maxWidth: 309,
   variant: 2,
   splitWords: false
 } as const;

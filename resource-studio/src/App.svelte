@@ -707,8 +707,8 @@
                 <p>Uppercase sysfont advances are used for measuring only; the text’s capitalization is preserved.</p>
                 <label>Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label>
                 <div class="reflow-popover-actions">
-                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'gadgets'; layoutWidth = GADGETS_LAYOUT.maxWidth; layoutVariant = GADGETS_LAYOUT.variant; }}>Gadgets preset · 91px</button>
-                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'dialog'; layoutWidth = DIALOG_LAYOUT.maxWidth; layoutVariant = DIALOG_LAYOUT.variant; }}>Dialog preset · 310px</button>
+                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'gadgets'; layoutWidth = GADGETS_LAYOUT.maxWidth; layoutVariant = GADGETS_LAYOUT.variant; }}>Gadgets preset · 87px</button>
+                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'dialog'; layoutWidth = DIALOG_LAYOUT.maxWidth; layoutVariant = DIALOG_LAYOUT.variant; }}>Dialog preset · 309px</button>
                   <button type="button" class="primary" onclick={() => reflowTranslation(record)}>Reflow text</button>
                 </div>
               </div>
