@@ -1,6 +1,7 @@
 <script lang="ts">
   import App from './App.svelte';
   import AssetViewer from './AssetViewer.svelte';
+  import SysfontViewer from './SysfontViewer.svelte';
 
   let pathname = $state(window.location.pathname.replace(/\/+$/, '') || '/');
 
@@ -24,6 +25,8 @@
 
 {#if pathname === '/assets'}
   <AssetViewer />
+{:else if pathname === '/fonts'}
+  <SysfontViewer />
 {:else}
   <App />
 {/if}

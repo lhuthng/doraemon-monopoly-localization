@@ -116,3 +116,17 @@ textarea:disabled { color: #516477; background: #edf2f7; cursor: wait; }
   .record-actions { width: 100%; }
   .record-actions button { flex: 1; }
 }
+
+.font-page { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 64px; }
+.font-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+.font-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 12px; }
+.font-tabs button.active { color: #fff; border-color: #2767b0; background: #2767b0; }
+.font-tabs small { display: block; margin-top: 2px; opacity: .75; }
+.font-note { margin: 10px 0 16px; }
+.font-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.font-grid article { display: grid; justify-items: center; gap: 4px; min-height: 126px; padding: 8px 5px; border: 1px solid #d6dee7; border-radius: 9px; background: #fff; }
+.font-grid article strong { max-width: 100%; overflow: hidden; color: #17212b; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.font-grid article small { color: #667789; font-size: .68rem; }
+.glyph-preview { display: grid; place-items: center; width: 82px; height: 66px; overflow: hidden; background: #17212b; }
+.glyph-preview canvas { image-rendering: pixelated; }
+@media (max-width: 700px) { .font-header { align-items: stretch; flex-direction: column; } }

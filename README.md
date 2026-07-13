@@ -50,6 +50,7 @@ bun run dev
 
 - `http://127.0.0.1:5173/` — strings and fonts
 - `http://127.0.0.1:5173/assets` — bitmaps and transparent sprites
+- `http://127.0.0.1:5173/fonts` — all `sysfont.dat` variants and ASCII slots
 
 The browser reads dropped files locally. It does not upload or modify the
 source installation.

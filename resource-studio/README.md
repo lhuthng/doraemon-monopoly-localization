@@ -18,6 +18,7 @@ Open the local address Vite prints in the terminal.
 | --- | --- |
 | `/` | String archive inspector/editor |
 | `/assets` | `bitmaps.dat` and `Sprite1.dat` viewer |
+| `/fonts` | `sysfont.dat` variant and ASCII-slot inspector |
 
 Machine translation uses the local Bun service in a second terminal:
 

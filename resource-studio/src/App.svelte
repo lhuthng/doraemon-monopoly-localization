@@ -630,6 +630,7 @@
     </div>
     <div class="header-actions">
       <a class="load-button" href="/assets" data-route>Asset viewer</a>
+      <a class="load-button" href="/fonts" data-route>Sysfont inspector</a>
       <button type="button" onclick={loadBundledOriginal}>Load original strings-CN.dat</button>
       <label class="load-button">Load modified strings.dat<input type="file" accept=".dat,application/octet-stream" onchange={translatedArchiveInput} /></label>
     </div>
