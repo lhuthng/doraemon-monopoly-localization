@@ -5,6 +5,7 @@
   import { GADGETS_LAYOUT, reflowGameText } from './lib/text-layout';
   import FindReplace from './lib/components/FindReplace.svelte';
   import GroupNavigator from './lib/components/GroupNavigator.svelte';
+  import { onMount } from 'svelte';
 
   type TranslationFile = {
     game: string;
@@ -32,7 +33,6 @@
   let archiveBytes = $state<Uint8Array | null>(null);
   let sourceName = $state('');
   let loadError = $state('');
-  let dragging = $state(false);
   let search = $state('');
   let group = $state('all');
   let translations = $state<Record<string, string>>({});
@@ -55,6 +55,8 @@
   let replaceFind = $state('');
   let replaceWith = $state('');
   let layoutWidth = $state(GADGETS_LAYOUT.maxWidth);
+
+  onMount(() => { void loadBundledOriginal(); });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
   let queuedRecordSet = $derived(new Set(queuedRecordIds));
@@ -175,6 +177,21 @@
     }
   }
 
+  async function loadBundledOriginal() {
+    loadError = '';
+    try {
+      translations = {};
+      translationMeta = {};
+      localStorage.removeItem('doraemon-translations');
+      localStorage.removeItem('doraemon-translation-meta');
+      const response = await fetch('/strings-CN.dat');
+      if (!response.ok) throw new Error(`Bundled strings-CN.dat returned HTTP ${response.status}.`);
+      await loadArchive(await response.blob(), 'strings-CN.dat');
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   function importTranslationDocument(document: unknown) {
     if (!document || typeof document !== 'object') throw new Error('Translation JSON must contain an object.');
     const imported: Record<string, string> = {};
@@ -254,14 +271,6 @@
     }
   }
 
-  async function loadDroppedFiles(files: FileList | File[]) {
-    const selected = Array.from(files);
-    const archive = selected.find((candidate) => candidate.name.toLowerCase().endsWith('.dat'));
-    const translation = selected.find((candidate) => candidate.name.toLowerCase().endsWith('.json'));
-    if (archive) await importTranslationArchive(archive, archive.name);
-    if (translation) await loadTranslationFile(translation, translation.name);
-  }
-
   async function originalFileInput(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     if (input.files?.[0]) {
@@ -330,11 +339,22 @@
   }
 
   async function translateLineOnServer(text: string) {
-    const response = await fetch('/api/translate', {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 120_000);
+    let response: Response;
+    try {
+      response = await fetch('/api/translate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel, target: targetLanguage, texts: [text] })
-    });
+        body: JSON.stringify({ model: selectedModel, target: targetLanguage, texts: [text] }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Translation server timed out after 120 seconds. Is the Bun translation server running and downloading its model?');
+      throw new Error(`Cannot reach translation server: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      window.clearTimeout(timeout);
+    }
     const payload = await response.json();
     if (!response.ok) throw new Error(payload?.error || `Translation server returned HTTP ${response.status}.`);
     const translated = payload?.translations?.[0];
@@ -476,12 +496,6 @@
     }
   }
 
-  function drop(event: DragEvent) {
-    event.preventDefault();
-    dragging = false;
-    if (event.dataTransfer?.files.length) loadDroppedFiles(event.dataTransfer.files);
-  }
-
   function updateTranslation(id: string, event: Event) {
     saveTranslation(id, (event.currentTarget as HTMLTextAreaElement).value);
   }
@@ -576,8 +590,6 @@
   }
 </script>
 
-<svelte:window ondragover={(event) => { event.preventDefault(); dragging = true; }} ondragleave={(event) => { if (!event.relatedTarget) dragging = false; }} ondrop={drop} />
-
 <main>
   <header class="app-header">
     <div>
@@ -587,15 +599,10 @@
     </div>
     <div class="header-actions">
       <a class="load-button" href="/assets" data-route>Asset viewer</a>
-      <label class="load-button">Load original .dat<input type="file" accept=".dat,application/octet-stream" onchange={originalFileInput} /></label>
-      <label class="load-button">Import translated .dat<input type="file" accept=".dat,application/octet-stream" onchange={translatedArchiveInput} /></label>
+      <button type="button" onclick={loadBundledOriginal}>Load original strings-CN.dat</button>
+      <label class="load-button">Load modified strings.dat<input type="file" accept=".dat,application/octet-stream" onchange={translatedArchiveInput} /></label>
     </div>
   </header>
-
-  <section aria-label="translation import drop area" class:dragging class="drop-zone" ondragenter={(event) => { event.preventDefault(); dragging = true; }} ondragover={(event) => event.preventDefault()} ondrop={drop}>
-    <strong>{dragging ? 'Drop translated strings.dat here' : 'Drag translated strings.dat here to import it'}</strong>
-    <span>{records.length ? 'The loaded original stays untouched. Matching Chinese records are left blank; changed records fill the translation fields.' : 'First load the original strings.dat above. Dropped .dat files are always treated as translations.'}</span>
-  </section>
 
   {#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 

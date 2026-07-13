@@ -12,9 +12,8 @@
   let page = $state(0);
   let query = $state('');
   let paletteId = $state('053');
-  let status = $state('Drop either file here. Load both for correctly colored sprites.');
+  let status = $state('Load the bundled bitmap and sprite archives when needed.');
   let error = $state('');
-  let dragging = $state(false);
   let selected: IndexedImage | undefined = $state();
 
   let current = $derived(tab === 'bitmap' ? bitmaps : sprites);
@@ -25,42 +24,48 @@
 
   function resetView(nextTab: 'bitmap' | 'sprite') { tab = nextTab; page = 0; query = ''; }
 
-  async function load(file: File) {
+  async function loadBytes(bytes: Uint8Array, fileName: string) {
     error = '';
-    status = `Reading ${file.name}…`;
+    status = `Reading ${fileName}…`;
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const name = file.name.toLowerCase();
+      const name = fileName.toLowerCase();
       if (name.includes('sprite')) {
         const result = readSprites(bytes);
         sprites = result.images;
-        spriteName = file.name;
+        spriteName = fileName;
         resetView('sprite');
-        status = `Decoded ${sprites.length.toLocaleString()} sprites from ${file.name}.`;
+        status = `Decoded ${sprites.length.toLocaleString()} sprites from ${fileName}.`;
       } else if (name.includes('bitmap')) {
         const result = readBitmaps(bytes);
         bitmaps = result.images;
-        bitmapName = file.name;
+        bitmapName = fileName;
         resetView('bitmap');
-        status = `Decoded ${bitmaps.length.toLocaleString()} PCX bitmaps from ${file.name}.`;
+        status = `Decoded ${bitmaps.length.toLocaleString()} PCX bitmaps from ${fileName}.`;
       } else {
         const bitmapResult = readBitmaps(bytes);
         if (bitmapResult.images.length) {
-          bitmaps = bitmapResult.images; bitmapName = file.name; resetView('bitmap');
+          bitmaps = bitmapResult.images; bitmapName = fileName; resetView('bitmap');
           status = `Detected ${bitmapResult.images.length.toLocaleString()} PCX bitmaps.`;
         } else {
           const spriteResult = readSprites(bytes);
           if (!spriteResult.images.length) throw new Error('This is a GameOne archive, but no supported PCX bitmaps or sprites were found.');
-          sprites = spriteResult.images; spriteName = file.name; resetView('sprite');
+          sprites = spriteResult.images; spriteName = fileName; resetView('sprite');
           status = `Detected ${spriteResult.images.length.toLocaleString()} sprites.`;
         }
       }
     } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); status = 'Loading failed.'; }
   }
 
-  async function loadFiles(files: FileList | File[]) { for (const file of Array.from(files)) await load(file); }
-  function drop(event: DragEvent) { event.preventDefault(); dragging = false; if (event.dataTransfer?.files.length) loadFiles(event.dataTransfer.files); }
+  async function loadBundled(url: string, name: string) {
+    error = '';
+    status = `Loading ${name}…`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${name} returned HTTP ${response.status}.`);
+      await loadBytes(new Uint8Array(await response.arrayBuffer()), name);
+    } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); status = 'Loading failed.'; }
+  }
   function go(delta: number) { page = Math.max(0, Math.min(pages - 1, page + delta)); }
 </script>
 
@@ -76,10 +81,10 @@
     <article><strong>Sprite1.dat</strong><span>13,807 small transparent overlays in a custom scanline format. These are assembled over bitmaps by the game and borrow a 256-color palette from screen artwork.</span></article>
   </section>
 
-  <section class:dragging class="drop" role="group" aria-label="Asset file drop area" ondragover={(event) => { event.preventDefault(); dragging = true; }} ondragleave={() => dragging = false} ondrop={drop}>
-    <strong>Drop bitmaps.dat and/or Sprite1.dat</strong>
-    <span>They remain in memory only. Nothing is uploaded or modified.</span>
-    <div><label>Load bitmaps.dat<input type="file" onchange={(event) => loadFiles(event.currentTarget.files!)} /></label><label>Load Sprite1.dat<input type="file" onchange={(event) => loadFiles(event.currentTarget.files!)} /></label></div>
+  <section class="load-panel" aria-label="Asset loaders">
+    <strong>Bundled game assets</strong>
+    <span>Load the archives from this project; nothing is uploaded or modified.</span>
+    <div><button type="button" onclick={() => loadBundled('/bitmaps.dat', 'bitmaps.dat')}>Load bitmaps.dat</button><button type="button" onclick={() => loadBundled('/Sprite1.dat', 'Sprite1.dat')}>Load Sprite1.dat</button></div>
   </section>
 
   {#if error}<p class="error">{error}</p>{/if}
