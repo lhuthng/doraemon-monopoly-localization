@@ -330,22 +330,44 @@ function rebuildContainer(original: Uint8Array, offset: number, path: number[], 
   return output;
 }
 
-export function rebuildStrings(original: Uint8Array, records: StringRecord[], translations: Record<string, string>) {
+export function rebuildGameOneArchive(original: Uint8Array, decodedReplacements: ReadonlyMap<string, Uint8Array>) {
   const replacements = new Map<string, Uint8Array>();
   const nodes = archiveNodes(original);
   const starts = [...new Set([...nodes.map((node) => node.offset), original.length])].sort((a, b) => a - b);
+  const leafIds = new Set<string>();
+
   for (const node of nodes.filter((candidate) => !candidate.container)) {
     const end = starts.find((start) => start > node.offset);
     if (end === undefined) throw new Error(`Cannot find original payload end for ${node.path.join('/')}.`);
     const id = node.path.map((part) => String(part).padStart(3, '0')).join('/');
+    leafIds.add(id);
     replacements.set(id, original.slice(node.offset, end));
   }
-  for (const record of records) {
-    const translation = translations[record.id];
-    if (translation !== undefined && translation.length > 0) replacements.set(record.id, compress(encodeTranslation(translation)));
+
+  for (const [id, decoded] of decodedReplacements) {
+    if (!leafIds.has(id)) throw new Error(`Archive has no record ${id}.`);
+    replacements.set(id, compress(decoded));
   }
+
   const rebuilt = rebuildContainer(original, 0, [], replacements);
   validateArchiveStructure(rebuilt);
+  const verified = new Map(extractGameOneArchive(rebuilt).map((entry) => [entry.id, entry]));
+  for (const [id, expected] of decodedReplacements) {
+    const actual = verified.get(id);
+    if (!actual?.data || actual.data.length !== expected.length || !actual.data.every((byte, index) => byte === expected[index])) {
+      throw new Error(`Archive verification failed for replacement ${id}.`);
+    }
+  }
+  return rebuilt;
+}
+
+export function rebuildStrings(original: Uint8Array, records: StringRecord[], translations: Record<string, string>) {
+  const replacements = new Map<string, Uint8Array>();
+  for (const record of records) {
+    const translation = translations[record.id];
+    if (translation !== undefined && translation.length > 0) replacements.set(record.id, encodeTranslation(translation));
+  }
+  const rebuilt = rebuildGameOneArchive(original, replacements);
   const verified = parseStrings(rebuilt);
   if (verified.length !== records.length) throw new Error(`Rebuilt archive has ${verified.length} records instead of ${records.length}.`);
   const verifiedById = new Map(verified.map((record) => [record.id, record.bytes]));
