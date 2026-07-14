@@ -3,7 +3,7 @@
   import AssetCanvas from './AssetCanvas.svelte';
   import { diagnosticPalette, encodeSprite, readBitmaps, readSprites, type IndexedImage, type Palette } from './lib/asset-formats';
   import { extractGameOneArchive, rebuildGameOneArchive, type GameOneArchiveEntry } from './lib/formats';
-  import { decodeIndexedPng, encodeIndexedPng, transparencyIndex } from './lib/indexed-png';
+  import { decodeIndexedPng, encodeIndexedPng, transparencyIndex, type IndexedPng } from './lib/indexed-png';
   import { storedZip } from './lib/stored-zip';
 
   const pageSize = 96;
@@ -101,6 +101,31 @@
     return left.length === right.length && left.every((byte, index) => byte === right[index]);
   }
 
+  function normaliseImportedPalette(original: IndexedImage, png: IndexedPng) {
+    const safe = new Set<number>();
+    for (let pixel = 0; pixel < original.pixels.length; pixel += 1) if (original.alpha?.[pixel]) safe.add(original.pixels[pixel]);
+    if (!safe.size) throw new Error(`Original sprite ${original.id} has no visible palette slots to preserve.`);
+    const slots = [...safe].sort((left, right) => left - right);
+    const pixels = png.pixels.slice();
+    let remapped = 0;
+    for (let pixel = 0; pixel < pixels.length; pixel += 1) {
+      if (!png.alpha[pixel]) { pixels[pixel] = 0; continue; }
+      const source = pixels[pixel];
+      if (safe.has(source)) continue;
+      let closest = slots[0], distance = Number.POSITIVE_INFINITY;
+      for (const candidate of slots) {
+        const red = png.palette[source * 3] - png.palette[candidate * 3];
+        const green = png.palette[source * 3 + 1] - png.palette[candidate * 3 + 1];
+        const blue = png.palette[source * 3 + 2] - png.palette[candidate * 3 + 2];
+        const nextDistance = red * red + green * green + blue * blue;
+        if (nextDistance < distance) { closest = candidate; distance = nextDistance; }
+      }
+      pixels[pixel] = closest;
+      remapped += 1;
+    }
+    return { pixels, remapped };
+  }
+
   function range() {
     const from = Number(exportFrom), to = Number(exportTo);
     if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to > 13806 || from > to) {
@@ -144,6 +169,7 @@
     for (const item of named) if (item.id) counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
     const rejected: string[] = [];
     let applied = 0;
+    let normalised = 0;
     busy = true;
     try {
       for (const item of named) {
@@ -154,13 +180,19 @@
         try {
           const png = await decodeIndexedPng(new Uint8Array(await item.file.arrayBuffer()));
           if (png.width !== original.width || png.height !== original.height) throw new Error(`expected ${original.width}×${original.height}, got ${png.width}×${png.height}`);
-          const replacement: IndexedImage = { ...original, pixels: png.pixels, alpha: png.alpha };
+          // Sprite1.dat has no embedded palette: retain only slots already
+          // proven by the original sprite, mapping new colours to the nearest
+          // safe slot. Transparent pixels have no stored palette index.
+          const normalisedPixels = normaliseImportedPalette(original, png);
+          const pixels = normalisedPixels.pixels;
+          const replacement: IndexedImage = { ...original, pixels, alpha: png.alpha };
           sprites = sprites.map((image) => image.id === item.id ? replacement : image);
           modified = new Set([...modified, item.id]);
           applied += 1;
+          normalised += normalisedPixels.remapped;
         } catch (cause) { rejected.push(`${item.file.name}: ${cause instanceof Error ? cause.message : String(cause)}`); }
       }
-      status = `Applied ${applied} indexed sprite replacement${applied === 1 ? '' : 's'}${rejected.length ? `; rejected ${rejected.length}` : ''}.`;
+      status = `Applied ${applied} indexed sprite replacement${applied === 1 ? '' : 's'}${normalised ? `; normalised ${normalised.toLocaleString()} unsafe palette pixels` : ''}${rejected.length ? `; rejected ${rejected.length}` : ''}.`;
       if (rejected.length) error = rejected.join('\n');
     } finally { busy = false; dragging = false; }
   }
@@ -249,7 +281,7 @@
         <button type="button" disabled={busy || !chosenBitmap?.palette} onclick={exportIndexedRange}>Export PNG ZIP</button>
       </div>
       <div class:dragging class="sprite-import" role="group" aria-label="Indexed sprite PNG import" ondragover={(event) => { event.preventDefault(); dragging = true; }} ondragleave={() => dragging = false} ondrop={dropPngs}>
-        <div><strong>Import Aseprite replacements</strong><span>Drop numbered indexed PNGs here, or choose several files. RGB/RGBA and resized images are rejected.</span></div>
+        <div><strong>Import Aseprite replacements</strong><span>Drop numbered indexed PNGs here, or choose several files. RGB/RGBA and resized images are rejected; new palette slots are mapped to the nearest colour already used by each original sprite.</span></div>
         <label class="file-button">Choose PNGs<input type="file" accept="image/png,.png" multiple onchange={importInput} /></label>
       </div>
       <div class="aseprite-note"><strong>Aseprite safety</strong><span>Keep <b>Indexed</b> color mode, the same dimensions, palette order, and transparent slot. Draw with palette entries, erase for transparency, and save directly under the original numbered filename. Reordering palette colors changes the game’s pixel indices even when the image still looks correct.</span></div>

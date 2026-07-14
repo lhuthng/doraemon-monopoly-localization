@@ -4,3 +4,4 @@ dist/
 .vite/
 *.log
 resource-studio/public/original-strings.dat
+tmp/
