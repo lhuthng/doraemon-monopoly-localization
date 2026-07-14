@@ -21,7 +21,7 @@
   let exportFrom = $state('0');
   let exportTo = $state('95');
   let query = $state('');
-  let paletteId = $state('053');
+  let paletteId = $state('1');
   let status = $state('Load the bundled bitmap and sprite archives when needed.');
   let error = $state('');
   let busy = $state(false);
