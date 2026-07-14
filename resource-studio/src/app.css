@@ -127,6 +127,7 @@ textarea:disabled { color: #516477; background: #edf2f7; cursor: wait; }
 .font-grid article { display: grid; justify-items: center; gap: 4px; min-height: 126px; padding: 8px 5px; border: 1px solid #d6dee7; border-radius: 9px; background: #fff; }
 .font-grid article strong { max-width: 100%; overflow: hidden; color: #17212b; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .font-grid article small { color: #667789; font-size: .68rem; }
-.glyph-preview { display: grid; place-items: center; width: 82px; height: 66px; overflow: hidden; background: #17212b; }
+.glyph-preview { display: grid; place-items: center; width: 82px; height: 66px; overflow: hidden; background-color: #fff; background-image: linear-gradient(45deg,#e4e9ef 25%,transparent 25%),linear-gradient(-45deg,#e4e9ef 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e9ef 75%),linear-gradient(-45deg,transparent 75%,#e4e9ef 75%); background-size: 12px 12px; background-position: 0 0,0 6px,6px -6px,-6px 0; }
 .glyph-preview canvas { image-rendering: pixelated; }
+.font-import { display: grid; gap: 6px; margin: 14px 0; padding: 16px; border: 2px dashed #aab8c6; border-radius: 10px; color: #516477; background: #fff; }.font-import.dragging { border-color: #2767b0; background: #e8f1fd; }.font-import strong { color: #17212b; }.font-import span { font-size: .83rem; line-height: 1.45; }.font-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: 14px 0; }.font-actions span { color: #667789; font-size: .82rem; }.font-grid article.modified { border-color: #2767b0; box-shadow: inset 0 0 0 2px #cfe4f8; }
 @media (max-width: 700px) { .font-header { align-items: stretch; flex-direction: column; } }

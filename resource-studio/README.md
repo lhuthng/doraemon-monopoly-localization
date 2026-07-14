@@ -57,11 +57,8 @@ the selected Transformers.js model. Model files are downloaded and cached by
 the server runtime. Record IDs and newlines remain controlled, and target-specific
 ASCII cleanup is applied before results return to the editor.
 
-## Generated font metrics
+## Live font metrics
 
-The width table used by pixel-aware text reflow is generated from the flattened
-canonical resource at `../source/sysfont.dat`:
-
-```sh
-bun run generate:sysfont
-```
+Pixel-aware text reflow loads the bundled `sysfont.dat` at runtime and reads
+widths directly from its first 128 glyph records (variant 0). There is no
+generated or hard-coded width table in the application.

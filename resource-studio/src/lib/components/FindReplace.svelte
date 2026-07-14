@@ -72,9 +72,15 @@
     <span>Find & replace</span>
     <strong>Translations only</strong>
   </div>
-  <p>Chinese source text is always preserved.</p>
-  <label>Find<input placeholder="Text to find" bind:value={find} oninput={reset} /></label>
-  <label>Replace with<input placeholder="Replacement text" bind:value={replacement} /></label>
+  <p>Chinese source text is always preserved. Line breaks entered here are matched and inserted as real newlines.</p>
+  <label>
+    Find
+    <textarea rows="3" placeholder="Text or multiple lines to find" bind:value={find} oninput={reset} spellcheck="false"></textarea>
+  </label>
+  <label>
+    Replace with
+    <textarea rows="3" placeholder="Replacement text; press Enter to insert a newline" bind:value={replacement} spellcheck="false"></textarea>
+  </label>
   <div class="replace-navigation">
     <button type="button" class="quiet" disabled={!find} onclick={() => move(-1)}>↑ Previous</button>
     <button type="button" class="quiet" disabled={!find} onclick={() => move(1)}>Next ↓</button>

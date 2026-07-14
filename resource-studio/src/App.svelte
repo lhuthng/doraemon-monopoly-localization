@@ -1,6 +1,6 @@
 <script lang="ts">
   import { CHIFONT_MAP } from './lib/chifont-map';
-  import { parseStrings, rebuildStrings, type StringRecord } from './lib/formats';
+  import { parseStrings, parseSysFont, rebuildStrings, type StringRecord } from './lib/formats';
   import { STRING_GROUPS } from './lib/groups';
   import { DIALOG_LAYOUT, GADGETS_LAYOUT, reflowGameText } from './lib/text-layout';
   import FindReplace from './lib/components/FindReplace.svelte';
@@ -55,10 +55,10 @@
   let replaceFind = $state('');
   let replaceWith = $state('');
   let layoutWidth = $state(GADGETS_LAYOUT.maxWidth);
-  let layoutVariant = $state(GADGETS_LAYOUT.variant);
   let layoutPreset = $state<'gadgets' | 'dialog'>('gadgets');
+  let sysfontWidths = $state<number[] | undefined>();
 
-  onMount(() => { void loadBundledOriginal(); });
+  onMount(() => { void loadBundledOriginal(); void loadBundledSysfont(); });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
   let queuedRecordSet = $derived(new Set(queuedRecordIds));
@@ -151,11 +151,20 @@
   function reflowTranslation(record: StringRecord) {
     const original = translations[record.id];
     if (!original?.trim() || isLockedForQueue(record.id)) return;
-    const result = reflowGameText(original, layoutWidth, layoutVariant, false);
+    if (!sysfontWidths) { loadError = 'sysfont.dat is still loading; try reflow again in a moment.'; return; }
+    const result = reflowGameText(original, layoutWidth, sysfontWidths, false);
     saveTranslation(record.id, result.text);
     exportStatus = result.oversizedWords.length
       ? `Reflowed ${record.id} to ${layoutWidth}px. These words are wider than the box: ${[...new Set(result.oversizedWords)].join(', ')}.`
       : `Reflowed ${record.id} to ${layoutWidth}px using ${layoutPreset === 'dialog' ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
+  }
+
+  function flattenTranslation(record: StringRecord) {
+    const original = translations[record.id];
+    if (original === undefined || isLockedForQueue(record.id)) return;
+    const flattened = original.replace(/\r\n?|\n/g, ' ').replace(/[ \t]{2,}/g, ' ');
+    saveTranslation(record.id, flattened);
+    exportStatus = `Flattened line breaks in ${record.id}.`;
   }
 
   async function loadArchive(file: Blob, name: string) {
@@ -176,6 +185,17 @@
       localStorage.removeItem('doraemon-rough-translations');
     } catch (error) {
       loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  async function loadBundledSysfont() {
+    try {
+      const response = await fetch('/sysfont.dat');
+      if (!response.ok) throw new Error(`Bundled sysfont.dat returned HTTP ${response.status}.`);
+      const font = parseSysFont(new Uint8Array(await response.arrayBuffer()));
+      sysfontWidths = font.glyphs.slice(0, 128).map((glyph) => glyph.width);
+    } catch (error) {
+      loadError = `Could not load sysfont.dat for reflow: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
@@ -700,16 +720,17 @@
                   {#if generationState(record)}<span class="record-state">{generationState(record)}</span>{/if}
                   {#if translations[record.id]?.trim()}<button type="button" class="copy" onclick={() => regenerateRecord(record)}>Regenerate</button>{/if}
                   <button type="button" class="copy" disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)} popovertarget={`reflow-${record.id.replace('/', '-')}`}>Reflow…</button>
+                  <button type="button" class="copy" disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)} onclick={() => flattenTranslation(record)}>Flatten lines</button>
                   <button type="button" class="copy" onclick={() => copyText(sourceText(record), record.id)}>{copied === record.id ? 'Copied' : 'Copy source'}</button>
                 </div>
               </div>
               <div id={`reflow-${record.id.replace('/', '-')}`} class="reflow-popover" popover>
                 <strong>Reflow {record.id}</strong>
-                <p>Uppercase sysfont advances are used for measuring only; the text’s capitalization is preserved.</p>
+                <p>Sysfont advances are measured from the text’s actual byte characters; capitalization is preserved.</p>
                 <label>Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label>
                 <div class="reflow-popover-actions">
-                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'gadgets'; layoutWidth = GADGETS_LAYOUT.maxWidth; layoutVariant = GADGETS_LAYOUT.variant; }}>Gadgets preset · 87px</button>
-                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'dialog'; layoutWidth = DIALOG_LAYOUT.maxWidth; layoutVariant = DIALOG_LAYOUT.variant; }}>Dialog preset · 309px</button>
+                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'gadgets'; layoutWidth = GADGETS_LAYOUT.maxWidth; }}>Gadgets preset · 87px</button>
+                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'dialog'; layoutWidth = DIALOG_LAYOUT.maxWidth; }}>Dialog preset · 309px</button>
                   <button type="button" class="primary" onclick={() => reflowTranslation(record)}>Reflow text</button>
                 </div>
               </div>

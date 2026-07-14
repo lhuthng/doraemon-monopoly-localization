@@ -79,6 +79,37 @@ function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): Archiv
   return result;
 }
 
+function validateArchiveStructure(data: Uint8Array, offset = 0, expectedEnd = data.length, path: number[] = []) {
+  if (!hasSignature(data, offset)) throw new Error(`Missing GameOne archive header at 0x${offset.toString(16)}.`);
+  const count = u32(data, offset + 0x42);
+  const table = offset + 0x66;
+  const tableEnd = table + (count + 1) * 4;
+  if (count > 100_000 || tableEnd > data.length) {
+    throw new Error(`Invalid archive entry count ${count} at ${path.join('/') || 'root'}.`);
+  }
+
+  // GameOne archives store count child offsets followed by one terminal offset.
+  // The terminal entry is the container's total byte length and is required to
+  // calculate the packed length of its final child.
+  const terminal = offset + u32(data, table + count * 4);
+  if (terminal !== expectedEnd) {
+    throw new Error(
+      `Archive ${path.join('/') || 'root'} ends at 0x${terminal.toString(16)}, expected 0x${expectedEnd.toString(16)}.`
+    );
+  }
+
+  const childOffsets = Array.from({ length: count }, (_, index) => offset + u32(data, table + index * 4));
+  for (let index = 0; index < childOffsets.length; index += 1) {
+    const child = childOffsets[index];
+    const end = index + 1 < childOffsets.length ? childOffsets[index + 1] : terminal;
+    const childPath = [...path, index];
+    if (child < tableEnd || child >= end || end > terminal) {
+      throw new Error(`Archive entry ${childPath.join('/')} has invalid bounds 0x${child.toString(16)}–0x${end.toString(16)}.`);
+    }
+    if (hasSignature(data, child)) validateArchiveStructure(data, child, end, childPath);
+  }
+}
+
 class CodeReader {
   private position = 0;
   private bitCount = 0;
@@ -284,6 +315,11 @@ function rebuildContainer(original: Uint8Array, offset: number, path: number[], 
     putU32(header, 0x66 + index * 4, cursor);
     cursor += children[index].length;
   }
+  // There is one additional offset after the visible child offsets. The game
+  // uses it as the end boundary (and therefore the packed size) of the final
+  // child. Leaving the original value here corrupts the last record whenever a
+  // rebuilt container changes size.
+  putU32(header, 0x66 + count * 4, cursor);
   const output = new Uint8Array(cursor);
   output.set(header);
   cursor = header.length;
@@ -309,6 +345,7 @@ export function rebuildStrings(original: Uint8Array, records: StringRecord[], tr
     if (translation !== undefined && translation.length > 0) replacements.set(record.id, compress(encodeTranslation(translation)));
   }
   const rebuilt = rebuildContainer(original, 0, [], replacements);
+  validateArchiveStructure(rebuilt);
   const verified = parseStrings(rebuilt);
   if (verified.length !== records.length) throw new Error(`Rebuilt archive has ${verified.length} records instead of ${records.length}.`);
   const verifiedById = new Map(verified.map((record) => [record.id, record.bytes]));
@@ -343,6 +380,36 @@ export function parseSysFont(data: Uint8Array): SysFont {
     glyphs.push({ width, height, pixels: data.slice(offset + 2, end) });
   }
   return { bytes: data, count, variants: count / 128, glyphs };
+}
+
+export function rebuildSysFont(font: SysFont) {
+  if (font.glyphs.length !== font.count) throw new Error(`Expected ${font.count} sysfont glyphs; got ${font.glyphs.length}.`);
+  const tableEnd = 2 + font.count * 4;
+  const firstGlyphOffset = u32(font.bytes, 2);
+  if (firstGlyphOffset < tableEnd || firstGlyphOffset > font.bytes.length) throw new Error('Invalid sysfont first glyph offset.');
+  let length = firstGlyphOffset;
+  for (const glyph of font.glyphs) {
+    if (!glyph.width || !glyph.height || glyph.width > 96 || glyph.height > 96 || glyph.pixels.length !== glyph.width * glyph.height) {
+      throw new Error(`Invalid sysfont glyph ${glyph.width}×${glyph.height}.`);
+    }
+    length += 2 + glyph.pixels.length;
+  }
+  const output = new Uint8Array(length);
+  output.set(font.bytes.slice(0, firstGlyphOffset));
+  let cursor = firstGlyphOffset;
+  for (let index = 0; index < font.glyphs.length; index += 1) {
+    const glyph = font.glyphs[index];
+    putU32(output, 2 + index * 4, cursor);
+    output[cursor] = glyph.width;
+    output[cursor + 1] = glyph.height;
+    output.set(glyph.pixels, cursor + 2);
+    cursor += 2 + glyph.pixels.length;
+  }
+  const verified = parseSysFont(output);
+  if (verified.count !== font.count || verified.glyphs.some((glyph, index) => glyph.width !== font.glyphs[index].width || glyph.height !== font.glyphs[index].height || !glyph.pixels.every((value, pixel) => value === font.glyphs[index].pixels[pixel]))) {
+    throw new Error('Rebuilt sysfont verification failed.');
+  }
+  return output;
 }
 
 export function validateChiFont(data: Uint8Array) {
