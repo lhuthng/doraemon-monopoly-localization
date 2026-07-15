@@ -25,6 +25,19 @@ const putU16 = (data: Uint8Array, offset: number, value: number) => {
   data[offset + 1] = (value >>> 8) & 0xff;
 };
 
+function spriteRowOffsets(data: Uint8Array, header: number, height: number) {
+  const offsets: number[] = [];
+  let wrap = 0;
+  let previous = -1;
+  for (let row = 0; row < height; row += 1) {
+    const raw = u16(data, header + row * 2);
+    if (raw <= previous) wrap += 0x10000;
+    offsets.push(raw + wrap);
+    previous = raw;
+  }
+  return offsets;
+}
+
 export function diagnosticPalette(): Palette {
   const palette = new Uint8Array(256 * 3);
   for (let index = 0; index < 256; index += 1) {
@@ -70,16 +83,18 @@ export function parsePcx(entry: GameOneArchiveEntry): IndexedImage | undefined {
 
 export function parseSprite(entry: GameOneArchiveEntry): IndexedImage | undefined {
   const data = entry.data;
-  if (!data || data.length < 12) return;
+  if (!data || data.length < 8) return;
   const magic = u16(data, 0);
   const width = u16(data, 2);
   const height = u16(data, 4);
-  if (!(magic & 0x8000) || width < 1 || height < 1 || width > 2048 || height > 2048 || 10 + height * 2 > data.length) return;
+  const fixedHeaderLength = magic & 1 ? 10 : 6;
+  if (!(magic & 0x8000) || !(magic & 2) || width < 1 || height < 1 || width > 2048 || height > 2048 || fixedHeaderLength + height * 2 > data.length) return;
   const pixels = new Uint8Array(width * height);
   const alpha = new Uint8Array(width * height);
+  const rowOffsets = spriteRowOffsets(data, fixedHeaderLength, height);
   for (let row = 0; row < height; row += 1) {
-    let position = 10 + u16(data, 10 + row * 2);
-    const nextRow = row + 1 < height ? 10 + u16(data, 10 + (row + 1) * 2) : data.length;
+    let position = fixedHeaderLength + rowOffsets[row];
+    const nextRow = row + 1 < height ? fixedHeaderLength + rowOffsets[row + 1] : data.length;
     if (position + 2 > data.length) return;
     const payloadLength = u16(data, position);
     position += 2;
@@ -100,11 +115,11 @@ export function parseSprite(entry: GameOneArchiveEntry): IndexedImage | undefine
       } else break;
     }
   }
-  return { kind: 'sprite', id: entry.id, width, height, pixels, alpha, hotspotX: i16(data, 6), hotspotY: i16(data, 8), magic, byteLength: data.length };
+  return { kind: 'sprite', id: entry.id, width, height, pixels, alpha, hotspotX: magic & 1 ? i16(data, 6) : undefined, hotspotY: magic & 1 ? i16(data, 8) : undefined, magic, byteLength: data.length };
 }
 
 export function encodeSprite(image: IndexedImage) {
-  if (image.kind !== 'sprite' || !image.magic || image.hotspotX === undefined || image.hotspotY === undefined) {
+  if (image.kind !== 'sprite' || !image.magic || ((image.magic & 1) !== 0 && (image.hotspotX === undefined || image.hotspotY === undefined))) {
     throw new Error(`Sprite ${image.id} is missing its original format metadata.`);
   }
   if (image.width < 1 || image.height < 1 || image.width > 2048 || image.height > 2048) {
@@ -113,7 +128,6 @@ export function encodeSprite(image: IndexedImage) {
   if (image.pixels.length !== image.width * image.height || image.alpha?.length !== image.pixels.length) {
     throw new Error(`Sprite ${image.id} has inconsistent pixel or transparency data.`);
   }
-
   const rows: Uint8Array[] = [];
   for (let row = 0; row < image.height; row += 1) {
     const payload: number[] = [];
@@ -135,23 +149,26 @@ export function encodeSprite(image: IndexedImage) {
     rows.push(encoded);
   }
 
-  const headerLength = 10 + image.height * 2;
+  const fixedHeaderLength = image.magic & 1 ? 10 : 6;
+  const headerLength = fixedHeaderLength + image.height * 2;
   const total = headerLength + rows.reduce((length, row) => length + row.length, 0);
-  if (total - 10 > 0xffff) throw new Error(`Sprite ${image.id} exceeds the format's 16-bit row-offset limit.`);
   const output = new Uint8Array(total);
   putU16(output, 0, image.magic);
   putU16(output, 2, image.width);
   putU16(output, 4, image.height);
-  putU16(output, 6, image.hotspotX & 0xffff);
-  putU16(output, 8, image.hotspotY & 0xffff);
+  if (image.magic & 1) {
+    putU16(output, 6, image.hotspotX! & 0xffff);
+    putU16(output, 8, image.hotspotY! & 0xffff);
+  }
   let cursor = headerLength;
   for (let row = 0; row < rows.length; row += 1) {
-    putU16(output, 10 + row * 2, cursor - 10);
+    putU16(output, fixedHeaderLength + row * 2, cursor - fixedHeaderLength);
     output.set(rows[row], cursor);
     cursor += rows[row].length;
   }
   return output;
 }
+
 
 export function readBitmaps(data: Uint8Array) {
   const entries = extractGameOneArchive(data);
