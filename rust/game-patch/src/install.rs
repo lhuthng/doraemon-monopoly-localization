@@ -194,6 +194,29 @@ pub fn apply(
         ));
     }
 
+    let wav = folder.join("DoraemonMusic.wav");
+    let mut created_audio = None;
+    let mut staged_audio = None;
+    let audio = if options.no_disc && cue::valid_wav(&wav) {
+        "Using existing verified DoraemonMusic.wav.".to_string()
+    } else if options.no_disc {
+        if wav.exists() {
+            return Err("DoraemonMusic.wav exists but is not the verified disc extraction; move it away before patching".into());
+        }
+        if let Some(cue_path) = &options.cue {
+            let staged = staging.join("DoraemonMusic.wav");
+            cue::extract(cue_path, &staged)?;
+            let digest = hash::file(&staged)?;
+            created_audio = Some(digest);
+            staged_audio = Some(staged);
+            "Extracted DoraemonMusic.wav from the supplied disc image.".into()
+        } else {
+            "No valid WAV or CUE was supplied. The patched game will continue silently.".into()
+        }
+    } else {
+        "Original CD and registry behavior retained.".into()
+    };
+
     fs::create_dir_all(backup.join("original")).map_err(|error| error.to_string())?;
     let mut originals = Vec::new();
     for (name, source, _, _) in &generated {
@@ -204,23 +227,6 @@ pub fn apply(
     }
     fs::copy(patcher_exe, backup.join("Restore.exe"))
         .map_err(|error| format!("create Restore.exe: {error}"))?;
-
-    let wav = folder.join("DoraemonMusic.wav");
-    let mut created_audio = None;
-    let audio = if options.no_disc && cue::valid_wav(&wav) {
-        "Using existing verified DoraemonMusic.wav.".to_string()
-    } else if options.no_disc {
-        if let Some(cue_path) = &options.cue {
-            cue::extract(cue_path, &wav)?;
-            let digest = hash::file(&wav)?;
-            created_audio = Some(digest);
-            "Extracted DoraemonMusic.wav from the supplied disc image.".into()
-        } else {
-            "No valid WAV or CUE was supplied. The patched game will continue silently.".into()
-        }
-    } else {
-        "Original CD and registry behavior retained.".into()
-    };
 
     let manifest = backup_manifest(payload.language.label(), &originals, created_audio);
     write_synced(&backup.join("manifest.json"), manifest.as_bytes())?;
@@ -234,6 +240,14 @@ pub fn apply(
             ));
         }
         changed.push(name);
+    }
+    if let Some(staged) = staged_audio {
+        replace_file(&staged, &wav)?;
+        if Some(hash::file(&wav)?) != created_audio {
+            return Err(
+                "DoraemonMusic.wav failed installation verification; restore from backup".into(),
+            );
+        }
     }
     let _ = fs::remove_dir(&staging);
     Ok(ApplyReport { changed, audio })

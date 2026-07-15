@@ -191,6 +191,11 @@ fn release(arguments: &[String]) -> Result<(), String> {
         ),
     )
     .map_err(|error| error.to_string())?;
+    fs::write(
+        output.join("README.txt"),
+        "Doraemon Monopoly localization patchers\r\n\r\nUse only with your own supported Cantonese installation. Select the folder containing Doraemon.exe. The patcher validates every required file, creates backup\\original, backup\\manifest.json, and backup\\Restore.exe, then installs verified differences. No-disc mode can extract DoraemonMusic.wav from your original CUE/BIN. If no valid audio is supplied, the game continues silently.\r\n",
+    )
+    .map_err(|error| error.to_string())?;
     fs::remove_file(payload_path).map_err(|error| error.to_string())?;
     println!("Built {}.", destination.display());
     Ok(())

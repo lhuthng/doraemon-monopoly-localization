@@ -133,10 +133,26 @@ mod windows_app {
     }
 
     pub fn run() -> Result<(), String> {
+        nwg::init().map_err(|error| error.to_string())?;
+        if let Ok(executable) = std::env::current_exe() {
+            if executable
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("Restore.exe"))
+            {
+                let backup = executable
+                    .parent()
+                    .ok_or("Restore.exe has no backup folder")?;
+                let restored = install::restore(backup)?;
+                nwg::simple_message(
+                    "Restore complete",
+                    &format!("Restored and verified: {}", restored.join(", ")),
+                );
+                return Ok(());
+            }
+        }
         let payload = payload::decode(super::EMBEDDED_PAYLOAD).map_err(|error| {
             format!("This development build has no valid embedded payload: {error}")
         })?;
-        nwg::init().map_err(|error| error.to_string())?;
         nwg::Font::set_global_family("Segoe UI").map_err(|error| error.to_string())?;
         let ui = Rc::new(RefCell::new(
             Ui::build(&payload).map_err(|error| error.to_string())?,
