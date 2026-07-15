@@ -2,14 +2,22 @@ import { pipeline, env } from '@huggingface/transformers';
 
 type TargetLanguage = 'en' | 'vi';
 type ModelId = 'nllb' | 'm2m100';
+type TranslationResult = { translation_text: string };
+type Translator = (
+  text: string,
+  options: { src_lang: string; tgt_lang: string; max_new_tokens: number }
+) => Promise<TranslationResult | TranslationResult[]>;
 
-const MODELS: Record<ModelId, {
-  label: string;
-  model: string;
-  dtype: 'q8';
-  source: string;
-  targets: Record<TargetLanguage, string>;
-}> = {
+const MODELS: Record<
+  ModelId,
+  {
+    label: string;
+    model: string;
+    dtype: 'q8';
+    source: string;
+    targets: Record<TargetLanguage, string>;
+  }
+> = {
   nllb: {
     label: 'NLLB 200 distilled 600M',
     model: 'Xenova/nllb-200-distilled-600M',
@@ -26,10 +34,16 @@ const MODELS: Record<ModelId, {
   }
 };
 
-const translatorPromises = new Map<ModelId, ReturnType<typeof pipeline>>();
-const modelStates = new Map<ModelId, { state: 'idle' | 'loading' | 'ready' | 'error'; message?: string; startedAt?: number; finishedAt?: number }>(
-  Object.keys(MODELS).map((id) => [id as ModelId, { state: 'idle' }])
-);
+const createTranslator = pipeline as unknown as (
+  task: 'translation',
+  model: string,
+  options: { dtype: 'q8' }
+) => Promise<Translator>;
+const translatorPromises = new Map<ModelId, Promise<Translator>>();
+const modelStates = new Map<
+  ModelId,
+  { state: 'idle' | 'loading' | 'ready' | 'error'; message?: string; startedAt?: number; finishedAt?: number }
+>(Object.keys(MODELS).map((id) => [id as ModelId, { state: 'idle' }]));
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -45,7 +59,10 @@ function json(data: unknown, status = 200) {
 
 function cleanAsciiPunctuation(text: string) {
   return text
-    .replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[–—]/g, '-').replaceAll('…', '...')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
+    .replaceAll('…', '...')
     .replace(/Low Bunny Rich|Ding Dong Monopoly|Dingdang Monopoly/gi, 'Doraemon Monopoly')
     .replace(/Wickrona/gi, 'Soft-World')
     .replace(/\s+/g, ' ')
@@ -54,12 +71,16 @@ function cleanAsciiPunctuation(text: string) {
 
 function vietnameseAscii(text: string) {
   return cleanAsciiPunctuation(text)
-    .replaceAll('đ', 'd').replaceAll('Đ', 'D')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replaceAll('đ', 'd')
+    .replaceAll('Đ', 'D')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/cua tuy y|cua bat ky|cua o bat cu dau/gi, 'Canh cua than ky')
     .replace(/chuon chuon tre|chuon chuon bang tre/gi, 'Chong chong tre')
     .replace(/banh bao dau do|banh dau do/gi, 'banh ran')
-    .replace(/[^\x00-\x7f]/g, '')
+    .split('')
+    .filter((character) => character.charCodeAt(0) < 128)
+    .join('')
     .trim();
 }
 
@@ -77,19 +98,28 @@ async function translator(modelId: ModelId) {
     env.allowLocalModels = false;
     env.useBrowserCache = false;
     env.useFSCache = true;
-    translatorPromise = pipeline('translation', model.model, {
+    translatorPromise = createTranslator('translation', model.model, {
       dtype: model.dtype
-    }).then((loaded) => {
-      modelStates.set(modelId, { state: 'ready', finishedAt: Date.now(), message: `${model.label} ready.` });
-      return loaded;
-    }).catch((error) => {
-      // Do not retain a rejected model promise: a transient download or ONNX
-      // cache failure must be recoverable on the next request.
-      translatorPromises.delete(modelId);
-      const detail = error instanceof Error ? error.message : String(error);
-      modelStates.set(modelId, { state: 'error', finishedAt: Date.now(), message: detail });
-      throw new Error(`Could not load ${model.label}. The local model cache may be incomplete or corrupted; retry to download it again. Details: ${detail}`);
     });
+    translatorPromise = translatorPromise
+      .then((loaded) => {
+        modelStates.set(modelId, {
+          state: 'ready',
+          finishedAt: Date.now(),
+          message: `${model.label} ready.`
+        });
+        return loaded;
+      })
+      .catch((error) => {
+        // Do not retain a rejected model promise: a transient download or ONNX
+        // cache failure must be recoverable on the next request.
+        translatorPromises.delete(modelId);
+        const detail = error instanceof Error ? error.message : String(error);
+        modelStates.set(modelId, { state: 'error', finishedAt: Date.now(), message: detail });
+        throw new Error(
+          `Could not load ${model.label}. The local model cache may be incomplete or corrupted; retry to download it again. Details: ${detail}`
+        );
+      });
     translatorPromises.set(modelId, translatorPromise);
   }
   return translatorPromise;
@@ -136,7 +166,8 @@ Bun.serve({
         return json({ error: error instanceof Error ? error.message : String(error) }, 400);
       }
     }
-    if (url.pathname !== '/api/translate' || request.method !== 'POST') return json({ error: 'Not found.' }, 404);
+    if (url.pathname !== '/api/translate' || request.method !== 'POST')
+      return json({ error: 'Not found.' }, 404);
 
     try {
       const body = await request.json();

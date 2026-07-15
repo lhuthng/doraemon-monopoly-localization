@@ -1,6 +1,7 @@
 const encoder = new TextEncoder();
 const u16 = (value: number) => Uint8Array.of(value & 255, (value >>> 8) & 255);
-const u32 = (value: number) => Uint8Array.of(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255);
+const u32 = (value: number) =>
+  Uint8Array.of(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255);
 
 function crc32(data: Uint8Array) {
   let crc = 0xffffffff;
@@ -14,7 +15,10 @@ function crc32(data: Uint8Array) {
 function join(parts: Uint8Array[]) {
   const output = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
   let offset = 0;
-  for (const part of parts) { output.set(part, offset); offset += part.length; }
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
   return output;
 }
 
@@ -27,12 +31,56 @@ export function storedZip(entries: { name: string; bytes: Uint8Array }[]) {
     const name = encoder.encode(entry.name);
     if (name.length > 0xffff) throw new Error(`ZIP filename is too long: ${entry.name}.`);
     const crc = crc32(entry.bytes);
-    const local = join([u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0), u32(crc), u32(entry.bytes.length), u32(entry.bytes.length), u16(name.length), u16(0), name, entry.bytes]);
+    const local = join([
+      u32(0x04034b50),
+      u16(20),
+      u16(0x0800),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(entry.bytes.length),
+      u32(entry.bytes.length),
+      u16(name.length),
+      u16(0),
+      name,
+      entry.bytes
+    ]);
     locals.push(local);
-    central.push(join([u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0), u32(crc), u32(entry.bytes.length), u32(entry.bytes.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
+    central.push(
+      join([
+        u32(0x02014b50),
+        u16(20),
+        u16(20),
+        u16(0x0800),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(crc),
+        u32(entry.bytes.length),
+        u32(entry.bytes.length),
+        u16(name.length),
+        u16(0),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(0),
+        u32(offset),
+        name
+      ])
+    );
     offset += local.length;
   }
   const directory = join(central);
-  const ending = join([u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(directory.length), u32(offset), u16(0)]);
+  const ending = join([
+    u32(0x06054b50),
+    u16(0),
+    u16(0),
+    u16(entries.length),
+    u16(entries.length),
+    u32(directory.length),
+    u32(offset),
+    u16(0)
+  ]);
   return new Blob([join([...locals, directory, ending])], { type: 'application/zip' });
 }

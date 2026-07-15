@@ -22,7 +22,12 @@
   function move(direction: number) {
     if (!groups.length) return;
     const current = groups.findIndex((item) => item.id === group);
-    const index = current < 0 ? (direction > 0 ? 0 : groups.length - 1) : (current + direction + groups.length) % groups.length;
+    const index =
+      current < 0
+        ? direction > 0
+          ? 0
+          : groups.length - 1
+        : (current + direction + groups.length) % groups.length;
     select(groups[index].id);
   }
 </script>
@@ -36,7 +41,7 @@
     String group
     <select value={group} onchange={(event) => select((event.currentTarget as HTMLSelectElement).value)}>
       <option value="all">All groups</option>
-      {#each groups as item}
+      {#each groups as item (item.id)}
         <option value={item.id}>{item.id} — {item.label}</option>
       {/each}
     </select>

@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { CHIFONT_MAP } from './lib/chifont-map';
-  import { parseStrings, parseSysFont, rebuildStrings, type StringRecord } from './lib/formats';
-  import { STRING_GROUPS } from './lib/groups';
-  import { DIALOG_LAYOUT, GADGETS_LAYOUT, reflowGameText } from './lib/text-layout';
-  import FindReplace from './lib/components/FindReplace.svelte';
-  import GroupNavigator from './lib/components/GroupNavigator.svelte';
   import { onMount } from 'svelte';
+  import { binaryBlob, downloadBlob } from '../../lib/browser-download';
+  import { parseStrings, parseSysFont, rebuildStrings, type StringRecord } from '../../lib/formats';
+  import { CHIFONT_MAP } from './chifont-map';
+  import FindReplace from './components/FindReplace.svelte';
+  import GroupNavigator from './components/GroupNavigator.svelte';
+  import { STRING_GROUPS } from './groups';
+  import { DIALOG_LAYOUT, GADGETS_LAYOUT, reflowGameText } from './text-layout';
 
   type TranslationFile = {
     game: string;
@@ -13,7 +14,6 @@
     translations: { id: string; source: string; translation: string; origin?: string }[];
   };
 
-  type TranslationEntry = { id?: unknown; translation?: unknown; text?: unknown };
   type TargetLanguage = 'en' | 'vi';
   type ModelId = 'nllb' | 'm2m100';
   type TranslationOrigin = 'generated' | 'manual' | 'imported';
@@ -54,15 +54,22 @@
   let queueDone = $state(0);
   let replaceFind = $state('');
   let replaceWith = $state('');
-  let layoutWidth = $state(GADGETS_LAYOUT.maxWidth);
+  let layoutWidth = $state<number>(GADGETS_LAYOUT.maxWidth);
   let layoutPreset = $state<'gadgets' | 'dialog'>('gadgets');
   let sysfontWidths = $state<number[] | undefined>();
 
-  onMount(() => { void loadBundledOriginal(); void loadBundledSysfont(); });
+  onMount(() => {
+    void loadBundledOriginal();
+    void loadBundledSysfont();
+  });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
   let queuedRecordSet = $derived(new Set(queuedRecordIds));
-  let availableGroupIds = $derived(STRING_GROUPS.filter((item) => records.some((record) => record.path[0] === Number(item.id))).map((item) => item.id));
+  let availableGroupIds = $derived(
+    STRING_GROUPS.filter((item) => records.some((record) => record.path[0] === Number(item.id))).map(
+      (item) => item.id
+    )
+  );
 
   let visibleRecords = $derived.by(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -70,15 +77,28 @@
       if (group !== 'all' && record.path[0] !== Number(group)) return false;
       if (!query) return true;
       const text = sourceText(record).toLocaleLowerCase();
-      return record.id.includes(query) || text.includes(query) || (translations[record.id] || '').toLocaleLowerCase().includes(query);
+      return (
+        record.id.includes(query) ||
+        text.includes(query) ||
+        (translations[record.id] || '').toLocaleLowerCase().includes(query)
+      );
     });
   });
   let remainingVisibleCount = $derived(visibleRecords.filter((record) => shouldGenerate(record)).length);
 
-  let usedGlyphs = $derived(new Set(records.flatMap((record) => record.tokens.filter((token) => token.type === 'glyph').map((token) => token.id))));
+  let usedGlyphs = $derived(
+    new Set(
+      records.flatMap((record) =>
+        record.tokens.filter((token) => token.type === 'glyph').map((token) => token.id)
+      )
+    )
+  );
   let missingGlyphs = $derived([...usedGlyphs].filter((id) => !CHIFONT_MAP[id]).sort((a, b) => a - b));
   let translatedCount = $derived(records.filter((record) => translations[record.id]?.trim()).length);
-  let manualCount = $derived(records.filter((record) => translations[record.id]?.trim() && translationOrigin(record.id) === 'manual').length);
+  let manualCount = $derived(
+    records.filter((record) => translations[record.id]?.trim() && translationOrigin(record.id) === 'manual')
+      .length
+  );
   let replacementMatches = $derived.by(() => {
     const needle = replaceFind;
     if (!needle) return [] as { id: string; start: number }[];
@@ -86,7 +106,11 @@
     for (const record of records) {
       if (isLockedForQueue(record.id)) continue;
       const text = translations[record.id] || '';
-      for (let start = text.indexOf(needle); start !== -1; start = text.indexOf(needle, start + needle.length)) {
+      for (
+        let start = text.indexOf(needle);
+        start !== -1;
+        start = text.indexOf(needle, start + needle.length)
+      ) {
         matches.push({ id: record.id, start });
       }
     }
@@ -136,7 +160,10 @@
     const match = matches[current];
     const text = translations[match.id] || '';
     if (text.slice(match.start, match.start + find.length) !== find) return;
-    saveTranslation(match.id, text.slice(0, match.start) + replacement + text.slice(match.start + find.length));
+    saveTranslation(
+      match.id,
+      text.slice(0, match.start) + replacement + text.slice(match.start + find.length)
+    );
   }
 
   function replaceAll(find: string, replacement: string) {
@@ -151,7 +178,10 @@
   function reflowTranslation(record: StringRecord) {
     const original = translations[record.id];
     if (!original?.trim() || isLockedForQueue(record.id)) return;
-    if (!sysfontWidths) { loadError = 'sysfont.dat is still loading; try reflow again in a moment.'; return; }
+    if (!sysfontWidths) {
+      loadError = 'sysfont.dat is still loading; try reflow again in a moment.';
+      return;
+    }
     const result = reflowGameText(original, layoutWidth, sysfontWidths, false);
     saveTranslation(record.id, result.text);
     exportStatus = result.oversizedWords.length
@@ -181,7 +211,10 @@
       if (saved) translations = JSON.parse(saved);
       const savedMeta = localStorage.getItem('doraemon-translation-meta');
       if (savedMeta) translationMeta = JSON.parse(savedMeta);
-      else translationMeta = Object.fromEntries(Object.keys(translations).map((id) => [id, { origin: 'manual', updatedAt: Date.now() }]));
+      else
+        translationMeta = Object.fromEntries(
+          Object.keys(translations).map((id) => [id, { origin: 'manual', updatedAt: Date.now() }])
+        );
       localStorage.removeItem('doraemon-rough-translations');
     } catch (error) {
       loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
@@ -190,7 +223,7 @@
 
   async function loadBundledSysfont() {
     try {
-      const response = await fetch('/sysfont.dat');
+      const response = await fetch('/game/sysfont.dat');
       if (!response.ok) throw new Error(`Bundled sysfont.dat returned HTTP ${response.status}.`);
       const font = parseSysFont(new Uint8Array(await response.arrayBuffer()));
       sysfontWidths = font.glyphs.slice(0, 128).map((glyph) => glyph.width);
@@ -206,7 +239,7 @@
       translationMeta = {};
       localStorage.removeItem('doraemon-translations');
       localStorage.removeItem('doraemon-translation-meta');
-      const response = await fetch('/strings-CN.dat');
+      const response = await fetch('/game/strings-CN.dat');
       if (!response.ok) throw new Error(`Bundled strings-CN.dat returned HTTP ${response.status}.`);
       await loadArchive(await response.blob(), 'strings-CN.dat');
     } catch (error) {
@@ -214,49 +247,12 @@
     }
   }
 
-  function importTranslationDocument(document: unknown) {
-    if (!document || typeof document !== 'object') throw new Error('Translation JSON must contain an object.');
-    const imported: Record<string, string> = {};
-    const value = document as Record<string, unknown>;
-    if (Array.isArray(value.translations)) {
-      for (const entry of value.translations as TranslationEntry[]) {
-        const text = typeof entry.translation === 'string' ? entry.translation : entry.text;
-        if (typeof entry.id !== 'string' || typeof text !== 'string') throw new Error('Translation JSON contains an invalid array record.');
-        imported[entry.id] = text;
-      }
-    } else {
-      const mapping = value.translations && typeof value.translations === 'object' ? value.translations as Record<string, unknown> : value;
-      for (const [id, text] of Object.entries(mapping)) {
-        if (/^\d{3}\/\d{3}$/.test(id) && typeof text === 'string') imported[id] = text;
-      }
-    }
-    const ids = new Set(records.map((record) => record.id));
-    const entries = Object.entries(imported).filter(([id]) => ids.has(id));
-    if (!entries.length) throw new Error('No matching record IDs were found. Expected keys such as "000/000".');
-    translations = { ...translations, ...Object.fromEntries(entries) };
-    translationMeta = {
-      ...translationMeta,
-      ...Object.fromEntries(entries.map(([id]) => [id, { origin: 'imported' as const, updatedAt: Date.now() }]))
-    };
-    localStorage.setItem('doraemon-translations', JSON.stringify(translations));
-    localStorage.setItem('doraemon-translation-meta', JSON.stringify(translationMeta));
-    exportStatus = `Applied ${entries.length} translations by record ID.`;
-  }
-
-  async function loadTranslationFile(file: Blob, name: string) {
-    loadError = '';
-    try {
-      importTranslationDocument(JSON.parse(await file.text()));
-    } catch (error) {
-      loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  }
-
   async function importTranslationArchive(file: Blob, name: string) {
     loadError = '';
     exportStatus = '';
     try {
-      if (!records.length || !archiveBytes) throw new Error('Load the original strings.dat before importing a translated .dat file.');
+      if (!records.length || !archiveBytes)
+        throw new Error('Load the original strings.dat before importing a translated .dat file.');
       const importedRecords = parseStrings(new Uint8Array(await file.arrayBuffer()));
       const importedById = new Map(importedRecords.map((record) => [record.id, sourceText(record)]));
       const now = Date.now();
@@ -293,27 +289,9 @@
     }
   }
 
-  async function originalFileInput(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    if (input.files?.[0]) {
-      translations = {};
-      translationMeta = {};
-      localStorage.removeItem('doraemon-translations');
-      localStorage.removeItem('doraemon-translation-meta');
-      await loadArchive(input.files[0], input.files[0].name);
-    }
-    input.value = '';
-  }
-
   async function translatedArchiveInput(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     if (input.files?.[0]) await importTranslationArchive(input.files[0], input.files[0].name);
-    input.value = '';
-  }
-
-  async function translationInput(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    if (input.files?.[0]) await loadTranslationFile(input.files[0], input.files[0].name);
     input.value = '';
   }
 
@@ -344,7 +322,9 @@
     for (const record of sourceRecords) {
       const lines = sourceText(record).split('\n');
       linesById.set(record.id, [...lines]);
-      lines.forEach((text, line) => { if (text.trim()) segments.push({ id: record.id, line, text }); });
+      lines.forEach((text, line) => {
+        if (text.trim()) segments.push({ id: record.id, line, text });
+      });
     }
     return { segments, linesById };
   }
@@ -366,19 +346,27 @@
     let response: Response;
     try {
       response = await fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, target: targetLanguage, texts: [text] }),
         signal: controller.signal
       });
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Translation server timed out after 120 seconds. Is the Bun translation server running and downloading its model?');
-      throw new Error(`Cannot reach translation server: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof DOMException && error.name === 'AbortError')
+        throw new Error(
+          'Translation server timed out after 120 seconds. Is the Bun translation server running and downloading its model?',
+          { cause: error }
+        );
+      throw new Error(
+        `Cannot reach translation server: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     } finally {
       window.clearTimeout(timeout);
     }
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload?.error || `Translation server returned HTTP ${response.status}.`);
+    if (!response.ok)
+      throw new Error(payload?.error || `Translation server returned HTTP ${response.status}.`);
     const translated = payload?.translations?.[0];
     if (typeof translated !== 'string') throw new Error('Translation server returned no translation text.');
     return translated;
@@ -405,7 +393,8 @@
         translationStage = 'Translation server ready. Starting queued records…';
         return;
       }
-      if (state?.state === 'error') throw new Error(state.message || 'Translation server failed to load the model.');
+      if (state?.state === 'error')
+        throw new Error(state.message || 'Translation server failed to load the model.');
       translationStage = state?.message || 'Waiting for the translation server…';
       await new Promise((resolve) => window.setTimeout(resolve, 750));
     }
@@ -460,7 +449,7 @@
         activeRecordId = record.id;
         await translateOneRecord(record);
         queueDone += 1;
-        translationProgress = queueGoal ? Math.round(queueDone / queueGoal * 100) : 0;
+        translationProgress = queueGoal ? Math.round((queueDone / queueGoal) * 100) : 0;
       }
       if (stopRequested) {
         queuedRecordIds = [];
@@ -480,7 +469,10 @@
     }
   }
 
-  async function translateRecords(sourceRecords: StringRecord[], options: { skipCompleted?: boolean; front?: boolean; force?: boolean } = {}) {
+  async function translateRecords(
+    sourceRecords: StringRecord[],
+    options: { skipCompleted?: boolean; front?: boolean; force?: boolean } = {}
+  ) {
     const pending = options.skipCompleted ? untranslated(sourceRecords) : sourceRecords;
     if (!pending.length) {
       translationStage = 'Nothing to translate in the selected range.';
@@ -572,11 +564,15 @@
       temporary.remove();
     }
     copied = id;
-    window.setTimeout(() => { if (copied === id) copied = ''; }, 1200);
+    window.setTimeout(() => {
+      if (copied === id) copied = '';
+    }, 1200);
   }
 
   function copyAll() {
-    const text = visibleRecords.map((record) => `${record.id}\t${sourceText(record).replaceAll('\n', '\\N')}`).join('\n');
+    const text = visibleRecords
+      .map((record) => `${record.id}\t${sourceText(record).replaceAll('\n', '\\N')}`)
+      .join('\n');
     copyText(text, 'all');
   }
 
@@ -591,7 +587,9 @@
         origin: translationOrigin(record.id) || ''
       }))
     };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' })
+    );
     const link = document.createElement('a');
     link.href = url;
     link.download = 'doraemon-translations.json';
@@ -605,7 +603,9 @@
       source: sourceName,
       records: Object.fromEntries(records.map((record) => [record.id, sourceText(record)]))
     };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' })
+    );
     const link = document.createElement('a');
     link.href = url;
     link.download = 'records-chinese.json';
@@ -620,12 +620,7 @@
     try {
       if (!archiveBytes) throw new Error('Load the original strings.dat first.');
       const rebuilt = rebuildStrings(archiveBytes, records, translations);
-      const url = URL.createObjectURL(new Blob([rebuilt], { type: 'application/octet-stream' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'strings-exported.dat';
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(binaryBlob(rebuilt), 'strings-exported.dat');
       exportStatus = `Built and verified strings-exported.dat: ${translatedCount} translated, ${records.length - translatedCount} preserved in Chinese.`;
     } catch (error) {
       loadError = error instanceof Error ? error.message : String(error);
@@ -645,14 +640,22 @@
   <header class="app-header">
     <div>
       <p class="eyebrow">Doraemon Monopoly</p>
-      <h1>String translator</h1>
-      <p class="subtle">Decode the original text into selectable Traditional Chinese. Font files remain unchanged.</p>
+      <h1>String studio</h1>
+      <p class="subtle">
+        Decode the original text into selectable Traditional Chinese. Font files remain unchanged.
+      </p>
     </div>
     <div class="header-actions">
-      <a class="load-button" href="/assets" data-route>Asset viewer</a>
-      <a class="load-button" href="/fonts" data-route>Sysfont inspector</a>
-      <button type="button" onclick={loadBundledOriginal}>Load original strings-CN.dat</button>
-      <label class="load-button">Load modified strings.dat<input type="file" accept=".dat,application/octet-stream" onchange={translatedArchiveInput} /></label>
+      <a class="load-button" href="/assets" data-route>Graphics studio</a>
+      <a class="load-button" href="/fonts" data-route>Font studio</a>
+      <button type="button" onclick={loadBundledOriginal}>Reload bundled strings-CN.dat</button>
+      <label class="load-button"
+        >Load modified strings.dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={translatedArchiveInput}
+        /></label
+      >
     </div>
   </header>
 
@@ -662,7 +665,13 @@
     <section class="summary" aria-label="Translation status">
       <div><span>Source</span><strong>{sourceName}</strong></div>
       <div><span>Records</span><strong>{records.length}</strong></div>
-      <div><span>Glyph mapping</span><strong>{missingGlyphs.length ? `${usedGlyphs.size - missingGlyphs.length}/${usedGlyphs.size}` : `${usedGlyphs.size}/${usedGlyphs.size} complete`}</strong></div>
+      <div>
+        <span>Glyph mapping</span><strong
+          >{missingGlyphs.length
+            ? `${usedGlyphs.size - missingGlyphs.length}/${usedGlyphs.size}`
+            : `${usedGlyphs.size}/${usedGlyphs.size} complete`}</strong
+        >
+      </div>
       <div><span>Translated</span><strong>{translatedCount}/{records.length}</strong></div>
     </section>
 
@@ -671,35 +680,80 @@
 
     <section class="toolbar">
       <div class="fields">
-        <label>Search<input type="search" placeholder="ID, Chinese, or translation" bind:value={search} /></label>
-        <label>Translate to<select bind:value={targetLanguage}>{#each TARGET_LANGUAGES as language}<option value={language.code}>{language.label}</option>{/each}</select></label>
-        <label>Model<select bind:value={selectedModel}>{#each MODELS as model}<option value={model.id}>{model.label}</option>{/each}</select></label>
+        <label
+          >Search<input type="search" placeholder="ID, Chinese, or translation" bind:value={search} /></label
+        >
+        <label
+          >Translate to<select bind:value={targetLanguage}
+            >{#each TARGET_LANGUAGES as language (language.code)}<option value={language.code}
+                >{language.label}</option
+              >{/each}</select
+          ></label
+        >
+        <label
+          >Model<select bind:value={selectedModel}
+            >{#each MODELS as model (model.id)}<option value={model.id}>{model.label}</option>{/each}</select
+          ></label
+        >
         <label>From<input class="record-range" placeholder="000/000" bind:value={generateFrom} /></label>
         <label>To<input class="record-range" placeholder="008/000" bind:value={generateTo} /></label>
       </div>
       <div class="actions">
-        <button type="button" data-testid="translate-all" disabled={translationRunning || !records.length} onclick={startGenerating}>{translationRunning ? `${translationProgress}% generated` : `Start generating ${selectedTarget.label}`}</button>
+        <button
+          type="button"
+          data-testid="translate-all"
+          disabled={translationRunning || !records.length}
+          onclick={startGenerating}
+          >{translationRunning
+            ? `${translationProgress}% generated`
+            : `Start generating ${selectedTarget.label}`}</button
+        >
         {#if generationPaused && queuedRecordIds.length && !translationRunning}
           <button type="button" data-testid="resume-generation" onclick={resumeGeneration}>Resume</button>
         {/if}
         {#if translationRunning}
-          <button type="button" class="quiet" data-testid="pause-generation" disabled={generationPaused || stopRequested} onclick={requestPause}>Pause</button>
+          <button
+            type="button"
+            class="quiet"
+            data-testid="pause-generation"
+            disabled={generationPaused || stopRequested}
+            onclick={requestPause}>Pause</button
+          >
         {/if}
         {#if translationRunning || generationPaused}
-          <button type="button" class="quiet danger" data-testid="stop-generation" disabled={stopRequested} onclick={requestStop}>Stop</button>
+          <button
+            type="button"
+            class="quiet danger"
+            data-testid="stop-generation"
+            disabled={stopRequested}
+            onclick={requestStop}>Stop</button
+          >
         {/if}
         <button type="button" onclick={copyAll}>{copied === 'all' ? 'Copied' : 'Copy visible TSV'}</button>
-        <button type="button" data-testid="export-chinese" onclick={exportChineseRecords}>Export Chinese records</button>
+        <button type="button" data-testid="export-chinese" onclick={exportChineseRecords}
+          >Export Chinese records</button
+        >
         <button type="button" onclick={exportTranslations}>Export project JSON</button>
-        <button type="button" data-testid="export-dat" class="primary" onclick={exportStringsDat}>Export strings.dat</button>
-        <button type="button" class="quiet" disabled={!translatedCount} onclick={clearTranslations}>Clear</button>
+        <button type="button" data-testid="export-dat" class="primary" onclick={exportStringsDat}
+          >Export strings.dat</button
+        >
+        <button type="button" class="quiet" disabled={!translatedCount} onclick={clearTranslations}
+          >Clear</button
+        >
       </div>
     </section>
 
     <div class="workspace">
       <aside class="workspace-sidebar">
         <GroupNavigator bind:group {availableGroupIds} onNavigate={selectGroup} />
-        <FindReplace bind:find={replaceFind} bind:replacement={replaceWith} matches={replacementMatches} onShow={showReplacement} onReplaceOne={replaceOne} onReplaceAll={replaceAll} />
+        <FindReplace
+          bind:find={replaceFind}
+          bind:replacement={replaceWith}
+          matches={replacementMatches}
+          onShow={showReplacement}
+          onReplaceOne={replaceOne}
+          onReplaceAll={replaceAll}
+        />
       </aside>
 
       <div class="workspace-content">
@@ -710,34 +764,88 @@
           </section>
         {/if}
 
-        <div class="result-count">{visibleRecords.length} records, {remainingVisibleCount} keep/generatable in current view · {translatedCount} translated · {manualCount} manually edited</div>
+        <div class="result-count">
+          {visibleRecords.length} records, {remainingVisibleCount} keep/generatable in current view · {translatedCount}
+          translated · {manualCount} manually edited
+        </div>
         <section class="translation-list" aria-label="Decoded strings">
           {#each visibleRecords as record (record.id)}
-            <article id={replacementRecordId(record)} class:queued={queuedRecordSet.has(record.id)} class:translating={activeRecordId === record.id} class:done={!!translations[record.id]?.trim()} class:manual={translationOrigin(record.id) === 'manual'} class:generated={translationOrigin(record.id) === 'generated'} class:imported={translationOrigin(record.id) === 'imported'}>
+            <article
+              id={replacementRecordId(record)}
+              class:queued={queuedRecordSet.has(record.id)}
+              class:translating={activeRecordId === record.id}
+              class:done={!!translations[record.id]?.trim()}
+              class:manual={translationOrigin(record.id) === 'manual'}
+              class:generated={translationOrigin(record.id) === 'generated'}
+              class:imported={translationOrigin(record.id) === 'imported'}
+            >
               <div class="record-heading">
                 <code>{record.id}</code>
                 <div class="record-actions">
-                  {#if generationState(record)}<span class="record-state">{generationState(record)}</span>{/if}
-                  {#if translations[record.id]?.trim()}<button type="button" class="copy" onclick={() => regenerateRecord(record)}>Regenerate</button>{/if}
-                  <button type="button" class="copy" disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)} popovertarget={`reflow-${record.id.replace('/', '-')}`}>Reflow…</button>
-                  <button type="button" class="copy" disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)} onclick={() => flattenTranslation(record)}>Flatten lines</button>
-                  <button type="button" class="copy" onclick={() => copyText(sourceText(record), record.id)}>{copied === record.id ? 'Copied' : 'Copy source'}</button>
+                  {#if generationState(record)}<span class="record-state">{generationState(record)}</span
+                    >{/if}
+                  {#if translations[record.id]?.trim()}<button
+                      type="button"
+                      class="copy"
+                      onclick={() => regenerateRecord(record)}>Regenerate</button
+                    >{/if}
+                  <button
+                    type="button"
+                    class="copy"
+                    disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)}
+                    popovertarget={`reflow-${record.id.replace('/', '-')}`}>Reflow…</button
+                  >
+                  <button
+                    type="button"
+                    class="copy"
+                    disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)}
+                    onclick={() => flattenTranslation(record)}>Flatten lines</button
+                  >
+                  <button type="button" class="copy" onclick={() => copyText(sourceText(record), record.id)}
+                    >{copied === record.id ? 'Copied' : 'Copy source'}</button
+                  >
                 </div>
               </div>
               <div id={`reflow-${record.id.replace('/', '-')}`} class="reflow-popover" popover>
                 <strong>Reflow {record.id}</strong>
-                <p>Sysfont advances are measured from the text’s actual byte characters; capitalization is preserved.</p>
-                <label>Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label>
+                <p>
+                  Sysfont advances are measured from the text’s actual byte characters; capitalization is
+                  preserved.
+                </p>
+                <label
+                  >Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label
+                >
                 <div class="reflow-popover-actions">
-                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'gadgets'; layoutWidth = GADGETS_LAYOUT.maxWidth; }}>Gadgets preset · 87px</button>
-                  <button type="button" class="quiet" onclick={() => { layoutPreset = 'dialog'; layoutWidth = DIALOG_LAYOUT.maxWidth; }}>Dialog preset · 309px</button>
-                  <button type="button" class="primary" onclick={() => reflowTranslation(record)}>Reflow text</button>
+                  <button
+                    type="button"
+                    class="quiet"
+                    onclick={() => {
+                      layoutPreset = 'gadgets';
+                      layoutWidth = GADGETS_LAYOUT.maxWidth;
+                    }}>Gadgets preset · 87px</button
+                  >
+                  <button
+                    type="button"
+                    class="quiet"
+                    onclick={() => {
+                      layoutPreset = 'dialog';
+                      layoutWidth = DIALOG_LAYOUT.maxWidth;
+                    }}>Dialog preset · 309px</button
+                  >
+                  <button type="button" class="primary" onclick={() => reflowTranslation(record)}
+                    >Reflow text</button
+                  >
                 </div>
               </div>
               <pre class="source-text" lang="zh-Hant">{sourceText(record)}</pre>
               <label>
                 Translation
-                <textarea rows={Math.max(2, sourceText(record).split('\n').length)} disabled={isLockedForQueue(record.id)} placeholder="Enter translation…" value={translations[record.id] || ''} oninput={(event) => updateTranslation(record.id, event)}></textarea>
+                <textarea
+                  rows={Math.max(2, sourceText(record).split('\n').length)}
+                  disabled={isLockedForQueue(record.id)}
+                  placeholder="Enter translation…"
+                  value={translations[record.id] || ''}
+                  oninput={(event) => updateTranslation(record.id, event)}></textarea>
               </label>
             </article>
           {/each}

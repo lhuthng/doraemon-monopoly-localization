@@ -1,64 +1,57 @@
-# Doraemon Monopoly resource studio
+# Resource Studio
 
-This Svelte 5 application inspects and rebuilds GameOne string archives and
-displays the game's bitmap and transparent sprite resources. Selected files
-stay local to the computer.
+A Svelte 5 and Bun application for inspecting and rebuilding _Doraemon
+Monopoly_ resources entirely on the local machine.
 
-## Run it
+## Commands
 
 ```sh
-cd resource-studio
 bun install
 bun run dev
-```
-
-Open the local address Vite prints in the terminal.
-
-| Route | Tool |
-| --- | --- |
-| `/` | String archive inspector/editor |
-| `/assets` | `bitmaps.dat` and `Sprite1.dat` viewer |
-| `/fonts` | `sysfont.dat` variant and ASCII-slot inspector |
-
-Machine translation uses the local Bun service in a second terminal:
-
-```sh
-bun run translate-server
-```
-
-## Build static HTML
-
-```sh
-cd resource-studio
+bun run check
+bun run lint
 bun run build
 ```
 
-The static site is written to `resource-studio/dist/`. It does not bundle game
-strings; drag `strings.dat` into the page after opening it.
+Run `bun run translate-server` in another terminal only when local machine
+translation is needed. The browser queues records one at a time; the Bun
+service downloads and caches the selected Transformers.js model.
 
-## Using it
+## Workspaces
 
-Use **Load strings.dat** or drag the file onto the page. The app recreates the
-executable's 14-bit decompressor, converts custom chifont IDs to Unicode, treats
-the game's literal `\N` marker as a newline, and preserves real ASCII bytes.
+| Route     | Name            | Responsibility                                                            |
+| --------- | --------------- | ------------------------------------------------------------------------- |
+| `/`       | String studio   | `strings.dat` decoding, editing, reflow, translation, and verified export |
+| `/assets` | Graphics studio | PCX inspection and indexed Sprite1/Sprite2 PNG round-tripping             |
+| `/fonts`  | Font studio     | Five `sysfont.dat` variants and numbered glyph PNG round-tripping         |
 
-Every source record can be copied directly. Translation text is saved in the
-browser and can be imported or exported as UTF-8 JSON. **Export Chinese
-records** creates `records-chinese.json`, keyed by stable IDs such as `000/000`.
-**Apply translation map** accepts either `{ "000/000": "..." }`, a
-`translations` mapping, or the app's project JSON, and merges matching IDs into
-the editable fields. **Export strings.dat** compresses translated strings,
-preserves unfinished records in their original Chinese form, rebuilds the
-nested archive offsets, verifies the result, and downloads
-`strings-exported.dat`.
+The app automatically loads `public/game/strings-CN.dat` and
+`public/game/sysfont.dat`. Graphics archives are loaded on demand. These are
+working copies and may already contain localization changes.
 
-Translation requests are processed sequentially by the local Bun service using
-the selected Transformers.js model. Model files are downloaded and cached by
-the server runtime. Record IDs and newlines remain controlled, and target-specific
-ASCII cleanup is applied before results return to the editor.
+## Source layout
 
-## Live font metrics
+```text
+src/
+├── features/
+│   ├── strings/       string workspace and text-specific helpers
+│   ├── fonts/         sysfont workspace and glyph canvas
+│   └── graphics/      bitmap/sprite workspace and indexed canvas
+├── lib/               GameOne/LZW, sprite, PNG, ZIP, and download utilities
+├── styles/            shared and workspace-specific CSS
+├── Router.svelte      three-route client router
+└── main.ts            application entry point
+```
 
-Pixel-aware text reflow loads the bundled `sysfont.dat` at runtime and reads
-widths directly from its first 128 glyph records (variant 0). There is no
-generated or hard-coded width table in the application.
+`src/lib/formats.ts` owns the GameOne archive, fixed 14-bit LZW, string, and
+sysfont codecs. `src/lib/asset-formats.ts` owns PCX and both sprite-header
+variants. Every writer reparses and verifies its output before download.
+
+## Editing guarantees
+
+- Untranslated string records retain their original decoded bytes.
+- String group and child offsets are rebuilt dynamically.
+- Leading and trailing spaces are preserved; newlines encode as literal `\N`.
+- Indexed sprite imports use palette indices rather than canvas RGB values.
+- Sprite1 preserves its hotspot when resized; Sprite2 has no hotspot fields.
+- Untouched archive records remain byte-for-byte unchanged.

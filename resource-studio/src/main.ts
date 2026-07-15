@@ -1,4 +1,4 @@
-import './app.css';
+import './styles/global.css';
 import Router from './Router.svelte';
 import { mount } from 'svelte';
 

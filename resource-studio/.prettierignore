@@ -1,0 +1,5 @@
+dist/
+node_modules/
+public/game/
+src/features/strings/chifont-map.ts
+bun.lock

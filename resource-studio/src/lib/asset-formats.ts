@@ -46,7 +46,16 @@ export function diagnosticPalette(): Palette {
     const light = index < 16 ? 0.18 + index * 0.035 : 0.56;
     const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
     const sector = Math.floor(hue / 60);
-    const [r, g, b] = ([[chroma, x, 0], [x, chroma, 0], [0, chroma, x], [0, x, chroma], [x, 0, chroma], [chroma, 0, x]] as number[][])[sector];
+    const [r, g, b] = (
+      [
+        [chroma, x, 0],
+        [x, chroma, 0],
+        [0, chroma, x],
+        [0, x, chroma],
+        [x, 0, chroma],
+        [chroma, 0, x]
+      ] as number[][]
+    )[sector];
     const m = light - chroma / 2;
     palette[index * 3] = Math.round(Math.max(0, Math.min(1, r + m)) * 255);
     palette[index * 3 + 1] = Math.round(Math.max(0, Math.min(1, g + m)) * 255);
@@ -64,7 +73,10 @@ export function parsePcx(entry: GameOneArchiveEntry): IndexedImage | undefined {
   const bytesPerLine = u16(data, 66);
   if (width < 1 || height < 1 || planes !== 1 || bytesPerLine < width) return;
   const paletteOffset = data.length - 769;
-  const palette = paletteOffset >= 128 && data[paletteOffset] === 0x0c ? data.slice(paletteOffset + 1) : diagnosticPalette();
+  const palette =
+    paletteOffset >= 128 && data[paletteOffset] === 0x0c
+      ? data.slice(paletteOffset + 1)
+      : diagnosticPalette();
   const decoded = new Uint8Array(bytesPerLine * height);
   let source = 128;
   let target = 0;
@@ -77,7 +89,8 @@ export function parsePcx(entry: GameOneArchiveEntry): IndexedImage | undefined {
   }
   if (target < decoded.length) return;
   const pixels = new Uint8Array(width * height);
-  for (let row = 0; row < height; row += 1) pixels.set(decoded.subarray(row * bytesPerLine, row * bytesPerLine + width), row * width);
+  for (let row = 0; row < height; row += 1)
+    pixels.set(decoded.subarray(row * bytesPerLine, row * bytesPerLine + width), row * width);
   return { kind: 'bitmap', id: entry.id, width, height, pixels, palette, byteLength: data.length };
 }
 
@@ -88,7 +101,16 @@ export function parseSprite(entry: GameOneArchiveEntry): IndexedImage | undefine
   const width = u16(data, 2);
   const height = u16(data, 4);
   const fixedHeaderLength = magic & 1 ? 10 : 6;
-  if (!(magic & 0x8000) || !(magic & 2) || width < 1 || height < 1 || width > 2048 || height > 2048 || fixedHeaderLength + height * 2 > data.length) return;
+  if (
+    !(magic & 0x8000) ||
+    !(magic & 2) ||
+    width < 1 ||
+    height < 1 ||
+    width > 2048 ||
+    height > 2048 ||
+    fixedHeaderLength + height * 2 > data.length
+  )
+    return;
   const pixels = new Uint8Array(width * height);
   const alpha = new Uint8Array(width * height);
   const rowOffsets = spriteRowOffsets(data, fixedHeaderLength, height);
@@ -115,11 +137,26 @@ export function parseSprite(entry: GameOneArchiveEntry): IndexedImage | undefine
       } else break;
     }
   }
-  return { kind: 'sprite', id: entry.id, width, height, pixels, alpha, hotspotX: magic & 1 ? i16(data, 6) : undefined, hotspotY: magic & 1 ? i16(data, 8) : undefined, magic, byteLength: data.length };
+  return {
+    kind: 'sprite',
+    id: entry.id,
+    width,
+    height,
+    pixels,
+    alpha,
+    hotspotX: magic & 1 ? i16(data, 6) : undefined,
+    hotspotY: magic & 1 ? i16(data, 8) : undefined,
+    magic,
+    byteLength: data.length
+  };
 }
 
 export function encodeSprite(image: IndexedImage) {
-  if (image.kind !== 'sprite' || !image.magic || ((image.magic & 1) !== 0 && (image.hotspotX === undefined || image.hotspotY === undefined))) {
+  if (
+    image.kind !== 'sprite' ||
+    !image.magic ||
+    ((image.magic & 1) !== 0 && (image.hotspotX === undefined || image.hotspotY === undefined))
+  ) {
     throw new Error(`Sprite ${image.id} is missing its original format metadata.`);
   }
   if (image.width < 1 || image.height < 1 || image.width > 2048 || image.height > 2048) {
@@ -139,7 +176,9 @@ export function encodeSprite(image: IndexedImage) {
       const length = end - x;
       const command = visible ? length : (0x10000 - length) & 0xffff;
       payload.push(command & 0xff, command >>> 8);
-      if (visible) for (let column = x; column < end; column += 1) payload.push(image.pixels[row * image.width + column]);
+      if (visible)
+        for (let column = x; column < end; column += 1)
+          payload.push(image.pixels[row * image.width + column]);
       x = end;
     }
     if (payload.length > 0xffff) throw new Error(`Sprite ${image.id} row ${row} is too large to encode.`);
@@ -169,7 +208,6 @@ export function encodeSprite(image: IndexedImage) {
   return output;
 }
 
-
 export function readBitmaps(data: Uint8Array) {
   const entries = extractGameOneArchive(data);
   return { entries, images: entries.map(parsePcx).filter((image): image is IndexedImage => Boolean(image)) };
@@ -177,5 +215,8 @@ export function readBitmaps(data: Uint8Array) {
 
 export function readSprites(data: Uint8Array) {
   const entries = extractGameOneArchive(data);
-  return { entries, images: entries.map(parseSprite).filter((image): image is IndexedImage => Boolean(image)) };
+  return {
+    entries,
+    images: entries.map(parseSprite).filter((image): image is IndexedImage => Boolean(image))
+  };
 }

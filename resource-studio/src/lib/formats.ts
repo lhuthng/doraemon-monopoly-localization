@@ -31,12 +31,7 @@ function u16(data: Uint8Array, offset: number) {
 }
 
 function u32(data: Uint8Array, offset: number) {
-  return (
-    data[offset] |
-    (data[offset + 1] << 8) |
-    (data[offset + 2] << 16) |
-    (data[offset + 3] << 24)
-  ) >>> 0;
+  return (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
 }
 
 function putU32(data: Uint8Array, offset: number, value: number) {
@@ -62,7 +57,8 @@ export type GameOneArchiveEntry = {
 };
 
 function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): ArchiveNode[] {
-  if (!hasSignature(data, offset)) throw new Error(`Missing GameOne archive header at 0x${offset.toString(16)}.`);
+  if (!hasSignature(data, offset))
+    throw new Error(`Missing GameOne archive header at 0x${offset.toString(16)}.`);
   const count = u32(data, offset + 0x42);
   const table = offset + 0x66;
   if (count > 100_000 || table + count * 4 > data.length) {
@@ -71,7 +67,8 @@ function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): Archiv
   const result: ArchiveNode[] = [{ path, offset, container: true }];
   for (let index = 0; index < count; index += 1) {
     const child = offset + u32(data, table + index * 4);
-    if (child >= data.length) throw new Error(`Archive entry ${[...path, index].join('/')} is outside the file.`);
+    if (child >= data.length)
+      throw new Error(`Archive entry ${[...path, index].join('/')} is outside the file.`);
     const childPath = [...path, index];
     if (hasSignature(data, child)) result.push(...archiveNodes(data, child, childPath));
     else result.push({ path: childPath, offset: child, container: false });
@@ -79,8 +76,14 @@ function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): Archiv
   return result;
 }
 
-function validateArchiveStructure(data: Uint8Array, offset = 0, expectedEnd = data.length, path: number[] = []) {
-  if (!hasSignature(data, offset)) throw new Error(`Missing GameOne archive header at 0x${offset.toString(16)}.`);
+function validateArchiveStructure(
+  data: Uint8Array,
+  offset = 0,
+  expectedEnd = data.length,
+  path: number[] = []
+) {
+  if (!hasSignature(data, offset))
+    throw new Error(`Missing GameOne archive header at 0x${offset.toString(16)}.`);
   const count = u32(data, offset + 0x42);
   const table = offset + 0x66;
   const tableEnd = table + (count + 1) * 4;
@@ -104,7 +107,9 @@ function validateArchiveStructure(data: Uint8Array, offset = 0, expectedEnd = da
     const end = index + 1 < childOffsets.length ? childOffsets[index + 1] : terminal;
     const childPath = [...path, index];
     if (child < tableEnd || child >= end || end > terminal) {
-      throw new Error(`Archive entry ${childPath.join('/')} has invalid bounds 0x${child.toString(16)}–0x${end.toString(16)}.`);
+      throw new Error(
+        `Archive entry ${childPath.join('/')} has invalid bounds 0x${child.toString(16)}–0x${end.toString(16)}.`
+      );
     }
     if (hasSignature(data, child)) validateArchiveStructure(data, child, end, childPath);
   }
@@ -185,27 +190,34 @@ function decompress(payload: Uint8Array) {
 export function extractGameOneArchive(data: Uint8Array): GameOneArchiveEntry[] {
   const nodes = archiveNodes(data);
   const starts = [...new Set([...nodes.map((node) => node.offset), data.length])].sort((a, b) => a - b);
-  return nodes.filter((node) => !node.container).map((node) => {
-    const end = starts.find((start) => start > node.offset);
-    const id = node.path.map((part) => String(part).padStart(3, '0')).join('/');
-    if (end === undefined) return { id, path: node.path, packed: new Uint8Array(), error: 'Cannot find entry end.' };
-    const packed = data.slice(node.offset, end);
-    try {
-      return { id, path: node.path, packed, data: decompress(packed) };
-    } catch (error) {
-      return { id, path: node.path, packed, error: error instanceof Error ? error.message : String(error) };
-    }
-  });
+  return nodes
+    .filter((node) => !node.container)
+    .map((node) => {
+      const end = starts.find((start) => start > node.offset);
+      const id = node.path.map((part) => String(part).padStart(3, '0')).join('/');
+      if (end === undefined)
+        return { id, path: node.path, packed: new Uint8Array(), error: 'Cannot find entry end.' };
+      const packed = data.slice(node.offset, end);
+      try {
+        return { id, path: node.path, packed, data: decompress(packed) };
+      } catch (error) {
+        return { id, path: node.path, packed, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
 }
 
 function parseTokens(bytes: Uint8Array) {
   const tokens: GlyphToken[] = [];
-  for (let index = 0; index < bytes.length; ) {
+  for (let index = 0; index < bytes.length;) {
     const first = bytes[index];
     if (first === 0) {
       tokens.push({ type: 'end' });
       index += 1;
-    } else if (first === 0x5c && index + 1 < bytes.length && (bytes[index + 1] === 0x4e || bytes[index + 1] === 0x6e)) {
+    } else if (
+      first === 0x5c &&
+      index + 1 < bytes.length &&
+      (bytes[index + 1] === 0x4e || bytes[index + 1] === 0x6e)
+    ) {
       tokens.push({ type: 'newline' });
       index += 2;
     } else if (first & 0x80) {
@@ -230,7 +242,8 @@ export function parseStrings(data: Uint8Array): StringRecord[] {
       if (end === undefined) throw new Error(`Cannot find the end of string ${node.path.join('/')}.`);
       const bytes = decompress(data.slice(node.offset, end));
       const tokens = parseTokens(bytes);
-      if (tokens.at(-1)?.type !== 'end') throw new Error(`String ${node.path.join('/')} is not NUL-terminated.`);
+      if (tokens.at(-1)?.type !== 'end')
+        throw new Error(`String ${node.path.join('/')} is not NUL-terminated.`);
       return {
         id: node.path.map((part) => String(part).padStart(3, '0')).join('/'),
         path: node.path,
@@ -280,7 +293,8 @@ function compress(bytes: Uint8Array) {
   const payload = new Uint8Array(4 + packed.length);
   putU32(payload, 0, bytes.length);
   payload.set(packed, 4);
-  if (!decompress(payload).every((byte, index) => byte === bytes[index])) throw new Error('Internal compression verification failed.');
+  if (!decompress(payload).every((byte, index) => byte === bytes[index]))
+    throw new Error('Internal compression verification failed.');
   return payload;
 }
 
@@ -289,13 +303,19 @@ function encodeTranslation(text: string) {
   const bytes = new Uint8Array(normalized.length + 1);
   for (let index = 0; index < normalized.length; index += 1) {
     const code = normalized.charCodeAt(index);
-    if (code > 0x7f) throw new Error(`Translation contains non-ASCII character ${JSON.stringify(normalized[index])}.`);
+    if (code > 0x7f)
+      throw new Error(`Translation contains non-ASCII character ${JSON.stringify(normalized[index])}.`);
     bytes[index] = code;
   }
   return bytes;
 }
 
-function rebuildContainer(original: Uint8Array, offset: number, path: number[], replacements: Map<string, Uint8Array>): Uint8Array {
+function rebuildContainer(
+  original: Uint8Array,
+  offset: number,
+  path: number[],
+  replacements: Map<string, Uint8Array>
+): Uint8Array {
   if (!hasSignature(original, offset)) throw new Error(`Missing container at 0x${offset.toString(16)}.`);
   const count = u32(original, offset + 0x42);
   const table = offset + 0x66;
@@ -304,7 +324,8 @@ function rebuildContainer(original: Uint8Array, offset: number, path: number[], 
   const header = original.slice(offset, firstChild);
   const children = childOffsets.map((childOffset, index) => {
     const childPath = [...path, index];
-    if (hasSignature(original, childOffset)) return rebuildContainer(original, childOffset, childPath, replacements);
+    if (hasSignature(original, childOffset))
+      return rebuildContainer(original, childOffset, childPath, replacements);
     const key = childPath.map((part) => String(part).padStart(3, '0')).join('/');
     const replacement = replacements.get(key);
     if (!replacement) throw new Error(`Missing translation payload ${key}.`);
@@ -330,7 +351,10 @@ function rebuildContainer(original: Uint8Array, offset: number, path: number[], 
   return output;
 }
 
-export function rebuildGameOneArchive(original: Uint8Array, decodedReplacements: ReadonlyMap<string, Uint8Array>) {
+export function rebuildGameOneArchive(
+  original: Uint8Array,
+  decodedReplacements: ReadonlyMap<string, Uint8Array>
+) {
   const replacements = new Map<string, Uint8Array>();
   const nodes = archiveNodes(original);
   const starts = [...new Set([...nodes.map((node) => node.offset), original.length])].sort((a, b) => a - b);
@@ -354,29 +378,43 @@ export function rebuildGameOneArchive(original: Uint8Array, decodedReplacements:
   const verified = new Map(extractGameOneArchive(rebuilt).map((entry) => [entry.id, entry]));
   for (const [id, expected] of decodedReplacements) {
     const actual = verified.get(id);
-    if (!actual?.data || actual.data.length !== expected.length || !actual.data.every((byte, index) => byte === expected[index])) {
+    if (
+      !actual?.data ||
+      actual.data.length !== expected.length ||
+      !actual.data.every((byte, index) => byte === expected[index])
+    ) {
       throw new Error(`Archive verification failed for replacement ${id}.`);
     }
   }
   return rebuilt;
 }
 
-export function rebuildStrings(original: Uint8Array, records: StringRecord[], translations: Record<string, string>) {
+export function rebuildStrings(
+  original: Uint8Array,
+  records: StringRecord[],
+  translations: Record<string, string>
+) {
   const replacements = new Map<string, Uint8Array>();
   for (const record of records) {
     const translation = translations[record.id];
-    if (translation !== undefined && translation.length > 0) replacements.set(record.id, encodeTranslation(translation));
+    if (translation !== undefined && translation.length > 0)
+      replacements.set(record.id, encodeTranslation(translation));
   }
   const rebuilt = rebuildGameOneArchive(original, replacements);
   const verified = parseStrings(rebuilt);
-  if (verified.length !== records.length) throw new Error(`Rebuilt archive has ${verified.length} records instead of ${records.length}.`);
+  if (verified.length !== records.length)
+    throw new Error(`Rebuilt archive has ${verified.length} records instead of ${records.length}.`);
   const verifiedById = new Map(verified.map((record) => [record.id, record.bytes]));
   for (const record of records) {
     const translation = translations[record.id];
     if (translation === undefined || translation.length === 0) continue;
     const expected = encodeTranslation(translation);
     const actual = verifiedById.get(record.id);
-    if (!actual || actual.length !== expected.length || !actual.every((byte, index) => byte === expected[index])) {
+    if (
+      !actual ||
+      actual.length !== expected.length ||
+      !actual.every((byte, index) => byte === expected[index])
+    ) {
       throw new Error(`Export verification failed for translated record ${record.id}.`);
     }
   }
@@ -405,13 +443,21 @@ export function parseSysFont(data: Uint8Array): SysFont {
 }
 
 export function rebuildSysFont(font: SysFont) {
-  if (font.glyphs.length !== font.count) throw new Error(`Expected ${font.count} sysfont glyphs; got ${font.glyphs.length}.`);
+  if (font.glyphs.length !== font.count)
+    throw new Error(`Expected ${font.count} sysfont glyphs; got ${font.glyphs.length}.`);
   const tableEnd = 2 + font.count * 4;
   const firstGlyphOffset = u32(font.bytes, 2);
-  if (firstGlyphOffset < tableEnd || firstGlyphOffset > font.bytes.length) throw new Error('Invalid sysfont first glyph offset.');
+  if (firstGlyphOffset < tableEnd || firstGlyphOffset > font.bytes.length)
+    throw new Error('Invalid sysfont first glyph offset.');
   let length = firstGlyphOffset;
   for (const glyph of font.glyphs) {
-    if (!glyph.width || !glyph.height || glyph.width > 96 || glyph.height > 96 || glyph.pixels.length !== glyph.width * glyph.height) {
+    if (
+      !glyph.width ||
+      !glyph.height ||
+      glyph.width > 96 ||
+      glyph.height > 96 ||
+      glyph.pixels.length !== glyph.width * glyph.height
+    ) {
       throw new Error(`Invalid sysfont glyph ${glyph.width}×${glyph.height}.`);
     }
     length += 2 + glyph.pixels.length;
@@ -428,7 +474,15 @@ export function rebuildSysFont(font: SysFont) {
     cursor += 2 + glyph.pixels.length;
   }
   const verified = parseSysFont(output);
-  if (verified.count !== font.count || verified.glyphs.some((glyph, index) => glyph.width !== font.glyphs[index].width || glyph.height !== font.glyphs[index].height || !glyph.pixels.every((value, pixel) => value === font.glyphs[index].pixels[pixel]))) {
+  if (
+    verified.count !== font.count ||
+    verified.glyphs.some(
+      (glyph, index) =>
+        glyph.width !== font.glyphs[index].width ||
+        glyph.height !== font.glyphs[index].height ||
+        !glyph.pixels.every((value, pixel) => value === font.glyphs[index].pixels[pixel])
+    )
+  ) {
     throw new Error('Rebuilt sysfont verification failed.');
   }
   return output;

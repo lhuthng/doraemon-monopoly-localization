@@ -18,7 +18,12 @@ export function sysfontWidth(text: string, widths: readonly number[]) {
   }, 0);
 }
 
-export function reflowGameText(text: string, maxWidth: number, widths: readonly number[], splitWords = false) {
+export function reflowGameText(
+  text: string,
+  maxWidth: number,
+  widths: readonly number[],
+  splitWords = false
+) {
   const width = Math.max(1, Math.floor(maxWidth));
   const lines: string[] = [];
   const oversizedWords: string[] = [];

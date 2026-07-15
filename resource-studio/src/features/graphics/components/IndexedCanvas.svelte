@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { diagnosticPalette, type IndexedImage, type Palette } from './lib/asset-formats';
+  import { diagnosticPalette, type IndexedImage, type Palette } from '../../../lib/asset-formats';
 
   let { image, palette, scale = 1 }: { image: IndexedImage; palette?: Palette; scale?: number } = $props();
   let canvas: HTMLCanvasElement;
@@ -22,4 +22,10 @@
   });
 </script>
 
-<canvas bind:this={canvas} width={image.width} height={image.height} style:width={`${image.width * scale}px`} style:height={`${image.height * scale}px`}></canvas>
+<canvas
+  bind:this={canvas}
+  width={image.width}
+  height={image.height}
+  style:width={`${image.width * scale}px`}
+  style:height={`${image.height * scale}px`}
+></canvas>

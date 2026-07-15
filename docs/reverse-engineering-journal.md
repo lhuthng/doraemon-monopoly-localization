@@ -1,7 +1,7 @@
 # Doraemon Monopoly resource-loader reverse-engineering journal
 
 Date: 2026-07-14  
-Target: GameOne's 1998 Windows 95/98 *Doraemon Monopoly* executable  
+Target: GameOne's 1998 Windows 95/98 _Doraemon Monopoly_ executable  
 Scope: discovery of `strings.dat` loading, string-group objects, gadget-record
 lookup, record-cache behavior, and the proposed cache-size patch
 
@@ -27,16 +27,16 @@ Its root contains nine child containers, indexed `0` through `8`. Those
 containers contain the following numbers of leaf records:
 
 | Outer group | Leaf count |
-| ---: | ---: |
-| `000` | 36 |
-| `001` | 42 |
-| `002` | 51 |
-| `003` | 136 |
-| `004` | 136 |
-| `005` | 136 |
-| `006` | 136 |
-| `007` | 136 |
-| `008` | 136 |
+| ----------: | ---------: |
+|       `000` |         36 |
+|       `001` |         42 |
+|       `002` |         51 |
+|       `003` |        136 |
+|       `004` |        136 |
+|       `005` |        136 |
+|       `006` |        136 |
+|       `007` |        136 |
+|       `008` |        136 |
 
 This totals 945 leaf records. The decoded content established that group
 `001` contains the gadget/tool names and descriptions. Its final record is
@@ -169,16 +169,16 @@ Since this is a 32-bit executable, every pointer occupies four bytes. The
 array mapping is therefore:
 
 | Group index | Loader-pointer slot |
-| ---: | ---: |
-| `000` | `004CC9E8` |
-| `001` | `004CC9EC` |
-| `002` | `004CC9F0` |
-| `003` | `004CC9F4` |
-| `004` | `004CC9F8` |
-| `005` | `004CC9FC` |
-| `006` | `004CCA00` |
-| `007` | `004CCA04` |
-| `008` | `004CCA08` |
+| ----------: | ------------------: |
+|       `000` |          `004CC9E8` |
+|       `001` |          `004CC9EC` |
+|       `002` |          `004CC9F0` |
+|       `003` |          `004CC9F4` |
+|       `004` |          `004CC9F8` |
+|       `005` |          `004CC9FC` |
+|       `006` |          `004CCA00` |
+|       `007` |          `004CCA04` |
+|       `008` |          `004CCA08` |
 
 This mapping follows directly from `004CC9E8 + index * 4` and is **confirmed
 statically**.
@@ -452,13 +452,13 @@ specific cache-exhaustion branch.
 
 The decoded sizes observed in the working and fuller English files were:
 
-| Record | Working `3839.dat` | Fuller English file |
-| ---: | ---: | ---: |
-| `001/038` | 10 bytes | 119 bytes |
-| `001/039` | 10 bytes | 83 bytes |
-| `001/040` | 89 bytes | 111 bytes |
-| `001/041` | 86 bytes | 103 bytes |
-| **Total of these four** | **195 bytes** | **416 bytes** |
+|                  Record | Working `3839.dat` | Fuller English file |
+| ----------------------: | -----------------: | ------------------: |
+|               `001/038` |           10 bytes |           119 bytes |
+|               `001/039` |           10 bytes |            83 bytes |
+|               `001/040` |           89 bytes |           111 bytes |
+|               `001/041` |           86 bytes |           103 bytes |
+| **Total of these four** |      **195 bytes** |       **416 bytes** |
 
 Making record 38 short saves 109 decoded bytes. Making record 39 short saves
 73 decoded bytes. Making both short saves 182 bytes before considering the
@@ -517,10 +517,10 @@ D SS:EBP-18
 
 The relevant stack locals are:
 
-| Stack local | Meaning |
-| --- | --- |
-| `[EBP-18]` | available cache space from the free-space query |
-| `[EBP-10]` | required decoded size of the requested record |
+| Stack local | Meaning                                         |
+| ----------- | ----------------------------------------------- |
+| `[EBP-18]`  | available cache space from the free-space query |
+| `[EBP-10]`  | required decoded size of the requested record   |
 
 Both are little-endian 32-bit values. The branch is reached only when the
 available value is smaller than the required value after eviction attempts.
@@ -549,11 +549,11 @@ This changes the per-group cache from:
 
 For this PE layout, the instruction's virtual address and file offset are:
 
-| Location type | Value |
-| --- | ---: |
-| Runtime virtual address | `0045660B` |
+| Location type                  |      Value |
+| ------------------------------ | ---------: |
+| Runtime virtual address        | `0045660B` |
 | RVA from image base `00400000` | `0005660B` |
-| Raw file offset | `0005660B` |
+| Raw file offset                | `0005660B` |
 
 The original bytes must always be verified before patching:
 
