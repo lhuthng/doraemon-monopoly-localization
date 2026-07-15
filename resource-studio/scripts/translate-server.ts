@@ -1,4 +1,5 @@
 import { pipeline, env } from '@huggingface/transformers';
+import { VIETNAMESE_TO_SLOT } from '../src/lib/vietnamese-font';
 
 type TargetLanguage = 'en' | 'vi';
 type ModelId = 'nllb' | 'm2m100';
@@ -69,24 +70,21 @@ function cleanAsciiPunctuation(text: string) {
     .trim();
 }
 
-function vietnameseAscii(text: string) {
+function vietnameseText(text: string) {
   return cleanAsciiPunctuation(text)
-    .replaceAll('đ', 'd')
-    .replaceAll('Đ', 'D')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/cua tuy y|cua bat ky|cua o bat cu dau/gi, 'Canh cua than ky')
-    .replace(/chuon chuon tre|chuon chuon bang tre/gi, 'Chong chong tre')
-    .replace(/banh bao dau do|banh dau do/gi, 'banh ran')
+    .replace(/cửa tùy ý|cửa bất kỳ|cửa ở bất cứ đâu/gi, 'Cánh cửa thần kỳ')
+    .replace(/chuồn chuồn tre|chuồn chuồn bằng tre/gi, 'Chong chóng tre')
+    .replace(/bánh bao đậu đỏ|bánh đậu đỏ/gi, 'bánh rán')
+    .normalize('NFC')
     .split('')
-    .filter((character) => character.charCodeAt(0) < 128)
+    .filter((character) => character.charCodeAt(0) < 128 || VIETNAMESE_TO_SLOT.has(character))
     .join('')
     .trim();
 }
 
 function cleanupTranslation(text: string, target: TargetLanguage) {
   if (target === 'en') return cleanAsciiPunctuation(text);
-  if (target === 'vi') return vietnameseAscii(text);
+  if (target === 'vi') return vietnameseText(text);
   throw new Error(`No cleanup code is available for "${target}".`);
 }
 

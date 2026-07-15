@@ -2,7 +2,10 @@ export type GlyphToken =
   | { type: 'end' }
   | { type: 'newline' }
   | { type: 'ascii'; byte: number; text: string }
+  | { type: 'vietnamese'; slot: number; text: string }
   | { type: 'glyph'; id: number };
+
+import { vietnameseBytes, vietnameseCharacter, vietnameseSlot } from './vietnamese-font';
 
 export type StringRecord = {
   id: string;
@@ -222,7 +225,9 @@ function parseTokens(bytes: Uint8Array) {
       index += 2;
     } else if (first & 0x80) {
       if (index + 1 >= bytes.length) throw new Error('String ends with an incomplete two-byte glyph ID.');
-      tokens.push({ type: 'glyph', id: ((first & 0x7f) << 8) | bytes[index + 1] });
+      const slot = vietnameseSlot(first, bytes[index + 1]);
+      if (slot === undefined) tokens.push({ type: 'glyph', id: ((first & 0x7f) << 8) | bytes[index + 1] });
+      else tokens.push({ type: 'vietnamese', slot, text: vietnameseCharacter(slot) });
       index += 2;
     } else {
       tokens.push({ type: 'ascii', byte: first, text: String.fromCharCode(first) });
@@ -300,14 +305,19 @@ function compress(bytes: Uint8Array) {
 
 function encodeTranslation(text: string) {
   const normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').replaceAll('\n', '\\N');
-  const bytes = new Uint8Array(normalized.length + 1);
-  for (let index = 0; index < normalized.length; index += 1) {
-    const code = normalized.charCodeAt(index);
-    if (code > 0x7f)
-      throw new Error(`Translation contains non-ASCII character ${JSON.stringify(normalized[index])}.`);
-    bytes[index] = code;
+  const bytes: number[] = [];
+  for (const character of normalized.normalize('NFC')) {
+    const code = character.charCodeAt(0);
+    if (code <= 0x7f) bytes.push(code);
+    else {
+      const encoded = vietnameseBytes(character);
+      if (!encoded)
+        throw new Error(`Translation contains unsupported character ${JSON.stringify(character)}.`);
+      bytes.push(...encoded);
+    }
   }
-  return bytes;
+  bytes.push(0);
+  return Uint8Array.from(bytes);
 }
 
 function rebuildContainer(
@@ -445,10 +455,13 @@ export function parseSysFont(data: Uint8Array): SysFont {
 export function rebuildSysFont(font: SysFont) {
   if (font.glyphs.length !== font.count)
     throw new Error(`Expected ${font.count} sysfont glyphs; got ${font.glyphs.length}.`);
-  const tableEnd = 2 + font.count * 4;
-  const firstGlyphOffset = u32(font.bytes, 2);
-  if (firstGlyphOffset < tableEnd || firstGlyphOffset > font.bytes.length)
+  const originalCount = u16(font.bytes, 0);
+  const originalFirstGlyphOffset = u32(font.bytes, 2);
+  const originalTableEnd = 2 + originalCount * 4;
+  if (originalFirstGlyphOffset < originalTableEnd || originalFirstGlyphOffset > font.bytes.length)
     throw new Error('Invalid sysfont first glyph offset.');
+  const headerPadding = originalFirstGlyphOffset - originalTableEnd;
+  const firstGlyphOffset = 2 + font.count * 4 + headerPadding;
   let length = firstGlyphOffset;
   for (const glyph of font.glyphs) {
     if (
@@ -463,7 +476,9 @@ export function rebuildSysFont(font: SysFont) {
     length += 2 + glyph.pixels.length;
   }
   const output = new Uint8Array(length);
-  output.set(font.bytes.slice(0, firstGlyphOffset));
+  output.set(font.bytes.slice(0, Math.min(originalFirstGlyphOffset, firstGlyphOffset)));
+  output[0] = font.count & 0xff;
+  output[1] = (font.count >>> 8) & 0xff;
   let cursor = firstGlyphOffset;
   for (let index = 0; index < font.glyphs.length; index += 1) {
     const glyph = font.glyphs[index];
@@ -497,6 +512,7 @@ export function validateChiFont(data: Uint8Array) {
 
 export function tokenLabel(token: GlyphToken) {
   if (token.type === 'glyph') return `g${token.id}`;
+  if (token.type === 'vietnamese') return `vi${token.slot}:${token.text}`;
   if (token.type === 'end') return 'NUL';
   if (token.type === 'newline') return '↵';
   const printable = token.byte >= 32 && token.byte < 127 ? JSON.stringify(token.text) : '';

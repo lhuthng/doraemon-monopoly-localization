@@ -26,7 +26,7 @@
 
   const TARGET_LANGUAGES: { code: TargetLanguage; label: string; cleanup: string }[] = [
     { code: 'en', label: 'English', cleanup: 'server punctuation cleanup' },
-    { code: 'vi', label: 'Vietnamese', cleanup: 'server ASCII without accents + Doraemon terms' }
+    { code: 'vi', label: 'Vietnamese', cleanup: 'supported Vietnamese glyphs + Doraemon terms' }
   ];
 
   let records = $state<StringRecord[]>([]);
@@ -121,6 +121,7 @@
     let text = '';
     for (const token of record.tokens) {
       if (token.type === 'glyph') text += CHIFONT_MAP[token.id] || `⟦g${token.id}⟧`;
+      else if (token.type === 'vietnamese') text += token.text;
       else if (token.type === 'ascii') text += token.text;
       else if (token.type === 'newline') text += '\n';
     }

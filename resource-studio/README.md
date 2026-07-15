@@ -11,6 +11,7 @@ bun run dev
 bun run check
 bun run lint
 bun run build
+bun run test
 ```
 
 Run `bun run translate-server` in another terminal only when local machine
@@ -19,15 +20,35 @@ service downloads and caches the selected Transformers.js model.
 
 ## Workspaces
 
-| Route     | Name            | Responsibility                                                            |
-| --------- | --------------- | ------------------------------------------------------------------------- |
-| `/`       | String studio   | `strings.dat` decoding, editing, reflow, translation, and verified export |
-| `/assets` | Graphics studio | PCX inspection and indexed Sprite1/Sprite2 PNG round-tripping             |
-| `/fonts`  | Font studio     | Five `sysfont.dat` variants and numbered glyph PNG round-tripping         |
+| Route     | Name            | Responsibility                                                               |
+| --------- | --------------- | ---------------------------------------------------------------------------- |
+| `/`       | String studio   | `strings.dat` decoding, editing, reflow, translation, and verified export    |
+| `/assets` | Graphics studio | PCX inspection and indexed Sprite1/Sprite2 PNG round-tripping                |
+| `/fonts`  | Font studio     | Original and Vietnamese `sysfont.dat` banks with numbered PNG round-tripping |
 
 The app automatically loads `public/game/strings-CN.dat` and
 `public/game/sysfont.dat`. Graphics archives are loaded on demand. These are
 working copies and may already contain localization changes.
+
+## Vietnamese font prototype
+
+Font Studio expands the bundled 640-record sysfont in memory to 1,920 records.
+Variant 0 contains generated Vietnamese feasibility glyphs; variants 1–4 contain
+valid transparent placeholders that can be replaced using numbered PNGs.
+
+Generate standalone test files for the known Chinese executable with:
+
+```sh
+bun run build:vi-font
+bun run patch:vi-exe
+```
+
+The commands write `../tmp/sysfont-vi.dat` and `../tmp/Đô-rê-mon.exe`. The
+patched executable loads the expanded font directly from `sysfont-vi.dat`, so
+the original `sysfont.dat` can remain beside it unchanged. The patcher rejects
+any executable whose SHA-256 does not match the analyzed build. See
+[`../archive/EXECUTABLE_FONT_RESEARCH.md`](../archive/EXECUTABLE_FONT_RESEARCH.md)
+for addresses, encoding, and remaining DOSBox-X verification steps.
 
 ## Source layout
 

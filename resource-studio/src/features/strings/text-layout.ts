@@ -14,7 +14,10 @@ export const DIALOG_LAYOUT = {
 export function sysfontWidth(text: string, widths: readonly number[]) {
   return [...text].reduce((width, character) => {
     const code = character.charCodeAt(0);
-    return width + (code >= 0 && code < widths.length ? widths[code] : 0);
+    if (code >= 0 && code < widths.length) return width + widths[code];
+    const base = character === 'Đ' ? 'D' : character === 'đ' ? 'd' : character.normalize('NFD')[0];
+    const baseCode = base.charCodeAt(0);
+    return width + (baseCode < widths.length ? widths[baseCode] : 0);
   }, 0);
 }
 

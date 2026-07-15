@@ -2,10 +2,18 @@
   import { onMount } from 'svelte';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
   import { parseSysFont, rebuildSysFont, type SysFont, type SysGlyph } from '../../lib/formats';
+  import {
+    extendSysFont,
+    VIETNAMESE_CHARACTERS,
+    VIETNAMESE_SLOTS_PER_VARIANT,
+    vietnameseBytes,
+    vietnameseGlyphIndex
+  } from '../../lib/vietnamese-font';
   import { storedZip } from '../../lib/stored-zip';
   import FontGlyph from './components/FontGlyph.svelte';
 
   let font: SysFont | undefined = $state();
+  let family = $state<'original' | 'vietnamese'>('original');
   let variant = $state(0);
   let error = $state('');
   let status = $state('Loading bundled sysfont.dat…');
@@ -16,8 +24,8 @@
     try {
       const response = await fetch('/game/sysfont.dat');
       if (!response.ok) throw new Error(`sysfont.dat returned HTTP ${response.status}.`);
-      font = parseSysFont(new Uint8Array(await response.arrayBuffer()));
-      status = `${font.count} glyphs · ${font.variants} variants · 128 slots per variant`;
+      font = extendSysFont(parseSysFont(new Uint8Array(await response.arrayBuffer())));
+      status = `${font.count} glyphs · five original variants · five Vietnamese banks`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
       status = 'Loading failed.';
@@ -58,18 +66,34 @@
     );
   }
 
+  function visibleStart() {
+    return family === 'original' ? variant * 128 : vietnameseGlyphIndex(variant, 0);
+  }
+
+  function visibleCount() {
+    return family === 'original' ? 128 : VIETNAMESE_SLOTS_PER_VARIANT;
+  }
+
+  function vietnameseCodeLabel(slot: number) {
+    const character = VIETNAMESE_CHARACTERS[slot];
+    if (!character) return `reserved slot ${slot}`;
+    const bytes = vietnameseBytes(character)!;
+    return `${bytes.map((byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ')} · slot ${slot}`;
+  }
+
   async function exportVariant() {
     if (!font) return;
-    status = `Encoding variant ${variant} PNGs…`;
+    const start = visibleStart();
+    status = `Encoding ${family} variant ${variant} PNGs…`;
     try {
       const entries = await Promise.all(
-        font.glyphs.slice(variant * 128, variant * 128 + 128).map(async (glyph, index) => ({
-          name: `${variant * 128 + index}.png`,
+        font.glyphs.slice(start, start + visibleCount()).map(async (glyph, index) => ({
+          name: `${start + index}.png`,
           bytes: new Uint8Array(await (await pngForGlyph(glyph)).arrayBuffer())
         }))
       );
-      downloadBlob(storedZip(entries), `sysfont-variant-${variant}.zip`);
-      status = `Exported variant ${variant}: 128 numbered transparent PNGs.`;
+      downloadBlob(storedZip(entries), `sysfont-${family}-variant-${variant}.zip`);
+      status = `Exported ${family} variant ${variant}: ${visibleCount()} numbered transparent PNGs.`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     }
@@ -136,7 +160,7 @@
     <div>
       <p class="eyebrow">DORAEMON MONOPOLY</p>
       <h1>Font studio</h1>
-      <p class="subtle">Inspect, replace, and rebuild the five 128-slot, single-byte sysfont variants.</p>
+      <p class="subtle">Edit the original fonts and five proportional Vietnamese CC/CD banks.</p>
     </div>
     <div class="header-actions">
       <a class="load-button" href="/" data-route>String studio</a><a
@@ -149,11 +173,24 @@
   <p class="status">{status}</p>
   {#if error}<p class="error">{error}</p>{/if}
   {#if font}
+    <nav class="font-tabs" aria-label="Font family">
+      <button class:active={family === 'original'} onclick={() => (family = 'original')}
+        >Original sysfont</button
+      >
+      <button class:active={family === 'vietnamese'} onclick={() => (family = 'vietnamese')}
+        >Vietnamese CC/CD</button
+      >
+    </nav>
     <nav class="font-tabs" aria-label="Font variant">
-      {#each Array.from({ length: font.variants }, (_, index) => index) as index (index)}<button
+      {#each Array.from({ length: 5 }, (_, index) => index) as index (index)}<button
           class:active={variant === index}
           onclick={() => (variant = index)}
-          >Variant {index} <small>{index * 128}–{index * 128 + 127}</small></button
+          >Variant {index}
+          <small
+            >{family === 'original'
+              ? `${index * 128}–${index * 128 + 127}`
+              : `${vietnameseGlyphIndex(index, 0)}–${vietnameseGlyphIndex(index, 255)}`}</small
+          ></button
         >{/each}
     </nav>
     <section
@@ -169,7 +206,7 @@
       ondrop={drop}
     >
       <strong>Drop replacement PNGs here</strong><span
-        >Name each image by its absolute glyph index: <code>0.png</code> through <code>639.png</code>.
+        >Name each image by its absolute glyph index: <code>0.png</code> through <code>1919.png</code>.
         Transparent pixels become background; every non-transparent pixel becomes a drawn black font pixel.</span
       >
     </section>
@@ -182,16 +219,19 @@
       ><span>{modified.size} modified glyphs</span>
     </div>
     <p class="subtle font-note">
-      Each slot is <code>variant × 128 + byte</code>. Width and height come from each image; exported PNGs use
-      transparent backgrounds.
+      Vietnamese slots use <code>640 + variant × 256 + slot</code>. Variant 0 is generated initially; variants
+      1–4 are valid transparent placeholders ready for PNG replacement.
     </p>
     <section class="font-grid">
-      {#each font.glyphs.slice(variant * 128, variant * 128 + 128) as glyph, index (variant * 128 + index)}<article
-          class:modified={modified.has(variant * 128 + index)}
+      {#each font.glyphs.slice(visibleStart(), visibleStart() + visibleCount()) as glyph, index (visibleStart() + index)}<article
+          class:modified={modified.has(visibleStart() + index)}
         >
           <div class="glyph-preview"><FontGlyph {glyph} /></div>
-          <code>#{(variant * 128 + index).toString().padStart(3, '0')}</code><strong>{label(index)}</strong
-          ><small>{glyph.width} × {glyph.height}px</small>
+          <code>#{(visibleStart() + index).toString().padStart(4, '0')}</code><strong
+            >{family === 'original' ? label(index) : VIETNAMESE_CHARACTERS[index] || 'reserved'}</strong
+          >{#if family === 'vietnamese'}<small>{vietnameseCodeLabel(index)}</small>{/if}<small
+            >{glyph.width} × {glyph.height}px</small
+          >
         </article>{/each}
     </section>
   {/if}
