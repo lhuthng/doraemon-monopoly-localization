@@ -59,8 +59,8 @@
   let sysfontWidths = $state<number[] | undefined>();
 
   onMount(() => {
-    void loadBundledOriginal();
-    void loadBundledSysfont();
+    void loadOptionalOriginal();
+    void loadOptionalSysfont();
   });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
@@ -222,30 +222,62 @@
     }
   }
 
-  async function loadBundledSysfont() {
+  async function loadSysfont(file: Blob, name: string) {
     try {
-      const response = await fetch('/game/sysfont.dat');
-      if (!response.ok) throw new Error(`Bundled sysfont.dat returned HTTP ${response.status}.`);
-      const font = parseSysFont(new Uint8Array(await response.arrayBuffer()));
+      const font = parseSysFont(new Uint8Array(await file.arrayBuffer()));
       sysfontWidths = font.glyphs.slice(0, 128).map((glyph) => glyph.width);
     } catch (error) {
-      loadError = `Could not load sysfont.dat for reflow: ${error instanceof Error ? error.message : String(error)}`;
+      loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
-  async function loadBundledOriginal() {
+  async function resetAndLoadOriginal(file: Blob, name: string) {
     loadError = '';
+    translations = {};
+    translationMeta = {};
+    localStorage.removeItem('doraemon-translations');
+    localStorage.removeItem('doraemon-translation-meta');
+    await loadArchive(file, name);
+  }
+
+  async function loadOptionalOriginal() {
     try {
-      translations = {};
-      translationMeta = {};
-      localStorage.removeItem('doraemon-translations');
-      localStorage.removeItem('doraemon-translation-meta');
-      const response = await fetch('/game/strings-CN.dat');
-      if (!response.ok) throw new Error(`Bundled strings-CN.dat returned HTTP ${response.status}.`);
-      await loadArchive(await response.blob(), 'strings-CN.dat');
-    } catch (error) {
-      loadError = error instanceof Error ? error.message : String(error);
+      const response = await fetch('/game/strings.dat');
+      if (response.ok) await resetAndLoadOriginal(await response.blob(), 'strings.dat');
+    } catch {
+      /* Optional local development file. */
     }
+  }
+
+  async function loadOptionalSysfont() {
+    try {
+      const response = await fetch('/game/sysfont.dat');
+      if (response.ok) await loadSysfont(await response.blob(), 'sysfont.dat');
+    } catch {
+      /* Reflow remains unavailable until the user loads a font. */
+    }
+  }
+
+  async function originalInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await resetAndLoadOriginal(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
+  async function sysfontInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await loadSysfont(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
+  function dropOriginal(event: DragEvent) {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    const strings = files.find((file) => file.name.toLowerCase() === 'strings.dat');
+    const sysfont = files.find((file) => file.name.toLowerCase() === 'sysfont.dat');
+    if (strings) void resetAndLoadOriginal(strings, strings.name);
+    if (sysfont) void loadSysfont(sysfont, sysfont.name);
+    if (!strings && !sysfont) loadError = 'Drop strings.dat and optionally sysfont.dat here.';
   }
 
   async function importTranslationArchive(file: Blob, name: string) {
@@ -649,7 +681,20 @@
     <div class="header-actions">
       <a class="load-button" href="/assets" data-route>Graphics studio</a>
       <a class="load-button" href="/fonts" data-route>Font studio</a>
-      <button type="button" onclick={loadBundledOriginal}>Reload bundled strings-CN.dat</button>
+      <label class="load-button"
+        >Load original strings.dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={originalInput}
+        /></label
+      >
+      <label class="load-button"
+        >Load sysfont.dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={sysfontInput}
+        /></label
+      >
       <label class="load-button"
         >Load modified strings.dat<input
           type="file"
@@ -659,6 +704,21 @@
       >
     </div>
   </header>
+
+  {#if !records.length}
+    <section
+      class="drop-zone"
+      role="group"
+      aria-label="Load string resources"
+      ondragover={(event) => event.preventDefault()}
+      ondrop={dropOriginal}
+    >
+      <strong>Load your own game files</strong>
+      <span
+        >Drop <code>strings.dat</code> here. You may include <code>sysfont.dat</code> to enable exact-width reflow.</span
+      >
+    </section>
+  {/if}
 
   {#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 

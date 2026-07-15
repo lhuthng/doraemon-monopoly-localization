@@ -6,9 +6,6 @@
   "scripts": {
     "dev": "vite",
     "translate-server": "bun scripts/translate-server.ts",
-    "build:vi-font": "bun scripts/build-vietnamese-sysfont.ts public/game/sysfont.dat ../tmp/sysfont-vi.dat",
-    "patch:vi-exe": "bun scripts/patch-vietnamese-exe.ts ../tmp/Doraemon.exe ../tmp/Đô-rê-mon.exe",
-    "shift:all-glyphs": "bun scripts/shift-sysfont-glyphs.ts public/game/sysfont.dat public/game/sysfont.dat 0 1919 3",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "bun test",
     "lint": "eslint . && prettier --check .",

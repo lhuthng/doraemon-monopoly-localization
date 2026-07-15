@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { parseStrings, parseSysFont, rebuildStrings, rebuildSysFont } from './formats';
+import { parseSysFont, rebuildSysFont } from './formats';
 import {
   extendSysFont,
   EXTENDED_SYSFONT_GLYPHS,
@@ -10,8 +9,23 @@ import {
   vietnameseSlot
 } from './vietnamese-font';
 
-const gameFile = (name: string) =>
-  new Uint8Array(readFileSync(new URL(`../../public/game/${name}`, import.meta.url)));
+function syntheticSysfont() {
+  const count = 640;
+  const tableEnd = 2 + count * 4;
+  const glyphBytes = 2 + 8 * 16;
+  const data = new Uint8Array(tableEnd + count * glyphBytes);
+  const view = new DataView(data.buffer);
+  view.setUint16(0, count, true);
+  for (let index = 0; index < count; index += 1) {
+    const offset = tableEnd + index * glyphBytes;
+    view.setUint32(2 + index * 4, offset, true);
+    data[offset] = 8;
+    data[offset + 1] = 16;
+    data.fill(0xff, offset + 2, offset + glyphBytes);
+    data[offset + 2 + (index % 8)] = 0;
+  }
+  return data;
+}
 
 describe('Vietnamese codebook', () => {
   test('round-trips every supported precomposed character', () => {
@@ -31,7 +45,7 @@ describe('Vietnamese codebook', () => {
 
 describe('extended sysfont', () => {
   test('rebuilds five structurally valid Vietnamese banks', () => {
-    const extended = extendSysFont(parseSysFont(gameFile('sysfont.dat')));
+    const extended = extendSysFont(parseSysFont(syntheticSysfont()));
     const reparsed = parseSysFont(rebuildSysFont(extended));
     expect(reparsed.count).toBe(EXTENDED_SYSFONT_GLYPHS);
     expect(reparsed.glyphs[vietnameseGlyphIndex(0, 0)].pixels.some((pixel) => pixel !== 0xff)).toBe(true);
@@ -40,18 +54,5 @@ describe('extended sysfont', () => {
         true
       );
     }
-  });
-});
-
-describe('strings.dat Vietnamese encoding', () => {
-  test('round-trips mixed Vietnamese, ASCII, Chinese archive records', () => {
-    const original = gameFile('strings-CN.dat');
-    const records = parseStrings(original);
-    const id = records[0].id;
-    const text = `Cánh cửa thần kỳ Đã`;
-    const rebuilt = rebuildStrings(original, records, { [id]: text });
-    const record = parseStrings(rebuilt).find((candidate) => candidate.id === id)!;
-    expect(record.tokens.filter((token) => token.type === 'vietnamese')).toHaveLength(6);
-    expect(record.tokens.some((token) => token.type === 'ascii')).toBe(true);
   });
 });

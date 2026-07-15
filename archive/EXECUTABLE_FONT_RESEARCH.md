@@ -112,8 +112,9 @@ All other high-bit pairs retain the original Chinese behavior. A second byte wit
 The patcher:
 
 1. validates the exact executable SHA-256;
-2. replaces the filename at `0x004D000A` with `sysfont-vi.dat` (the reserved
-   16-byte buffer is large enough for its 15 bytes including NUL);
+2. the early prototype replaced the filename at `0x004D000A` with
+   `sysfont-vi.dat`; the current Rust patch leaves the original `sysfont.dat`
+   literal unchanged;
 3. writes dispatch stubs into that cave;
 4. rewrites the four branch entries as near jumps;
 5. increases CSEG virtual size to `0x2000`;

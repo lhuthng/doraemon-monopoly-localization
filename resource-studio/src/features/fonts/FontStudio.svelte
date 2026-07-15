@@ -16,21 +16,36 @@
   let family = $state<'original' | 'vietnamese'>('original');
   let variant = $state(0);
   let error = $state('');
-  let status = $state('Loading bundled sysfont.dat…');
+  let status = $state('Load sysfont.dat to inspect or edit fonts.');
   let dragging = $state(false);
   let modified = $state(new Set<number>());
 
-  onMount(async () => {
+  async function loadFont(file: Blob, name: string) {
+    error = '';
     try {
-      const response = await fetch('/game/sysfont.dat');
-      if (!response.ok) throw new Error(`sysfont.dat returned HTTP ${response.status}.`);
-      font = extendSysFont(parseSysFont(new Uint8Array(await response.arrayBuffer())));
-      status = `${font.count} glyphs · five original variants · five Vietnamese banks`;
+      font = extendSysFont(parseSysFont(new Uint8Array(await file.arrayBuffer())));
+      modified = new Set();
+      status = `${name} · ${font.count} glyphs · five original variants · five Vietnamese banks`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
       status = 'Loading failed.';
     }
+  }
+
+  onMount(async () => {
+    try {
+      const response = await fetch('/game/sysfont.dat');
+      if (response.ok) await loadFont(await response.blob(), 'sysfont.dat');
+    } catch {
+      /* Optional local development file. */
+    }
   });
+
+  async function fontInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await loadFont(input.files[0], input.files[0].name);
+    input.value = '';
+  }
 
   function label(code: number) {
     if (code === 0) return 'NUL';
@@ -141,7 +156,12 @@
   function drop(event: DragEvent) {
     event.preventDefault();
     dragging = false;
-    if (event.dataTransfer?.files.length) void importImages(event.dataTransfer.files);
+    if (!event.dataTransfer?.files.length) return;
+    const files = Array.from(event.dataTransfer.files);
+    const dataFile = files.find((file) => file.name.toLowerCase() === 'sysfont.dat');
+    if (dataFile) void loadFont(dataFile, dataFile.name);
+    else if (font) void importImages(files);
+    else error = 'Load sysfont.dat before importing numbered PNG glyphs.';
   }
   function exportFont() {
     if (!font) return;
@@ -168,10 +188,30 @@
         href="/assets"
         data-route>Graphics studio</a
       >
+      <label class="load-button"
+        >Load sysfont.dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={fontInput}
+        /></label
+      >
     </div>
   </header>
   <p class="status">{status}</p>
   {#if error}<p class="error">{error}</p>{/if}
+  {#if !font}
+    <section
+      class="drop-zone"
+      role="group"
+      aria-label="Load sysfont"
+      ondragover={(event) => event.preventDefault()}
+      ondrop={drop}
+    >
+      <strong>Load your own sysfont.dat</strong><span
+        >Drop the file here or use the button above. No game font is bundled with the Studio.</span
+      >
+    </section>
+  {/if}
   {#if font}
     <nav class="font-tabs" aria-label="Font family">
       <button class:active={family === 'original'} onclick={() => (family = 'original')}
