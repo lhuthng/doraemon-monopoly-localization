@@ -4,6 +4,11 @@ dist/
 .vite/
 *.log
 tmp/
+!tmp/
+tmp/*
+!tmp/base/
+tmp/base/*
+!tmp/base/.gitkeep
 release/
 target/
 *.dat

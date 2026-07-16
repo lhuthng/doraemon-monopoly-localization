@@ -41,6 +41,29 @@ brew install mingw-w64
 The Rust workspace pins a Windows-7-compatible toolchain. Players of a
 released patcher do **not** need Bun, Rust, or MinGW.
 
+## Quick start
+
+Copy your own untouched Cantonese game files into `tmp/base/`. The committed
+`.gitkeep` creates this empty folder, but every real file in it remains ignored.
+
+```sh
+make help
+make setup
+make build-patch LANGUAGE=english
+# After reviewing the ignored candidate:
+make build-patch LANGUAGE=english PUBLISH=1
+# Also create a local Windows patcher:
+make build-patch LANGUAGE=english PATCHER=1
+```
+
+`make setup` creates private English and Vietnamese Resource Studio workspaces
+from the tracked `patches/*.dmpatch` files. `make build-patch` creates a new,
+ignored candidate payload under `tmp/patches/`; review it, then copy it to
+`patches/` by rerunning with `PUBLISH=1`, then commit it when you are ready to
+share that localization update. Add `PATCHER=1` to also package the resulting
+payload as a local Windows EXE under `tmp/release/`. `make setup` refuses to
+overwrite an existing private workspace.
+
 ## Repository map
 
 | Path | What it is |
@@ -108,16 +131,14 @@ A release is built from two private directories:
 base-dir                 target-dir
 ────────                 ──────────
 untouched game           finished localization
-all six files            same six filenames
+Doraemon.exe + five      five localized resource files
+original resource files  strings, font, and sprite archives
 ```
 
-For a player-facing patcher, the six files are the five resources plus
-`Doraemon.exe`.
-
 `base-dir` is the exact untouched Cantonese game the player is expected to
-own. `target-dir` is the final localized state you edited. Copy unchanged
-files from base into target as well: the builder compares each pair and embeds
-only changes. It never embeds a complete game file.
+own. `target-dir` is the final localized resource workspace. The builder
+compares each resource pair and embeds only changes. It never embeds a
+complete game file.
 
 ```sh
 cargo run -p patch-build -- release \
