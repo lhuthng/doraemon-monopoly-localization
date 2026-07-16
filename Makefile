@@ -114,7 +114,6 @@ build-patch: check-language check-publish check-patcher check-wrapper check-game
 	  --base-dir "$(BASE_DIR)" \
 	  --target-dir "resource-studio/local-game/$(LANGUAGE)" \
 	  --output-dir "$(PATCH_DIR)" \
-	  $(if $(CNC_DDRAW_DIR),--cnc-ddraw-dir "$(CNC_DDRAW_DIR)") \
 	  --payload-only
 	@printf '%s\n' "Wrote $(PATCH_DESTINATION) payload: $(PATCH_DIR)/$(LANGUAGE).dmpatch"
 ifeq ($(PUBLISH),1)
@@ -126,6 +125,6 @@ ifeq ($(PATCHER),1)
 	@mkdir -p "$(RELEASE_DIR)"
 	cargo run -p patch-build -- package \
 	  --payload "$(PATCH_DIR)/$(LANGUAGE).dmpatch" \
-	  --output-dir "$(RELEASE_DIR)"
+	  --output-dir "$(RELEASE_DIR)" $(if $(CNC_DDRAW_DIR),--cnc-ddraw-dir "$(CNC_DDRAW_DIR)")
 	@printf '%s\n' "Local Windows patcher written to $(RELEASE_DIR)/."
 endif
