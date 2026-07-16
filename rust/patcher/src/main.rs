@@ -51,9 +51,10 @@ mod windows_app {
         apply: nwg::Button,
         restore: nwg::Button,
         wrapper: nwg::Button,
+        play: nwg::Button,
         progress: nwg::ProgressBar,
         log_group: nwg::ControlHandle,
-        log: nwg::TextBox,
+        log: nwg::RichTextBox,
         exit: nwg::Button,
         timer: nwg::AnimationTimer,
     }
@@ -120,13 +121,21 @@ mod windows_app {
             TaskState::Skipped => "–",
             TaskState::Failed => "✕",
         };
-        let current = ui.log.text();
-        let next = if current.is_empty() {
-            format!("{marker} {message}")
-        } else {
-            format!("{current}\r\n{marker} {message}")
+        let color = match state {
+            TaskState::Working => [49, 91, 148],
+            TaskState::Done => [35, 116, 75],
+            TaskState::Skipped => [104, 100, 90],
+            TaskState::Failed => [173, 54, 54],
         };
-        ui.log.set_text(&next);
+        let start = ui.log.len();
+        ui.log.appendln(&format!("{marker} {message}"));
+        let end = ui.log.len();
+        ui.log.set_selection(start..end);
+        ui.log.set_char_format(&nwg::CharFormat {
+            text_color: Some(color),
+            ..Default::default()
+        });
+        ui.log.set_selection(end..end);
     }
 
     fn write_diagnostic(game: &std::path::Path, state: TaskState, message: &str) {
@@ -147,8 +156,16 @@ mod windows_app {
         }
     }
 
-    fn make_group_box(parent: &nwg::Window, text: &str, x: i32, y: i32, w: i32, h: i32, font: &nwg::Font) -> Result<nwg::ControlHandle, nwg::NwgError> {
-        use winapi::shared::minwindef::{WPARAM, LPARAM, TRUE};
+    fn make_group_box(
+        parent: &nwg::Window,
+        text: &str,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        font: &nwg::Font,
+    ) -> Result<nwg::ControlHandle, nwg::NwgError> {
+        use winapi::shared::minwindef::{LPARAM, TRUE, WPARAM};
         use winapi::um::winuser::SendMessageW;
 
         let handle = nwg::ControlBase::build_hwnd()
@@ -173,9 +190,15 @@ mod windows_app {
         let config_names = ["cnc-ddraw config.exe", "ddrawcfg.exe"];
         let config_path = config_names.iter().find_map(|name| {
             let path = game.join(name);
-            if path.exists() { Some(path) } else { None }
+            if path.exists() {
+                Some(path)
+            } else {
+                None
+            }
         });
-        let Some(config_path) = config_path else { return };
+        let Some(config_path) = config_path else {
+            return;
+        };
         let params = nwg::MessageParams {
             title: "Graphics Wrapper",
             content: "The graphics wrapper has been installed.\n\nWould you like to open the configuration tool now?\n(Recommended for first-time use on Crossover or Wine.)",
@@ -195,7 +218,11 @@ mod windows_app {
                 .size((640, 600))
                 .position((300, 150))
                 .title("Doraemon Monopoly Patcher")
-                .flags(nwg::WindowFlags::WINDOW | nwg::WindowFlags::MINIMIZE_BOX | nwg::WindowFlags::VISIBLE)
+                .flags(
+                    nwg::WindowFlags::WINDOW
+                        | nwg::WindowFlags::MINIMIZE_BOX
+                        | nwg::WindowFlags::VISIBLE,
+                )
                 .build(&mut ui.window)?;
 
             // -- Fonts --
@@ -247,11 +274,8 @@ mod windows_app {
 
             // -- Options group box --
 
-            ui.options_group = make_group_box(
-                &ui.window, " Options ",
-                12, 66, 616, 152,
-                &ui.group_font,
-            )?;
+            ui.options_group =
+                make_group_box(&ui.window, " Options ", 12, 66, 616, 152, &ui.group_font)?;
 
             nwg::Label::builder()
                 .text(&format!("Game folder: {}", game.display()))
@@ -284,11 +308,8 @@ mod windows_app {
 
             // -- Actions group box --
 
-            ui.actions_group = make_group_box(
-                &ui.window, " Actions ",
-                12, 228, 616, 56,
-                &ui.group_font,
-            )?;
+            ui.actions_group =
+                make_group_box(&ui.window, " Actions ", 12, 228, 616, 56, &ui.group_font)?;
 
             nwg::Button::builder()
                 .text("Apply patch")
@@ -309,9 +330,17 @@ mod windows_app {
                 .text("Add graphics wrapper")
                 .enabled(!payload.bundled.is_empty())
                 .position((301, 246))
-                .size((170, 30))
+                .size((165, 30))
                 .parent(&ui.window)
                 .build(&mut ui.wrapper)?;
+
+            nwg::Button::builder()
+                .text("Play")
+                .enabled(game.join("Doraemon.exe").is_file())
+                .position((477, 246))
+                .size((128, 30))
+                .parent(&ui.window)
+                .build(&mut ui.play)?;
 
             // -- Progress bar --
 
@@ -326,24 +355,16 @@ mod windows_app {
 
             // -- Log group box --
 
-            ui.log_group = make_group_box(
-                &ui.window, " Log ",
-                12, 330, 616, 264,
-                &ui.group_font,
-            )?;
+            ui.log_group = make_group_box(&ui.window, " Log ", 12, 330, 616, 264, &ui.group_font)?;
 
-            nwg::TextBox::builder()
+            nwg::RichTextBox::builder()
                 .text("Ready when you are. I'll make a backup before touching the game.")
                 .readonly(true)
-                .flags(
-                    nwg::TextBoxFlags::VISIBLE
-                        | nwg::TextBoxFlags::VSCROLL
-                        | nwg::TextBoxFlags::AUTOVSCROLL,
-                )
                 .position((24, 352))
                 .size((592, 232))
                 .parent(&ui.window)
                 .build(&mut ui.log)?;
+            ui.log.set_background_color([250, 250, 248]);
 
             // -- Exit button --
 
@@ -395,6 +416,7 @@ mod windows_app {
                 .set_text("Restore the exact original files kept in this backup.");
             ui.apply.set_enabled(false);
             ui.wrapper.set_enabled(false);
+            ui.play.set_enabled(game.join("Doraemon.exe").is_file());
             ui.no_disc.set_enabled(false);
             append_log(
                 &ui,
@@ -454,6 +476,8 @@ mod windows_app {
                                 ui.wrapper.set_enabled(
                                     !events_payload.bundled.is_empty() && !restore_mode,
                                 );
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
                                 ui.refresh_music.set_enabled(!restore_mode);
                             }
                             UiEvent::Finished(Err(error)) => {
@@ -469,6 +493,8 @@ mod windows_app {
                                 ui.wrapper.set_enabled(
                                     !events_payload.bundled.is_empty() && !restore_mode,
                                 );
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
                                 ui.refresh_music.set_enabled(!restore_mode);
                             }
                             UiEvent::Restored(Ok(files)) => {
@@ -484,6 +510,10 @@ mod windows_app {
                                 ui.wrapper.set_enabled(
                                     !events_payload.bundled.is_empty() && !restore_mode,
                                 );
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
+                                ui.music.set_text(&music_text(&events_game));
+                                ui.refresh_music.set_enabled(!restore_mode);
                             }
                             UiEvent::Restored(Err(error)) => {
                                 ui.progress.set_pos(0);
@@ -498,6 +528,8 @@ mod windows_app {
                                 ui.wrapper.set_enabled(
                                     !events_payload.bundled.is_empty() && !restore_mode,
                                 );
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
                             }
                             UiEvent::Wrapper(Ok(files)) if files.is_empty() => {
                                 ui.progress.set_pos(100);
@@ -510,6 +542,8 @@ mod windows_app {
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(!restore_mode);
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
                             }
                             UiEvent::Wrapper(Ok(files)) => {
                                 ui.progress.set_pos(100);
@@ -522,6 +556,8 @@ mod windows_app {
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(!restore_mode);
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
                                 prompt_run_config(&events_game, &events_ui.window);
                             }
                             UiEvent::Wrapper(Err(error)) => {
@@ -535,6 +571,8 @@ mod windows_app {
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(!restore_mode);
+                                ui.play
+                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
                             }
                         }
                     }
@@ -545,6 +583,7 @@ mod windows_app {
                     ui.apply.set_enabled(false);
                     ui.restore.set_enabled(false);
                     ui.wrapper.set_enabled(false);
+                    ui.play.set_enabled(false);
                     ui.refresh_music.set_enabled(false);
                     append_log(&ui, TaskState::Working, "Starting Apply…");
                     let _ =
@@ -596,6 +635,7 @@ mod windows_app {
                     ui.apply.set_enabled(false);
                     ui.restore.set_enabled(false);
                     ui.wrapper.set_enabled(false);
+                    ui.play.set_enabled(false);
                     append_log(&ui, TaskState::Working, "Restoring original files…");
                     let backup = events_game.join("backup");
                     let tx = events_tx.clone();
@@ -615,6 +655,7 @@ mod windows_app {
                     ui.apply.set_enabled(false);
                     ui.restore.set_enabled(false);
                     ui.wrapper.set_enabled(false);
+                    ui.play.set_enabled(false);
                     append_log(&ui, TaskState::Working, "Adding the graphics wrapper…");
                     let game = (*events_game).clone();
                     let payload = (*events_payload).clone();
@@ -624,6 +665,19 @@ mod windows_app {
                             .unwrap_or_else(|_| Err("The graphics-wrapper task stopped unexpectedly; no files were added.".into()));
                         let _ = tx.send(UiEvent::Wrapper(result));
                     });
+                } else if event == nwg::Event::OnButtonClick && handle == ui.play.handle {
+                    let game_exe = events_game.join("Doraemon.exe");
+                    match std::process::Command::new(&game_exe)
+                        .current_dir(&*events_game)
+                        .spawn()
+                    {
+                        Ok(_) => append_log(&ui, TaskState::Done, "Launched Doraemon.exe."),
+                        Err(error) => append_log(
+                            &ui,
+                            TaskState::Failed,
+                            &format!("Could not launch Doraemon.exe: {error}"),
+                        ),
+                    }
                 }
             },
         );

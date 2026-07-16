@@ -242,10 +242,16 @@
 
   async function loadOptionalOriginal() {
     try {
-      const response = await fetch('/game/strings.dat');
-      if (response.ok) await resetAndLoadOriginal(await response.blob(), 'strings.dat');
+      const response = await fetch('/game/strings-origin.dat');
+      if (response.ok) await resetAndLoadOriginal(await response.blob(), 'strings-origin.dat');
     } catch {
       /* Optional local development file. */
+    }
+    try {
+      const response = await fetch('/game/strings.dat');
+      if (response.ok && records.length) await importTranslationArchive(await response.blob(), 'strings.dat');
+    } catch {
+      /* No previously modified strings.dat to import. */
     }
   }
 
@@ -273,11 +279,14 @@
   function dropOriginal(event: DragEvent) {
     event.preventDefault();
     const files = Array.from(event.dataTransfer?.files ?? []);
-    const strings = files.find((file) => file.name.toLowerCase() === 'strings.dat');
+    const stringsOrigin = files.find((file) => file.name.toLowerCase() === 'strings-origin.dat');
+    const stringsModified = !stringsOrigin && files.find((file) => file.name.toLowerCase() === 'strings.dat');
     const sysfont = files.find((file) => file.name.toLowerCase() === 'sysfont.dat');
-    if (strings) void resetAndLoadOriginal(strings, strings.name);
+    if (stringsOrigin) void resetAndLoadOriginal(stringsOrigin, stringsOrigin.name);
+    else if (stringsModified) void importTranslationArchive(stringsModified, stringsModified.name);
     if (sysfont) void loadSysfont(sysfont, sysfont.name);
-    if (!strings && !sysfont) loadError = 'Drop strings.dat and optionally sysfont.dat here.';
+    if (!stringsOrigin && !stringsModified && !sysfont)
+      loadError = 'Drop strings-origin.dat, strings.dat, or sysfont.dat here.';
   }
 
   async function importTranslationArchive(file: Blob, name: string) {
@@ -285,7 +294,7 @@
     exportStatus = '';
     try {
       if (!records.length || !archiveBytes)
-        throw new Error('Load the original strings.dat before importing a translated .dat file.');
+        throw new Error('Load the original strings-origin.dat before importing a translated .dat file.');
       const importedRecords = parseStrings(new Uint8Array(await file.arrayBuffer()));
       const importedById = new Map(importedRecords.map((record) => [record.id, sourceText(record)]));
       const now = Date.now();
@@ -651,7 +660,7 @@
     loadError = '';
     exportStatus = '';
     try {
-      if (!archiveBytes) throw new Error('Load the original strings.dat first.');
+      if (!archiveBytes) throw new Error('Load the original strings-origin.dat first.');
       const rebuilt = rebuildStrings(archiveBytes, records, translations);
       downloadBlob(binaryBlob(rebuilt), 'strings-exported.dat');
       exportStatus = `Built and verified strings-exported.dat: ${translatedCount} translated, ${records.length - translatedCount} preserved in Chinese.`;
@@ -682,7 +691,7 @@
       <a class="load-button" href="/assets" data-route>Graphics studio</a>
       <a class="load-button" href="/fonts" data-route>Font studio</a>
       <label class="load-button"
-        >Load original strings.dat<input
+        >Load original .dat<input
           type="file"
           accept=".dat,application/octet-stream"
           onchange={originalInput}
@@ -715,7 +724,8 @@
     >
       <strong>Load your own game files</strong>
       <span
-        >Drop <code>strings.dat</code> here. You may include <code>sysfont.dat</code> to enable exact-width reflow.</span
+        >Drop <code>strings-origin.dat</code> (original) or <code>strings.dat</code> (modified) here. You may
+        include <code>sysfont.dat</code> to enable exact-width reflow.</span
       >
     </section>
   {/if}
@@ -891,7 +901,7 @@
                     onclick={() => {
                       layoutPreset = 'dialog';
                       layoutWidth = DIALOG_LAYOUT.maxWidth;
-                    }}>Dialog preset · 309px</button
+                    }}>Dialog preset · 264px</button
                   >
                   <button type="button" class="primary" onclick={() => reflowTranslation(record)}
                     >Reflow text</button

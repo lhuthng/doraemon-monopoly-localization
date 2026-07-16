@@ -40,7 +40,12 @@ pub struct TaskProgress {
 
 pub type ProgressSink<'a> = dyn FnMut(TaskProgress) + 'a;
 
-fn progress(sink: &mut ProgressSink<'_>, state: TaskState, message: impl Into<String>, pct: Option<u8>) {
+fn progress(
+    sink: &mut ProgressSink<'_>,
+    state: TaskState,
+    message: impl Into<String>,
+    pct: Option<u8>,
+) {
     sink(TaskProgress {
         state,
         message: message.into(),
@@ -234,6 +239,44 @@ fn verified_backup_files(backup: &Path) -> Result<HashMap<String, hash::Hash>> {
     Ok(files)
 }
 
+// Restore.exe intentionally stays in backup/ so it can be used later. When all
+// tracked live files are back to their original hashes (and the patcher-owned
+// WAV has been removed), that directory is stale rather than an active backup.
+// A subsequent Apply may safely replace it with a fresh backup.
+fn backup_is_fully_restored(backup: &Path, game: &Path) -> Result<bool> {
+    let originals = verified_backup_files(backup)?;
+    for (name, expected) in originals {
+        let live = find_file(game, &name)?;
+        if hash::file(&live)? != expected {
+            return Ok(false);
+        }
+    }
+    let manifest = fs::read_to_string(backup.join("manifest.json"))
+        .map_err(|error| format!("read backup manifest: {error}"))?;
+    if manifest.contains("\"created_audio\": {") && game.join("DoraemonMusic.wav").exists() {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn discard_restored_backup(
+    backup: &Path,
+    game: &Path,
+    sink: &mut ProgressSink<'_>,
+) -> Result<bool> {
+    if !backup.exists() || !backup_is_fully_restored(backup, game)? {
+        return Ok(false);
+    }
+    progress(
+        sink,
+        TaskState::Done,
+        "The previous backup belongs to a completed restore; preparing a fresh backup.",
+        Some(60),
+    );
+    fs::remove_dir_all(backup).map_err(|error| format!("remove restored backup: {error}"))?;
+    Ok(true)
+}
+
 fn apply_compatibility(
     folder: &Path,
     payload: &Payload,
@@ -275,7 +318,7 @@ fn apply_compatibility(
             audio: "Nothing else needs to change.".into(),
         });
     }
-    if backup.exists() {
+    if backup.exists() && !discard_restored_backup(&backup, folder, sink)? {
         progress(
             sink,
             TaskState::Failed,
@@ -293,7 +336,12 @@ fn apply_compatibility(
     }
     fs::create_dir(&staging).map_err(|e| e.to_string())?;
     let staged_exe = staging.join("Doraemon.exe");
-    progress(sink, TaskState::Working, "Preparing executable changes…", Some(40));
+    progress(
+        sink,
+        TaskState::Working,
+        "Preparing executable changes…",
+        Some(40),
+    );
     let patched = result.bytes.clone();
     write_synced(&staged_exe, &patched)?;
     let target_hash = hash::bytes(&patched);
@@ -329,7 +377,12 @@ fn apply_compatibility(
             cue::extract(cue_path, &staged)?;
             created_audio = Some(hash::file(&staged)?);
             staged_audio = Some(staged);
-            progress(sink, TaskState::Done, "Local background music is ready.", Some(55));
+            progress(
+                sink,
+                TaskState::Done,
+                "Local background music is ready.",
+                Some(55),
+            );
             "Extracted DoraemonMusic.wav from the supplied disc image.".into()
         } else {
             progress(
@@ -376,7 +429,12 @@ fn apply_compatibility(
         created_audio,
     );
     write_synced(&backup.join("manifest.json"), manifest.as_bytes())?;
-    progress(sink, TaskState::Working, "Installing executable changes…", Some(75));
+    progress(
+        sink,
+        TaskState::Working,
+        "Installing executable changes…",
+        Some(75),
+    );
     replace_file(&staged_exe, &exe_path)?;
     if hash::file(&exe_path)? != target_hash {
         return Err("Doraemon.exe failed installation verification; restore from backup".into());
@@ -417,9 +475,19 @@ pub fn apply_with_progress(
     patcher_exe: &Path,
     sink: &mut ProgressSink<'_>,
 ) -> Result<ApplyReport> {
-    progress(sink, TaskState::Working, "Checking the game folder…", Some(0));
+    progress(
+        sink,
+        TaskState::Working,
+        "Checking the game folder…",
+        Some(0),
+    );
     if !folder.is_dir() {
-        progress(sink, TaskState::Failed, "The game folder is unavailable.", None);
+        progress(
+            sink,
+            TaskState::Failed,
+            "The game folder is unavailable.",
+            None,
+        );
         return Err(format!("{} is not a game folder", folder.display()));
     }
     if payload.language == Language::Custom {
@@ -496,7 +564,12 @@ pub fn apply_with_progress(
             mismatch_reports.join(" | ")
         )
     })?;
-    progress(sink, TaskState::Done, "Supported game files confirmed.", Some(15));
+    progress(
+        sink,
+        TaskState::Done,
+        "Supported game files confirmed.",
+        Some(15),
+    );
 
     let patches = selected_patches(profile, options.no_disc);
     let staging = folder.join(".doraemon-patch-staging");
@@ -509,7 +582,12 @@ pub fn apply_with_progress(
         let source_path = find_file(folder, "strings.dat")?;
         let source = fs::read(&source_path)
             .map_err(|error| format!("{}: {error}", source_path.display()))?;
-        progress(sink, TaskState::Working, "Checking strings.dat records…", Some(20));
+        progress(
+            sink,
+            TaskState::Working,
+            "Checking strings.dat records…",
+            Some(20),
+        );
         if strings::matches(&source, strings_patch)? {
             progress(
                 sink,
@@ -654,7 +732,12 @@ pub fn apply_with_progress(
             let digest = hash::file(&staged)?;
             created_audio = Some(digest);
             staged_audio = Some(staged);
-            progress(sink, TaskState::Done, "Local background music is ready.", Some(55));
+            progress(
+                sink,
+                TaskState::Done,
+                "Local background music is ready.",
+                Some(55),
+            );
             "Extracted DoraemonMusic.wav from the supplied disc image.".into()
         } else {
             progress(
@@ -692,7 +775,7 @@ pub fn apply_with_progress(
             audio,
         });
     }
-    if backup.exists() {
+    if backup.exists() && !discard_restored_backup(&backup, folder, sink)? {
         progress(
             sink,
             TaskState::Working,
@@ -745,7 +828,12 @@ pub fn apply_with_progress(
             Some(75),
         );
     }
-    progress(sink, TaskState::Working, "Installing prepared files…", Some(80));
+    progress(
+        sink,
+        TaskState::Working,
+        "Installing prepared files…",
+        Some(80),
+    );
     let mut changed = Vec::new();
     for (name, _, temporary, target_hash) in generated {
         let target = find_file(folder, &name)?;
@@ -954,6 +1042,17 @@ mod tests {
         if let Some(digest) = strings_before {
             assert_eq!(hash::file(&folder.join("strings.dat")).unwrap(), digest);
         }
+        let reapplied = apply(
+            &folder,
+            &payload,
+            &ApplyOptions {
+                no_disc: false,
+                cue: None,
+            },
+            &std::env::current_exe().unwrap(),
+        )
+        .unwrap();
+        assert!(!reapplied.changed.is_empty());
         fs::remove_dir_all(folder).unwrap();
     }
 

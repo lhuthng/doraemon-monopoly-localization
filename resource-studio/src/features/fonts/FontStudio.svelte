@@ -6,6 +6,7 @@
     extendSysFont,
     VIETNAMESE_CHARACTERS,
     VIETNAMESE_SLOTS_PER_VARIANT,
+    EXTENDED_SYSFONT_GLYPHS,
     vietnameseBytes,
     vietnameseGlyphIndex
   } from '../../lib/vietnamese-font';
@@ -20,12 +21,21 @@
   let dragging = $state(false);
   let modified = $state(new Set<number>());
 
+  let hasVietnamese = $derived(font && font.count >= EXTENDED_SYSFONT_GLYPHS);
+
   async function loadFont(file: Blob, name: string) {
     error = '';
     try {
-      font = extendSysFont(parseSysFont(new Uint8Array(await file.arrayBuffer())));
+      const parsed = parseSysFont(new Uint8Array(await file.arrayBuffer()));
+      console.log(parsed.count, EXTENDED_SYSFONT_GLYPHS);
+      const extended = parsed.count >= EXTENDED_SYSFONT_GLYPHS;
+      font = extended ? extendSysFont(parsed) : parsed;
       modified = new Set();
-      status = `${name} · ${font.count} glyphs · five original variants · five Vietnamese banks`;
+      family = 'original';
+      variant = 0;
+      status = extended
+        ? `${name} · ${font.count} glyphs · five original variants · five Vietnamese banks`
+        : `${name} · ${font.count} glyphs`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
       status = 'Loading failed.';
@@ -180,7 +190,10 @@
     <div>
       <p class="eyebrow">DORAEMON MONOPOLY</p>
       <h1>Font studio</h1>
-      <p class="subtle">Edit the original fonts and five proportional Vietnamese CC/CD banks.</p>
+      <p class="subtle">
+        Edit the original sysfont.{#if hasVietnamese}
+          Five proportional Vietnamese CC/CD banks are available.{/if}
+      </p>
     </div>
     <div class="header-actions">
       <a class="load-button" href="/" data-route>String studio</a><a
@@ -217,9 +230,11 @@
       <button class:active={family === 'original'} onclick={() => (family = 'original')}
         >Original sysfont</button
       >
-      <button class:active={family === 'vietnamese'} onclick={() => (family = 'vietnamese')}
-        >Vietnamese CC/CD</button
-      >
+      {#if hasVietnamese}
+        <button class:active={family === 'vietnamese'} onclick={() => (family = 'vietnamese')}
+          >Vietnamese CC/CD</button
+        >
+      {/if}
     </nav>
     <nav class="font-tabs" aria-label="Font variant">
       {#each Array.from({ length: 5 }, (_, index) => index) as index (index)}<button

@@ -8,20 +8,36 @@ if (language !== 'english' && language !== 'vietnamese') {
 }
 
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const source = resolve(studio, 'local-game', language);
+const originSource = resolve(studio, 'local-game', 'origin');
+const languageSource = resolve(studio, 'local-game', language);
 const destination = resolve(studio, 'public', 'game');
 const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat'];
 
-let available: Set<string>;
+let originAvailable: Set<string>;
 try {
-  available = new Set(await readdir(source));
+  originAvailable = new Set(await readdir(originSource));
 } catch {
   throw new Error(
-    `No local ${language} workspace was found at ${source}. Copy your own game files there first; this repository cannot provide copyrighted game data.`
+    `No origin workspace was found at ${originSource}. Copy your own original game files there first; this repository cannot provide copyrighted game data.`
   );
 }
 
-const missing = files.filter((file) => !available.has(file));
+if (!originAvailable.has('strings.dat')) {
+  throw new Error(
+    `The origin workspace is missing strings.dat. Add the original game file before starting the Studio.`
+  );
+}
+
+let languageAvailable: Set<string>;
+try {
+  languageAvailable = new Set(await readdir(languageSource));
+} catch {
+  throw new Error(
+    `No local ${language} workspace was found at ${languageSource}. Copy your own game files there first; this repository cannot provide copyrighted game data.`
+  );
+}
+
+const missing = files.filter((file) => !languageAvailable.has(file));
 if (missing.length > 0) {
   throw new Error(
     `The ${language} workspace is incomplete (${missing.join(', ')}). Add the files from your own game installation before starting the Studio.`
@@ -32,6 +48,8 @@ await mkdir(destination, { recursive: true });
 for (const entry of await readdir(destination)) {
   if (entry !== '.gitkeep') await rm(resolve(destination, entry), { recursive: true });
 }
-for (const file of files) await copyFile(resolve(source, file), resolve(destination, file));
+
+await copyFile(resolve(originSource, 'strings.dat'), resolve(destination, 'strings-origin.dat'));
+for (const file of files) await copyFile(resolve(languageSource, file), resolve(destination, file));
 
 console.log(`Loaded the ${language} workspace into public/game. Starting Resource Studio…`);

@@ -7,7 +7,9 @@ export const GADGETS_LAYOUT = {
 export const DIALOG_LAYOUT = {
   id: 'dialog',
   label: 'Dialog',
-  maxWidth: 309,
+  // Dialogues use the uppercasing font variant in-game. The Studio currently
+  // measures the base variant, so 264px reproduces the game's 309px wrap.
+  maxWidth: 264,
   splitWords: false
 } as const;
 
