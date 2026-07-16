@@ -158,6 +158,10 @@ pub fn valid_wav(path: &Path) -> bool {
             .unwrap_or(false)
 }
 
+pub fn valid_cue(path: &Path) -> bool {
+    parse(path).and_then(|cue| validate(&cue)).is_ok()
+}
+
 pub fn extract(cue_path: &Path, output: &Path) -> Result<()> {
     let cue = parse(cue_path)?;
     validate(&cue)?;

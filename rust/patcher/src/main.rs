@@ -13,214 +13,617 @@ mod windows_app {
     extern crate native_windows_gui as nwg;
 
     use doraemon_game_patch::{
-        install::{self, ApplyOptions},
+        cue,
+        install::{self, ApplyOptions, TaskProgress, TaskState},
         payload::{self, Payload},
     };
-    use std::{cell::RefCell, path::PathBuf, rc::Rc};
+    use std::{
+        cell::Cell,
+        fs::OpenOptions,
+        io::Write,
+        panic::{self, AssertUnwindSafe},
+        path::PathBuf,
+        rc::Rc,
+        sync::mpsc,
+        thread,
+        time::Duration,
+    };
+
+    const WS_CHILD: u32 = 0x40000000;
+    const WS_VISIBLE: u32 = 0x10000000;
+    const BS_GROUPBOX: u32 = 0x00000007;
+    const WM_SETFONT: u32 = 0x0030;
 
     #[derive(Default)]
     struct Ui {
         window: nwg::Window,
-        heading: nwg::Label,
-        coverage: nwg::Label,
+        title_bar: nwg::Label,
+        subtitle: nwg::Label,
+        title_font: nwg::Font,
+        group_font: nwg::Font,
+        options_group: nwg::ControlHandle,
         game_label: nwg::Label,
-        game_path: nwg::TextInput,
-        game_browse: nwg::Button,
         no_disc: nwg::CheckBox,
-        cue_label: nwg::Label,
-        cue_path: nwg::TextInput,
-        cue_browse: nwg::Button,
+
+        music: nwg::Label,
+        refresh_music: nwg::Button,
+        actions_group: nwg::ControlHandle,
         apply: nwg::Button,
         restore: nwg::Button,
-        status: nwg::Label,
-        folder_dialog: nwg::FileDialog,
-        cue_dialog: nwg::FileDialog,
+        wrapper: nwg::Button,
+        progress: nwg::ProgressBar,
+        log_group: nwg::ControlHandle,
+        log: nwg::TextBox,
+        exit: nwg::Button,
+        timer: nwg::AnimationTimer,
+    }
+
+    impl Drop for Ui {
+        fn drop(&mut self) {
+            self.options_group.destroy();
+            self.actions_group.destroy();
+            self.log_group.destroy();
+        }
+    }
+
+    enum UiEvent {
+        Progress(TaskProgress),
+        Finished(Result<install::ApplyReport, String>),
+        Restored(Result<Vec<String>, String>),
+        Wrapper(Result<Vec<String>, String>),
+    }
+
+    fn cue_files(game: &std::path::Path) -> Vec<PathBuf> {
+        let mut cues: Vec<_> = std::fs::read_dir(game)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("cue"))
+            })
+            .collect();
+        cues.sort();
+        cues
+    }
+
+    fn find_cue(game: &std::path::Path) -> Option<PathBuf> {
+        cue_files(game)
+            .into_iter()
+            .find(|path| cue::valid_cue(path))
+    }
+
+    fn music_text(game: &std::path::Path) -> String {
+        if cue::valid_wav(&game.join("DoraemonMusic.wav")) {
+            "♪ Music is ready: DoraemonMusic.wav found.".into()
+        } else if let Some(path) = find_cue(game) {
+            format!(
+                "♪ Disc music found: {}. I'll prepare it when you apply.",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            )
+        } else if let Some(path) = cue_files(game).into_iter().next() {
+            format!(
+                "♫ I found {}, but its matching BIN is missing or incomplete. The game will be quiet for now.",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            )
+        } else {
+            "♫ No WAV or CUE/BIN here yet. The game can still play, just without background music."
+                .into()
+        }
+    }
+
+    fn append_log(ui: &Ui, state: TaskState, message: &str) {
+        let marker = match state {
+            TaskState::Working => "●",
+            TaskState::Done => "✓",
+            TaskState::Skipped => "–",
+            TaskState::Failed => "✕",
+        };
+        let current = ui.log.text();
+        let next = if current.is_empty() {
+            format!("{marker} {message}")
+        } else {
+            format!("{current}\r\n{marker} {message}")
+        };
+        ui.log.set_text(&next);
+    }
+
+    fn write_diagnostic(game: &std::path::Path, state: TaskState, message: &str) {
+        let state = match state {
+            TaskState::Working => "WORKING",
+            TaskState::Done => "DONE",
+            TaskState::Skipped => "SKIPPED",
+            TaskState::Failed => "FAILED",
+        };
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(game.join("Doraemon-Patcher-diagnostic.log"))
+        {
+            let _ = writeln!(file, "[{state}] {message}");
+            let _ = file.flush();
+            let _ = file.sync_all();
+        }
+    }
+
+    fn make_group_box(parent: &nwg::Window, text: &str, x: i32, y: i32, w: i32, h: i32, font: &nwg::Font) -> Result<nwg::ControlHandle, nwg::NwgError> {
+        use winapi::shared::minwindef::{WPARAM, LPARAM, TRUE};
+        use winapi::um::winuser::SendMessageW;
+
+        let handle = nwg::ControlBase::build_hwnd()
+            .class_name("BUTTON")
+            .forced_flags(WS_CHILD)
+            .flags(WS_VISIBLE | BS_GROUPBOX)
+            .text(text)
+            .size((w, h))
+            .position((x, y))
+            .parent(Some(parent.handle.into()))
+            .build()?;
+
+        if let Some(hwnd) = handle.hwnd() {
+            unsafe {
+                SendMessageW(hwnd, WM_SETFONT, font.handle as WPARAM, TRUE as LPARAM);
+            }
+        }
+        Ok(handle)
+    }
+
+    fn prompt_run_config(game: &std::path::Path, window: &nwg::Window) {
+        let config_names = ["cnc-ddraw config.exe", "ddrawcfg.exe"];
+        let config_path = config_names.iter().find_map(|name| {
+            let path = game.join(name);
+            if path.exists() { Some(path) } else { None }
+        });
+        let Some(config_path) = config_path else { return };
+        let params = nwg::MessageParams {
+            title: "Graphics Wrapper",
+            content: "The graphics wrapper has been installed.\n\nWould you like to open the configuration tool now?\n(Recommended for first-time use on Crossover or Wine.)",
+            buttons: nwg::MessageButtons::YesNo,
+            icons: nwg::MessageIcons::Question,
+        };
+        if nwg::modal_message(window, &params) == nwg::MessageChoice::Yes {
+            let _ = std::process::Command::new(&config_path).spawn();
+        }
     }
 
     impl Ui {
-        fn build(payload: &Payload) -> Result<Self, nwg::NwgError> {
+        fn build(payload: &Payload, game: &std::path::Path) -> Result<Self, nwg::NwgError> {
             let mut ui = Self::default();
+
             nwg::Window::builder()
-                .size((650, 420))
-                .position((300, 200))
-                .title("Doraemon Monopoly Localization Patcher")
+                .size((640, 600))
+                .position((300, 150))
+                .title("Doraemon Monopoly Patcher")
+                .flags(nwg::WindowFlags::WINDOW | nwg::WindowFlags::MINIMIZE_BOX | nwg::WindowFlags::VISIBLE)
                 .build(&mut ui.window)?;
+
+            // -- Fonts --
+
+            nwg::Font::builder()
+                .family("Tahoma")
+                .size(16)
+                .weight(700)
+                .build(&mut ui.title_font)?;
+
+            nwg::Font::builder()
+                .family("Tahoma")
+                .weight(700)
+                .build(&mut ui.group_font)?;
+
+            // -- Title banner --
+
             nwg::Label::builder()
-                .text(&format!("{} localization", payload.language.label()))
-                .position((24, 20))
-                .size((590, 34))
+                .text("Doraemon Monopoly Patcher")
+                .position((16, 12))
+                .size((608, 28))
                 .parent(&ui.window)
-                .build(&mut ui.heading)?;
-            let coverage = match payload.language {
-                payload::Language::English => {
-                    "Full dialogue translation · user interface approximately 90% localized."
+                .build(&mut ui.title_bar)?;
+            ui.title_bar.set_font(Some(&ui.title_font));
+
+            let subtitle_text = match payload.language {
+                payload::Language::Custom => {
+                    "Let's make Doraemon travel-friendly! - Compatibility edition".into()
                 }
-                payload::Language::Vietnamese => {
-                    "Full Vietnamese dialogue translation · currently uses the English UI graphics."
+                _ => {
+                    let coverage = match payload.language {
+                        payload::Language::English => {
+                            "Full dialogue translation - UI approximately 90% localized"
+                        }
+                        payload::Language::Vietnamese => {
+                            "Full Vietnamese dialogue - currently uses English UI graphics"
+                        }
+                        _ => "",
+                    };
+                    format!("{} localization - {}", payload.language.label(), coverage)
                 }
             };
             nwg::Label::builder()
-                .text(coverage)
-                .position((24, 58))
-                .size((590, 34))
+                .text(&subtitle_text)
+                .position((16, 42))
+                .size((608, 18))
                 .parent(&ui.window)
-                .build(&mut ui.coverage)?;
+                .build(&mut ui.subtitle)?;
+
+            // -- Options group box --
+
+            ui.options_group = make_group_box(
+                &ui.window, " Options ",
+                12, 66, 616, 152,
+                &ui.group_font,
+            )?;
+
             nwg::Label::builder()
-                .text("Game folder containing Doraemon.exe")
-                .position((24, 105))
-                .size((400, 22))
+                .text(&format!("Game folder: {}", game.display()))
+                .position((24, 88))
+                .size((592, 18))
                 .parent(&ui.window)
                 .build(&mut ui.game_label)?;
-            nwg::TextInput::builder()
-                .position((24, 130))
-                .size((500, 28))
-                .parent(&ui.window)
-                .build(&mut ui.game_path)?;
-            nwg::Button::builder()
-                .text("Browse…")
-                .position((535, 130))
-                .size((85, 28))
-                .parent(&ui.window)
-                .build(&mut ui.game_browse)?;
+
             nwg::CheckBox::builder()
-                .text("No-disc mode (also bypass the Setup registry check)")
+                .text("Play without the original disc")
                 .check_state(nwg::CheckBoxState::Checked)
-                .position((24, 180))
-                .size((500, 26))
+                .position((24, 112))
+                .size((420, 20))
                 .parent(&ui.window)
                 .build(&mut ui.no_disc)?;
-            nwg::Label::builder().text("Optional original DORAEMON.cue (music is silent when no WAV or CUE is available)").position((24,218)).size((600,22)).parent(&ui.window).build(&mut ui.cue_label)?;
-            nwg::TextInput::builder()
-                .position((24, 243))
-                .size((500, 28))
+
+            nwg::Label::builder()
+                .text(&music_text(game))
+                .position((24, 136))
+                .size((420, 28))
                 .parent(&ui.window)
-                .build(&mut ui.cue_path)?;
+                .build(&mut ui.music)?;
+
             nwg::Button::builder()
-                .text("Choose CUE…")
-                .position((535, 243))
-                .size((85, 28))
+                .text("Refresh")
+                .position((520, 166))
+                .size((85, 24))
                 .parent(&ui.window)
-                .build(&mut ui.cue_browse)?;
+                .build(&mut ui.refresh_music)?;
+
+            // -- Actions group box --
+
+            ui.actions_group = make_group_box(
+                &ui.window, " Actions ",
+                12, 228, 616, 56,
+                &ui.group_font,
+            )?;
+
             nwg::Button::builder()
-                .text("Validate and patch")
-                .position((24, 300))
-                .size((155, 34))
+                .text("Apply patch")
+                .position((24, 246))
+                .size((125, 30))
                 .parent(&ui.window)
                 .build(&mut ui.apply)?;
+
             nwg::Button::builder()
                 .text("Restore backup")
-                .position((190, 300))
-                .size((135, 34))
+                .enabled(game.join("backup").is_dir())
+                .position((160, 246))
+                .size((130, 30))
                 .parent(&ui.window)
                 .build(&mut ui.restore)?;
-            nwg::Label::builder()
-                .text("Select the game folder. No files are changed until validation succeeds.")
-                .position((24, 350))
-                .size((596, 48))
+
+            nwg::Button::builder()
+                .text("Add graphics wrapper")
+                .enabled(!payload.bundled.is_empty())
+                .position((301, 246))
+                .size((170, 30))
                 .parent(&ui.window)
-                .build(&mut ui.status)?;
-            nwg::FileDialog::builder()
-                .action(nwg::FileDialogAction::OpenDirectory)
-                .title("Select Doraemon game folder")
-                .build(&mut ui.folder_dialog)?;
-            nwg::FileDialog::builder()
-                .action(nwg::FileDialogAction::Open)
-                .title("Select DORAEMON.cue")
-                .filters("CUE sheet (*.cue)|*.cue")
-                .build(&mut ui.cue_dialog)?;
+                .build(&mut ui.wrapper)?;
+
+            // -- Progress bar --
+
+            nwg::ProgressBar::builder()
+                .range(0..100)
+                .pos(0)
+                .step(1)
+                .size((616, 22))
+                .position((12, 296))
+                .parent(&ui.window)
+                .build(&mut ui.progress)?;
+
+            // -- Log group box --
+
+            ui.log_group = make_group_box(
+                &ui.window, " Log ",
+                12, 330, 616, 264,
+                &ui.group_font,
+            )?;
+
+            nwg::TextBox::builder()
+                .text("Ready when you are. I'll make a backup before touching the game.")
+                .readonly(true)
+                .flags(
+                    nwg::TextBoxFlags::VISIBLE
+                        | nwg::TextBoxFlags::VSCROLL
+                        | nwg::TextBoxFlags::AUTOVSCROLL,
+                )
+                .position((24, 352))
+                .size((592, 232))
+                .parent(&ui.window)
+                .build(&mut ui.log)?;
+
+            // -- Exit button --
+
+            nwg::Button::builder()
+                .text("Exit")
+                .position((548, 596))
+                .size((80, 24))
+                .parent(&ui.window)
+                .build(&mut ui.exit)?;
+
+            nwg::AnimationTimer::builder()
+                .parent(&ui.window)
+                .interval(Duration::from_millis(120))
+                .active(true)
+                .build(&mut ui.timer)?;
+
             Ok(ui)
         }
     }
 
     pub fn run() -> Result<(), String> {
         nwg::init().map_err(|error| error.to_string())?;
-        if let Ok(executable) = std::env::current_exe() {
-            if executable
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("Restore.exe"))
-            {
-                let backup = executable
-                    .parent()
-                    .ok_or("Restore.exe has no backup folder")?;
-                let restored = install::restore(backup)?;
-                nwg::simple_message(
-                    "Restore complete",
-                    &format!("Restored and verified: {}", restored.join(", ")),
-                );
-                return Ok(());
-            }
-        }
+        nwg::Font::set_global_family("Tahoma").map_err(|error| error.to_string())?;
+
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let restore_mode = executable
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("Restore.exe"));
+        let game = if restore_mode {
+            executable
+                .parent()
+                .and_then(std::path::Path::parent)
+                .ok_or("Restore.exe must be inside the backup folder")?
+                .to_path_buf()
+        } else {
+            executable
+                .parent()
+                .ok_or("the patcher executable has no parent game folder")?
+                .to_path_buf()
+        };
         let payload = payload::decode(super::EMBEDDED_PAYLOAD).map_err(|error| {
             format!("This development build has no valid embedded payload: {error}")
         })?;
-        nwg::Font::set_global_family("Segoe UI").map_err(|error| error.to_string())?;
-        let ui = Rc::new(RefCell::new(
-            Ui::build(&payload).map_err(|error| error.to_string())?,
-        ));
+        let ui = Rc::new(Ui::build(&payload, &game).map_err(|error| error.to_string())?);
+        if restore_mode {
+            ui.window.set_text("Restore Doraemon Monopoly");
+            ui.title_bar.set_text("Restore Doraemon Monopoly");
+            ui.subtitle
+                .set_text("Restore the exact original files kept in this backup.");
+            ui.apply.set_enabled(false);
+            ui.wrapper.set_enabled(false);
+            ui.no_disc.set_enabled(false);
+            append_log(
+                &ui,
+                TaskState::Working,
+                "Ready to restore the original game files.",
+            );
+        }
         let payload = Rc::new(payload);
+        let game = Rc::new(game);
+        let busy = Rc::new(Cell::new(false));
         let events_ui = ui.clone();
+        let events_game = game.clone();
+        let events_payload = payload.clone();
+        let events_busy = busy.clone();
+        let (events_tx, events_rx) = mpsc::channel::<UiEvent>();
         let handler = nwg::full_bind_event_handler(
-            &ui.borrow().window.handle,
+            &ui.window.handle,
             move |event, _data, handle| {
-                let ui = events_ui.borrow_mut();
-                if event == nwg::Event::OnWindowClose {
-                    nwg::stop_thread_dispatch();
-                } else if event == nwg::Event::OnButtonClick && handle == ui.game_browse.handle {
-                    if ui.folder_dialog.run(Some(&ui.window)) {
-                        if let Ok(path) = ui.folder_dialog.get_selected_item() {
-                            ui.game_path.set_text(&path.to_string_lossy());
+                let ui = &events_ui;
+                if (event == nwg::Event::OnWindowClose)
+                    || (event == nwg::Event::OnButtonClick && handle == ui.exit.handle)
+                {
+                    if events_busy.get() {
+                        append_log(
+                            &ui,
+                            TaskState::Working,
+                            "Please wait for the current task to finish.",
+                        );
+                    } else {
+                        nwg::stop_thread_dispatch();
+                    }
+                } else if event == nwg::Event::OnTimerTick && handle == ui.timer.handle {
+                    while let Ok(event) = events_rx.try_recv() {
+                        match event {
+                            UiEvent::Progress(update) => {
+                                if let Some(pct) = update.progress {
+                                    ui.progress.set_pos(pct as u32);
+                                }
+                                append_log(&ui, update.state, &update.message)
+                            }
+                            UiEvent::Finished(Ok(report)) => {
+                                ui.progress.set_pos(100);
+                                append_log(
+                                    &ui,
+                                    TaskState::Done,
+                                    if report.changed.is_empty() {
+                                        "Apply finished: everything requested was already in place."
+                                    } else {
+                                        "Apply finished successfully."
+                                    },
+                                );
+                                append_log(&ui, TaskState::Done, &report.audio);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.music.set_text(&music_text(&events_game));
+                                events_busy.set(false);
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.wrapper.set_enabled(
+                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                );
+                                ui.refresh_music.set_enabled(!restore_mode);
+                            }
+                            UiEvent::Finished(Err(error)) => {
+                                ui.progress.set_pos(0);
+                                append_log(
+                                    &ui,
+                                    TaskState::Failed,
+                                    &format!("Apply failed: {error}"),
+                                );
+                                events_busy.set(false);
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.wrapper.set_enabled(
+                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                );
+                                ui.refresh_music.set_enabled(!restore_mode);
+                            }
+                            UiEvent::Restored(Ok(files)) => {
+                                ui.progress.set_pos(100);
+                                append_log(
+                                    &ui,
+                                    TaskState::Done,
+                                    &format!("Restored and verified: {}.", files.join(", ")),
+                                );
+                                events_busy.set(false);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.wrapper.set_enabled(
+                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                );
+                            }
+                            UiEvent::Restored(Err(error)) => {
+                                ui.progress.set_pos(0);
+                                append_log(
+                                    &ui,
+                                    TaskState::Failed,
+                                    &format!("Restore failed: {error}"),
+                                );
+                                events_busy.set(false);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.wrapper.set_enabled(
+                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                );
+                            }
+                            UiEvent::Wrapper(Ok(files)) if files.is_empty() => {
+                                ui.progress.set_pos(100);
+                                append_log(
+                                    &ui,
+                                    TaskState::Skipped,
+                                    "The graphics wrapper is already installed.",
+                                );
+                                events_busy.set(false);
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.wrapper.set_enabled(!restore_mode);
+                            }
+                            UiEvent::Wrapper(Ok(files)) => {
+                                ui.progress.set_pos(100);
+                                append_log(
+                                    &ui,
+                                    TaskState::Done,
+                                    &format!("Graphics wrapper added: {} files.", files.len()),
+                                );
+                                events_busy.set(false);
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.wrapper.set_enabled(!restore_mode);
+                                prompt_run_config(&events_game, &events_ui.window);
+                            }
+                            UiEvent::Wrapper(Err(error)) => {
+                                ui.progress.set_pos(0);
+                                append_log(
+                                    &ui,
+                                    TaskState::Failed,
+                                    &format!("Graphics wrapper failed: {error}"),
+                                );
+                                events_busy.set(false);
+                                ui.apply.set_enabled(!restore_mode);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
+                                ui.wrapper.set_enabled(!restore_mode);
+                            }
                         }
                     }
-                } else if event == nwg::Event::OnButtonClick && handle == ui.cue_browse.handle {
-                    if ui.cue_dialog.run(Some(&ui.window)) {
-                        if let Ok(path) = ui.cue_dialog.get_selected_item() {
-                            ui.cue_path.set_text(&path.to_string_lossy());
-                        }
-                    }
+                } else if event == nwg::Event::OnButtonClick && handle == ui.refresh_music.handle {
+                    ui.music.set_text(&music_text(&events_game));
                 } else if event == nwg::Event::OnButtonClick && handle == ui.apply.handle {
-                    let game = PathBuf::from(ui.game_path.text());
-                    let cue = ui.cue_path.text();
-                    ui.status
-                        .set_text("Validating all original files and preparing verified outputs…");
+                    events_busy.set(true);
+                    ui.apply.set_enabled(false);
+                    ui.restore.set_enabled(false);
+                    ui.wrapper.set_enabled(false);
+                    ui.refresh_music.set_enabled(false);
+                    append_log(&ui, TaskState::Working, "Starting Apply…");
+                    let _ =
+                        std::fs::remove_file(events_game.join("Doraemon-Patcher-diagnostic.log"));
+                    write_diagnostic(&events_game, TaskState::Working, "Apply button pressed.");
                     let options = ApplyOptions {
                         no_disc: ui.no_disc.check_state() == nwg::CheckBoxState::Checked,
-                        cue: if cue.trim().is_empty() {
-                            None
-                        } else {
-                            Some(PathBuf::from(cue))
-                        },
+                        cue: find_cue(&events_game),
                     };
-                    match std::env::current_exe()
-                        .map_err(|error| error.to_string())
-                        .and_then(|exe| install::apply(&game, &payload, &options, &exe))
-                    {
-                        Ok(report) => {
-                            let message = format!(
-                                "Patched and verified: {}\n{}",
-                                report.changed.join(", "),
-                                report.audio
-                            );
-                            ui.status.set_text(&message);
-                            nwg::simple_message("Patch complete", &message);
+                    let game = (*events_game).clone();
+                    let payload = (*events_payload).clone();
+                    let executable = executable.clone();
+                    let tx = events_tx.clone();
+                    thread::spawn(move || {
+                        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                            install::apply_with_progress(
+                                &game,
+                                &payload,
+                                &options,
+                                &executable,
+                                &mut |update| {
+                                    write_diagnostic(&game, update.state, &update.message);
+                                    let _ = tx.send(UiEvent::Progress(update));
+                                },
+                            )
+                        }))
+                        .unwrap_or_else(|_| {
+                            Err(
+                                "The patch task stopped unexpectedly; no files were installed."
+                                    .into(),
+                            )
+                        });
+                        match &result {
+                            Ok(_) => write_diagnostic(
+                                &game,
+                                TaskState::Done,
+                                "Apply finished successfully.",
+                            ),
+                            Err(error) => write_diagnostic(
+                                &game,
+                                TaskState::Failed,
+                                &format!("Apply failed: {error}"),
+                            ),
                         }
-                        Err(error) => {
-                            ui.status.set_text(&format!("Error: {error}"));
-                            nwg::error_message("Patch failed", &error);
-                        }
-                    }
+                        let _ = tx.send(UiEvent::Finished(result));
+                    });
                 } else if event == nwg::Event::OnButtonClick && handle == ui.restore.handle {
-                    let game = PathBuf::from(ui.game_path.text());
-                    match install::restore(&game.join("backup")) {
-                        Ok(files) => {
-                            let message = format!("Restored and verified: {}", files.join(", "));
-                            ui.status.set_text(&message);
-                            nwg::simple_message("Restore complete", &message);
-                        }
-                        Err(error) => {
-                            ui.status.set_text(&format!("Error: {error}"));
-                            nwg::error_message("Restore failed", &error);
-                        }
-                    }
+                    events_busy.set(true);
+                    ui.apply.set_enabled(false);
+                    ui.restore.set_enabled(false);
+                    ui.wrapper.set_enabled(false);
+                    append_log(&ui, TaskState::Working, "Restoring original files…");
+                    let backup = events_game.join("backup");
+                    let tx = events_tx.clone();
+                    thread::spawn(move || {
+                        let result =
+                            panic::catch_unwind(AssertUnwindSafe(|| install::restore(&backup)))
+                                .unwrap_or_else(|_| {
+                                    Err(
+                                "The restore task stopped unexpectedly; no files were restored."
+                                    .into(),
+                            )
+                                });
+                        let _ = tx.send(UiEvent::Restored(result));
+                    });
+                } else if event == nwg::Event::OnButtonClick && handle == ui.wrapper.handle {
+                    events_busy.set(true);
+                    ui.apply.set_enabled(false);
+                    ui.restore.set_enabled(false);
+                    ui.wrapper.set_enabled(false);
+                    append_log(&ui, TaskState::Working, "Adding the graphics wrapper…");
+                    let game = (*events_game).clone();
+                    let payload = (*events_payload).clone();
+                    let tx = events_tx.clone();
+                    thread::spawn(move || {
+                        let result = panic::catch_unwind(AssertUnwindSafe(|| install::add_wrapper(&game, &payload)))
+                            .unwrap_or_else(|_| Err("The graphics-wrapper task stopped unexpectedly; no files were added.".into()));
+                        let _ = tx.send(UiEvent::Wrapper(result));
+                    });
                 }
             },
         );

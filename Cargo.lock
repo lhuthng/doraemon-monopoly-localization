@@ -78,6 +78,7 @@ dependencies = [
  "doraemon-game-patch",
  "native-windows-gui",
  "unicode-segmentation",
+ "winapi",
 ]
 
 [[package]]

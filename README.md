@@ -7,14 +7,14 @@ audio track is distributed by this repository.
 
 ## Components
 
-| Component | Purpose |
-| --- | --- |
-| `resource-studio/` | Svelte 5 editor for user-supplied strings, sysfonts, bitmaps, and sprites |
-| `rust/game-patch/` | Verified deltas, PE patches, sysfont extension, CUE extraction, backup, and restore |
+| Component           | Purpose                                                                             |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `resource-studio/`  | Svelte 5 editor for user-supplied strings, sysfonts, bitmaps, and sprites           |
+| `rust/game-patch/`  | Verified deltas, PE patches, sysfont extension, CUE extraction, backup, and restore |
 | `rust/patch-build/` | Developer CLI that turns ignored original/target directories into a Windows patcher |
-| `rust/patcher/` | Native Win32 English or Vietnamese patcher GUI |
-| `docs/` | File-format reference, reverse-engineering journal, and sprite index |
-| `archive/` | Historical executable investigations retained as technical notes |
+| `rust/patcher/`     | Native Win32 English or Vietnamese patcher GUI                                      |
+| `docs/`             | File-format reference, reverse-engineering journal, and sprite index                |
+| `archive/`          | Historical executable investigations retained as technical notes                    |
 
 ## Resource Studio
 
@@ -24,6 +24,20 @@ bun install
 bun run dev
 ```
 
+For the ignored English or Vietnamese working copies, use:
+
+```sh
+cd resource-studio
+bun run dev-en
+# or
+bun run dev-vi
+```
+
+These commands copy the selected private workspace from `local-game/english`
+or `local-game/vietnamese` into the ignored `public/game/` staging directory,
+then start Vite. They stop with a copyright reminder when the private workspace
+is absent or incomplete; no placeholder game files are generated.
+
 The Studio starts normally with `public/game/` empty. Load your own files with
 the route's file buttons or drop zones. During private local development,
 ignored files named `strings.dat`, `sysfont.dat`, `bitmaps.dat`, `Sprite1.dat`,
@@ -32,37 +46,192 @@ automatic loading.
 
 ## Rust patch builder
 
-The release builder accepts explicit directories and never searches the
-repository for game data:
+The release command turns an untouched game and a completed localized game
+into a self-contained Windows patcher:
+
+```text
+original game + finished localized game -> Windows patcher
+```
 
 ```sh
 cargo run -p patch-build -- release \
   --language english \
-  --base-dir /path/to/original \
-  --target-dir /path/to/localized \
-  --output-dir /path/to/release
+  --base-dir tmp/cleanroom/base \
+  --target-dir resource-studio/local-game/english \
+  --output-dir tmp/cleanroom/windows-release
 ```
 
-Use `--language vietnamese` for the Vietnamese release. Each input directory
-must contain `Doraemon.exe`, `strings.dat`, `sysfont.dat`, `Sprite1.dat`,
-`sprite2.dat`, and `bitmaps.dat`. Only the exact researched Cantonese build is
-accepted. Successful builds produce one self-contained Windows patcher and its
-SHA-256 file; intermediate `.dmpatch` files are removed.
+The builder never searches the repository for game data. Every directory must
+be supplied explicitly.
 
-The patcher validates every source before writing, creates
-`backup/original/`, `backup/manifest.json`, and `backup/Restore.exe`, and uses
-verified replacements. Its optional no-disc mode also bypasses the legacy
-Setup registry check. A user-owned CUE/BIN can be converted losslessly to
-`DoraemonMusic.wav`; without valid local audio the game continues silently.
+### Base directory
 
-Build just the deterministic Vietnamese font extension with:
+`--base-dir` is the untouched Cantonese game version that patcher users are
+expected to own:
+
+```text
+base/
+├── Doraemon.exe
+├── strings.dat
+├── sysfont.dat
+├── Sprite1.dat
+├── sprite2.dat
+└── bitmaps.dat
+```
+
+The executable, fonts, and graphics define the verified source used for binary
+patches. `strings.dat` is handled differently: the builder decodes its GameOne
+archive, compares records by IDs such as `001/041`, and embeds only translated
+record bodies. At install time the patcher decodes the user's own
+`strings.dat`, verifies the complete record layout, replaces matching records,
+rebuilds all nested offsets, and verifies the result. It does not require an
+alternate whole-file strings archive or an alternate base directory.
+
+### Target directory
+
+`--target-dir` is the completed game state that should exist after patching. It
+must contain the same six canonical filenames.
+
+An English target normally contains translated `strings.dat`, localized
+`Sprite1.dat`, and unchanged copies of resources that were not edited. A
+Vietnamese target contains Vietnamese `strings.dat` and the extended
+`sysfont.dat`; it currently reuses the English UI sprites.
+
+Copy every unchanged file from the base directory into the target directory.
+The builder compares corresponding files and embeds compact differences only.
+It does not embed either complete directory. `target-dir/Doraemon.exe` is
+required for a complete input layout, but executable modifications are
+generated by the verified Rust PE patch code rather than copied from it.
+
+### Output directory
+
+`--output-dir` receives the release artifacts. Building both languages into
+the same directory produces:
+
+```text
+windows-release/
+├── Doraemon-English-Patcher.exe
+├── Doraemon-English-Patcher.exe.sha256
+├── Doraemon-Vietnamese-Patcher.exe
+├── Doraemon-Vietnamese-Patcher.exe.sha256
+└── README.txt
+```
+
+The temporary `.dmpatch` payload is embedded into its EXE and removed after a
+successful build. The release directory contains no source or rebuilt game
+archive.
+
+### Language and target options
+
+`--language` accepts `english` or `vietnamese`. Each resulting EXE has one
+fixed language. Vietnamese additionally enables the CC/CD rendering hook while
+retaining the names `Doraemon.exe` and `sysfont.dat`.
+
+The default Windows compilation target is `x86_64-pc-windows-gnu`. A Windows
+machine with Visual Studio Build Tools may instead use:
 
 ```sh
-cargo run -p patch-build -- vi-font --input sysfont.dat --output sysfont.dat
+cargo run -p patch-build -- release \
+  --language english \
+  --base-dir C:\patch-input\base \
+  --target-dir C:\patch-input\english \
+  --output-dir C:\patch-output \
+  --target x86_64-pc-windows-msvc
 ```
 
-The patched Vietnamese game continues to use the canonical names
-`Doraemon.exe` and `sysfont.dat`.
+Use `--payload-only` to generate the intermediate `.dmpatch` without compiling
+a Windows executable. This is intended for tests and debugging.
+
+To include the optional cnc-ddraw compatibility wrapper in the Windows
+patcher, point the builder at a private local copy:
+
+```sh
+--cnc-ddraw-dir /Users/thang/Downloads/cnc-ddraw
+```
+
+The wrapper files are read only while building and embedded in the ignored
+output EXE. They are never copied into the repository.
+
+### Portable compatibility patcher
+
+Build the standalone executable-compatibility patcher without supplying game
+files at build time:
+
+```sh
+cargo run -p patch-build -- portable \
+  --output-dir tmp/cleanroom/portable-patcher
+```
+
+The result is `Doraemon-Portable-Patcher.exe`. Copy it into the game directory
+beside `Doraemon.exe`, then run it there. It always patches the directory it is
+running from and does not ask the user to select a game path. It inspects the
+user's `Doraemon.exe` at runtime and treats the three compatibility features
+independently:
+
+- Setup registry bypass;
+- mounted-CD startup bypass;
+- local `DoraemonMusic.wav` playback.
+
+Already-applied compatible changes are skipped. The clean researched v1.26
+layout supports all three features. The alternate DoraChi v1.26 layout is also
+recognized: its existing CD bypass is preserved and its missing registry
+bypass is applied. Local-WAV hooks are not yet enabled for that alternate MCI
+layout; without a disc/CUE/WAV, the patcher reports that the soundtrack will
+be muted.
+
+Version text alone is not enough to patch safely. An unknown or differently
+modified executable is rejected unless its relevant instruction layout is
+recognized and verified. Adding support for another v1.26 executable therefore
+means documenting its feature state and adding a tested layout profile—not
+blindly reusing offsets from another build.
+
+### Builder dependencies
+
+The repository pins Rust 1.77.2 for Windows 7 compatibility. On macOS, install
+the GNU cross-linker before building releases:
+
+```sh
+brew install mingw-w64
+```
+
+Users running the generated patcher do not need Rust, Bun, MinGW, or the
+Resource Studio.
+
+### Font and audio utilities
+
+Build only the deterministic Vietnamese font extension:
+
+```sh
+cargo run -p patch-build -- vi-font \
+  --input /path/to/sysfont.dat \
+  --output /path/to/new/sysfont.dat
+```
+
+Extract the ten audio tracks from a user-owned CUE/BIN without building a
+patcher:
+
+```sh
+cargo run -p patch-build -- extract-audio \
+  --cue /path/to/DORAEMON.cue \
+  --output /path/to/DoraemonMusic.wav
+```
+
+### Installed patch behavior
+
+Before changing a game, the Windows patcher validates every required source
+and prepares all target outputs. It creates `backup/original/`,
+`backup/manifest.json`, and an automatic `backup/Restore.exe` before replacing
+live files.
+
+No-disc mode is selected by default and also bypasses the legacy Setup registry
+check. It can reuse a verified `DoraemonMusic.wav` or extract one from the
+user's original CUE/BIN. If neither is supplied, the patched game continues
+silently rather than failing to start.
+
+Apply, Restore, and Add graphics wrapper keep the window open. The patcher
+shows a live in-window task log with completed, skipped, and failed work. A
+later Apply rechecks the installation and reports already-applied resource
+patches as skipped rather than as a failure.
 
 ## Checks
 
@@ -75,13 +244,9 @@ bun run lint
 bun run build
 ```
 
-Windows releases target Rust 1.77 for Windows 7 compatibility. Cross-building
-the GNU target from macOS additionally requires a MinGW-w64 linker.
-
 ## Copyright-clean workflow
 
 Game inputs, localized full archives, patch payloads, releases, and clean-room
 staging directories are ignored. Do not add them to Git. Generated patchers
 contain validation metadata and binary differences that require the user's own
 supported installation; they do not contain complete source archives.
-

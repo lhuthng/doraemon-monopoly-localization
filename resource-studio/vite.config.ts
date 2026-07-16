@@ -3,6 +3,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: '/',
+  build: {
+    copyPublicDir: false
+  },
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:5184'
