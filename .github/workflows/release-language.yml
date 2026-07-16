@@ -1,0 +1,71 @@
+name: Release language patcher
+
+on:
+  push:
+    tags:
+      - 'english-patch-v*'
+      - 'vietnamese-patch-v*'
+  workflow_dispatch:
+    inputs:
+      language:
+        description: Language payload to package
+        required: true
+        type: choice
+        options:
+          - english
+          - vietnamese
+      tag:
+        description: Existing tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@v4
+
+      - name: Select language payload
+        id: patch
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            language="${{ inputs.language }}"
+            tag="${{ inputs.tag }}"
+          elif [[ "${GITHUB_REF_NAME}" == english-patch-v* ]]; then
+            language="english"
+            tag="${GITHUB_REF_NAME}"
+          else
+            language="vietnamese"
+            tag="${GITHUB_REF_NAME}"
+          fi
+          test -f "patches/${language}.dmpatch"
+          echo "language=${language}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.77.2
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Install Windows GNU linker
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Package Windows patcher
+        run: |
+          cargo run -p patch-build -- package \
+            --payload "patches/${{ steps.patch.outputs.language }}.dmpatch" \
+            --output-dir release
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.patch.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            release/*.sha256

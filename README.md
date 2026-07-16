@@ -86,11 +86,18 @@ clearly when the inputs are absent; it never creates fake resources.
 Useful details:
 
 - String exports preserve game archive structure and record IDs.
-- The **Dialog** reflow preset is **264 px**. This matches the game’s visual
-  309 px dialogue box because its capitalizing font variant has different
-  metrics from the Studio's base measurement variant.
-- Vietnamese uses an extended `sysfont.dat`, not a new filename. The game EXE
-  recognizes `CC xx` and `CD xx` as two-byte Vietnamese glyph codes.
+
+## Vietnamese font extension
+
+Vietnamese keeps the original filenames: the game still loads `Doraemon.exe`
+and `sysfont.dat`. The Vietnamese patch expands `sysfont.dat` from 640 to
+1,920 glyph records, then patches the game’s text routines to recognize
+`CC xx` and `CD xx` as two-byte Vietnamese glyph codes. ASCII and Chinese text
+continue through their original paths.
+
+The first Vietnamese font variant contains the usable glyphs. The remaining
+four banks are structurally valid blank variants for future font work. The
+Font Studio exposes these banks once an extended `sysfont.dat` is loaded.
 
 ## Build a language patcher
 
@@ -195,7 +202,7 @@ It independently handles the old Setup-registry check, CD startup check, and
 local WAV music hook. If no CUE/BIN or verified WAV is present beside the game,
 the game is patched to run quietly rather than failing for lack of a disc.
 
-## Publishing GitHub releases
+## Automated GitHub releases
 
 Keep releases free of game data. For each release, attach only:
 
@@ -211,9 +218,33 @@ Suggested tags and titles:
 | `vietnamese-patch-v0.1.0` | Vietnamese Patch v0.1.0 | Full dialogue; English UI graphics for now. |
 | `portable-patch-v0.1.0` | Portable Compatibility Patch v0.1.0 | No-disc, registry, local-audio, and optional wrapper support. |
 
-After building an EXE into an ignored release folder, create the GitHub release
-from the tag and upload those three safe artifacts. Do not upload `.dat`,
-`.bin`, `.cue`, `.wav`, original EXEs, or full sprite exports.
+The repository includes a GitHub Actions workflow that packages a committed
+language payload and creates a GitHub release automatically. It runs when you
+push one of these tags:
+
+```text
+english-patch-v*
+vietnamese-patch-v*
+```
+
+For example, after committing `patches/english.dmpatch`:
+
+```sh
+git tag english-patch-v0.1.0
+git push origin english-patch-v0.1.0
+```
+
+GitHub builds the Windows patcher from the tracked payload, uploads the EXE
+and SHA-256 checksum to the release, and generates release notes. You do not
+need to build or upload those artifacts manually.
+
+The portable compatibility patch is intentionally not automated yet. It will
+get its own `portable-patch-v*` workflow after its runtime patching support is
+settled.
+
+The workflow has access only to the repository and its tracked payloads. It
+never receives `.dat`, `.bin`, `.cue`, `.wav`, original EXEs, or full sprite
+exports.
 
 ## Other commands
 
