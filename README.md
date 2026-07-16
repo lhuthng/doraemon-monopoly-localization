@@ -54,6 +54,7 @@ make build-patch LANGUAGE=english
 make build-patch LANGUAGE=english PUBLISH=1
 # Also create a local Windows patcher:
 make build-patch LANGUAGE=english PATCHER=1
+make build-patch LANGUAGE=english PATCHER=1 CNC_DDRAW_DIR=/path/to/cnc-ddraw
 ```
 
 `make setup` creates private English and Vietnamese Resource Studio workspaces

@@ -5,6 +5,7 @@ PATCH_DIR := tmp/patches
 RELEASE_DIR := tmp/release
 PUBLISH ?=
 PATCHER ?=
+CNC_DDRAW_DIR ?=
 RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat
 GAME_FILES := Doraemon.exe $(RESOURCE_FILES)
 
@@ -15,7 +16,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help setup build-patch check-language check-publish check-patcher check-resources check-game check-payloads
+.PHONY: help setup build-patch check-language check-publish check-patcher check-wrapper check-resources check-game check-payloads
 
 help:
 	@printf '%s\n' \
@@ -34,6 +35,8 @@ help:
 	  '      Write the reviewed payload directly to tracked patches/ for committing.' \
 	  '  make build-patch LANGUAGE=english PATCHER=1' \
 	  '      Also build a local Windows patcher EXE in tmp/release/.' \
+	  '  make build-patch LANGUAGE=english PATCHER=1 CNC_DDRAW_DIR=/path/to/cnc-ddraw' \
+	  '      Bundle your local cnc-ddraw files for the patcher’s Add graphics wrapper button.' \
 	  '' \
 	  'Tracked: patches/*.dmpatch (shareable resource changes only)' \
 	  'Ignored: tmp/base/ (your game), resource-studio/local-game/, tmp/patches/, tmp/release/'
@@ -64,6 +67,19 @@ check-patcher:
 	  *) printf '%s\n' 'PATCHER must be empty or 1. Use PATCHER=1 to build a local Windows EXE.'; exit 2 ;; \
 	esac
 
+check-wrapper:
+	@if [ -n "$(CNC_DDRAW_DIR)" ] && [ "$(PATCHER)" != 1 ]; then \
+	  printf '%s\n' 'CNC_DDRAW_DIR is only used with PATCHER=1.'; exit 2; \
+	fi
+	@if [ -n "$(CNC_DDRAW_DIR)" ]; then \
+	  missing=0; for file in ddraw.dll ddraw.ini 'cnc-ddraw config.exe'; do \
+	    if [ ! -f "$(CNC_DDRAW_DIR)/$$file" ]; then \
+	      printf '%s\n' "Missing $(CNC_DDRAW_DIR)/$$file. Choose a complete cnc-ddraw folder."; \
+	      missing=1; \
+	    fi; \
+	  done; test $$missing -eq 0; \
+	fi
+
 check-game:
 	@missing=0; for file in $(GAME_FILES); do \
 	  if [ ! -f "$(BASE_DIR)/$$file" ]; then \
@@ -85,7 +101,7 @@ setup: check-resources check-payloads
 	@cd resource-studio && bun run setup-vi ../$(BASE_DIR)
 	@printf '%s\n' 'Prepared private Studio workspaces. Start one with: cd resource-studio && bun run dev-en'
 
-build-patch: check-language check-publish check-patcher check-game
+build-patch: check-language check-publish check-patcher check-wrapper check-game
 	@missing=0; for file in $(RESOURCE_FILES); do \
 	  if [ ! -f "resource-studio/local-game/$(LANGUAGE)/$$file" ]; then \
 	    printf '%s\n' "Missing resource-studio/local-game/$(LANGUAGE)/$$file. Run make setup or prepare your workspace first."; \
@@ -98,6 +114,7 @@ build-patch: check-language check-publish check-patcher check-game
 	  --base-dir "$(BASE_DIR)" \
 	  --target-dir "resource-studio/local-game/$(LANGUAGE)" \
 	  --output-dir "$(PATCH_DIR)" \
+	  $(if $(CNC_DDRAW_DIR),--cnc-ddraw-dir "$(CNC_DDRAW_DIR)") \
 	  --payload-only
 	@printf '%s\n' "Wrote $(PATCH_DESTINATION) payload: $(PATCH_DIR)/$(LANGUAGE).dmpatch"
 ifeq ($(PUBLISH),1)

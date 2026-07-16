@@ -6,6 +6,9 @@ const CSEG_VA: u32 = 0x004d_1000;
 const CSEG_RAW: usize = 0x000c_c000;
 const PORT_VA: u32 = 0x004d_6000;
 const PORT_SIZE: usize = 0x1000;
+const PORT_TITLE_OFFSET: usize = 0x0f00;
+const TITLE_VERSION: &[u8] = b"Version 1.26\0";
+const TITLE_CREDIT: &[u8] = b"Version 1.26 - Patched by Thang\0";
 
 #[derive(Clone)]
 enum Target {
@@ -282,6 +285,83 @@ fn section_location(input: &[u8], name: &[u8]) -> Result<(u32, usize, usize)> {
     Ok((image_base + relative_va, raw, raw_size))
 }
 
+fn raw_to_va(input: &[u8], raw: usize) -> Result<u32> {
+    let pe = u32::from_le_bytes(
+        input
+            .get(0x3c..0x40)
+            .ok_or("truncated DOS header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let image_base = u32::from_le_bytes(input[pe + 24 + 28..pe + 24 + 32].try_into().unwrap());
+    let count = u16::from_le_bytes(input[pe + 6..pe + 8].try_into().unwrap()) as usize;
+    let optional = u16::from_le_bytes(input[pe + 20..pe + 22].try_into().unwrap()) as usize;
+    let table = pe + 24 + optional;
+    for index in 0..count {
+        let section = table + index * 40;
+        let relative_va = u32::from_le_bytes(input[section + 12..section + 16].try_into().unwrap());
+        let raw_size = u32::from_le_bytes(input[section + 16..section + 20].try_into().unwrap()) as usize;
+        let raw_start = u32::from_le_bytes(input[section + 20..section + 24].try_into().unwrap()) as usize;
+        if raw >= raw_start && raw < raw_start + raw_size {
+            return Ok(image_base + relative_va + (raw - raw_start) as u32);
+        }
+    }
+    Err("title text is outside the executable's mapped sections".into())
+}
+
+fn find_bytes(input: &[u8], needle: &[u8]) -> Option<usize> {
+    input.windows(needle.len()).position(|window| window == needle)
+}
+
+/// Redirects the fixed title-screen `push "Version 1.26"` instructions to
+/// the longer credit text. The game already right-aligns the rendered surface,
+/// so its right edge stays in the original position without a coordinate patch.
+fn patch_title_credit(output: &mut [u8], credit_va: u32) -> Result<usize> {
+    let raw = find_bytes(output, TITLE_VERSION).ok_or("could not find the Version 1.26 title text")?;
+    let source_va = raw_to_va(output, raw)?;
+    let mut changed = 0;
+    for offset in 1..output.len().saturating_sub(4) {
+        if output[offset - 1] == 0x68
+            && u32::from_le_bytes(output[offset..offset + 4].try_into().unwrap()) == source_va
+        {
+            output[offset..offset + 4].copy_from_slice(&credit_va.to_le_bytes());
+            changed += 1;
+        }
+    }
+    if changed != 4 {
+        return Err(format!(
+            "expected four Version 1.26 title references, found {changed}; executable was not changed"
+        ));
+    }
+    Ok(changed)
+}
+
+/// Upgrades a portable EXE made by an older patcher. `.port` already reserves
+/// a 4 KiB raw section, so its unused tail is a stable place for the credit.
+fn install_title_credit_in_existing_port(output: &mut [u8]) -> Result<bool> {
+    if find_bytes(output, TITLE_CREDIT).is_some() {
+        return Ok(false);
+    }
+    let section = find_section(output, b".port")?;
+    let pe = u32::from_le_bytes(output[0x3c..0x40].try_into().unwrap()) as usize;
+    let image_base = u32::from_le_bytes(output[pe + 24 + 28..pe + 24 + 32].try_into().unwrap());
+    let relative_va = u32::from_le_bytes(output[section + 12..section + 16].try_into().unwrap());
+    let raw_size = u32::from_le_bytes(output[section + 16..section + 20].try_into().unwrap()) as usize;
+    let raw = u32::from_le_bytes(output[section + 20..section + 24].try_into().unwrap()) as usize;
+    if raw_size < PORT_TITLE_OFFSET + TITLE_CREDIT.len()
+        || raw + PORT_TITLE_OFFSET + TITLE_CREDIT.len() > output.len()
+    {
+        return Err("existing .port section has no safe room for the title credit".into());
+    }
+    output[raw + PORT_TITLE_OFFSET..raw + PORT_TITLE_OFFSET + TITLE_CREDIT.len()]
+        .copy_from_slice(TITLE_CREDIT);
+    // Older patchers set the virtual size to their code length. Extend it so
+    // Windows maps the reserved tail where the new text lives.
+    output[section + 8..section + 12].copy_from_slice(&(PORT_SIZE as u32).to_le_bytes());
+    patch_title_credit(output, image_base + relative_va + PORT_TITLE_OFFSET as u32)?;
+    Ok(true)
+}
+
 fn discover_font_layout(input: &[u8]) -> Result<FontLayout> {
     let (dseg_va, _, _) = section_location(input, b"DSEG")?;
     let (cseg_va, cseg_raw, cseg_size) = section_location(input, b"CSEG")?;
@@ -540,6 +620,8 @@ fn portable_section() -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
     }
     a.label("music_name");
     a.emit(b"DoraemonMusic.wav\0");
+    a.label("title_credit");
+    a.emit(TITLE_CREDIT);
     a.label("path_buffer");
     a.emit(&[0_u8; 256]);
     a.finish()
@@ -577,6 +659,8 @@ fn alternate_no_disc_section() -> Result<(Vec<u8>, HashMap<&'static str, u32>)> 
     a.label("done");
     a.emit(&[0x5f, 0x5e]);
     a.jmp(Target::Address(0x0043_721a));
+    a.label("title_credit");
+    a.emit(TITLE_CREDIT);
     a.finish()
 }
 
@@ -643,6 +727,7 @@ pub fn patch_portable(verified: &[u8]) -> Result<Vec<u8>> {
     }
     let (section, labels) = portable_section()?;
     let mut output = add_section(verified, &section)?;
+    patch_title_credit(&mut output, labels["title_credit"])?;
     output[0x2cc11..0x2cc18].copy_from_slice(&[0xc7, 0x45, 0xf4, 0, 0, 0, 0]);
     for (source, label, replaced) in [
         (0x0043_723a, "no_disc", 6),
@@ -661,6 +746,7 @@ fn patch_alternate_portable(input: &[u8]) -> Result<Vec<u8>> {
     let (registry, _) = patch_registry_at(input, 0x2cb31)?;
     let (section, labels) = alternate_no_disc_section()?;
     let mut output = add_section(&registry, &section)?;
+    patch_title_credit(&mut output, labels["title_credit"])?;
     patch_jump(&mut output, 0x0043_713b, labels["no_disc"], 5)?;
     Ok(output)
 }
@@ -732,9 +818,15 @@ pub fn patch_compatible(
             .unwrap_or(false);
     let already_portable = find_section(input, b".port").is_ok();
     if already_portable {
+        let mut output = input.to_vec();
+        let added_credit = install_title_credit_in_existing_port(&mut output)?;
         return Ok(CompatibilityPatch {
-            bytes: input.to_vec(),
-            actions: Vec::new(),
+            bytes: output,
+            actions: if added_credit {
+                vec!["added the title-screen patch credit".into()]
+            } else {
+                Vec::new()
+            },
             local_audio_supported: canonical_layout,
         });
     }
@@ -744,6 +836,7 @@ pub fn patch_compatible(
             return Ok(CompatibilityPatch {
                 bytes,
                 actions: vec![
+                    "added the title-screen patch credit".into(),
                     "bypassed the Setup registry requirement".into(),
                     "bypassed the original CD check".into(),
                     "enabled local DoraemonMusic.wav playback".into(),
@@ -781,6 +874,7 @@ pub fn patch_compatible(
             actions.push("bypassed the Setup registry requirement".into());
         }
         if no_disc {
+            actions.push("added the title-screen patch credit".into());
             actions.push("bypassed the Setup registry requirement".into());
             actions.push("bypassed the original CD-ROM drive requirement".into());
         }
@@ -824,8 +918,37 @@ mod tests {
         let (_, portable) = build_variants(&original, false).unwrap();
         assert_eq!(
             hash::hex(&hash::bytes(&portable)),
-            "8f8cbda0f70732c21db7385d6366cb24c94801e94dfd29f1202184796a54d7e5"
+            "03b4a1be43d6da93e4b6d98158cce262c2a4fcc3dade8a141d0e5f9fe3cb1ef1"
         );
+        assert!(find_bytes(&portable, TITLE_CREDIT).is_some());
+        let title_raw = find_bytes(&portable, TITLE_VERSION).unwrap();
+        let title_va = raw_to_va(&portable, title_raw).unwrap();
+        assert_eq!(
+            portable
+                .windows(5)
+                .filter(|instruction| instruction[0] == 0x68 && instruction[1..] == title_va.to_le_bytes())
+                .count(),
+            0
+        );
+        // An EXE patched by the previous portable build did not contain this
+        // credit. It must be safely upgradable without restoring first.
+        let mut old_portable = portable.clone();
+        let credit_raw = find_bytes(&old_portable, TITLE_CREDIT).unwrap();
+        let credit_va = raw_to_va(&old_portable, credit_raw).unwrap();
+        old_portable[credit_raw..credit_raw + TITLE_CREDIT.len()].fill(0);
+        for offset in 1..old_portable.len().saturating_sub(4) {
+            if old_portable[offset - 1] == 0x68
+                && u32::from_le_bytes(old_portable[offset..offset + 4].try_into().unwrap()) == credit_va
+            {
+                old_portable[offset..offset + 4].copy_from_slice(&title_va.to_le_bytes());
+            }
+        }
+        let upgraded = patch_compatible(&old_portable, true, false).unwrap();
+        assert!(find_bytes(&upgraded.bytes, TITLE_CREDIT).is_some());
+        assert!(upgraded
+            .actions
+            .iter()
+            .any(|action| action == "added the title-screen patch credit"));
         let (plain_vi, portable_vi) = build_variants(&original, true).unwrap();
         assert_eq!(plain_vi.as_ref().unwrap().len(), original.len());
         assert_eq!(portable_vi.len(), original.len() + PORT_SIZE);
