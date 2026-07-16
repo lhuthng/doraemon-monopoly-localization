@@ -1,23 +1,90 @@
-# Doraemon Monopoly localization toolkit
+# Doraemon Monopoly localization
 
-This is a copyright-clean toolkit for researching and localizing GameOne's
-1998 Windows 95/98 **Doraemon Monopoly**. It does not contain the game,
-rebuilt game archives, its EXE, disc image, music, or extracted artwork.
+[![English 95%](https://img.shields.io/badge/English-95%25-2ea44f)](#localization-progress)
+[![Vietnamese 50%](https://img.shields.io/badge/Vietnamese-50%25-e0a000)](#localization-progress)
+[![Windows patchers](https://img.shields.io/badge/releases-Windows%20patchers-2563eb)](https://github.com/lhuthng/doraemon-monopoly-localization/releases)
+[![License](https://img.shields.io/badge/code-MIT-blue)](#legal)
 
-It has two jobs:
+<p align="center">
+  <img src="docs/assets/title-menu-comparison.png" alt="Original Chinese and localized English title menus" width="548">
+</p>
 
-- **Resource Studio** is a local Svelte editor for the game's strings, fonts,
-  bitmaps, and two sprite archives.
-- **Rust patch builders** turn your own original game and your own finished
-  localization into small Windows patchers. A player supplies their own game;
-  the patcher verifies it, makes a backup, then applies only the differences.
+A copyright-clean toolkit for researching and localizing GameOne's 1998
+Windows 95/98 game **Doraemon Monopoly**. It provides English and Vietnamese
+localization patchers, a portable compatibility patch, a Svelte resource
+editor, and the reverse-engineered file tooling needed to build them.
 
-## What you need
+The repository does not contain the original game, complete game archives,
+disc images, music, or extracted artwork. Players and contributors must supply
+their own supported Cantonese v1.26 installation.
 
-To edit resources, obtain your own legal copy of the Cantonese release and
-keep these resource files in a private, ignored folder:
+## Downloads
+
+Download the patcher you want from
+[GitHub Releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases).
+
+| Release | What it changes | Status | Link |
+| --- | --- | --- | --- |
+| English Patch | English dialogues, menus, sprites, gadget descriptions, compatibility fixes, and optional local music | About 95% complete | [English releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases?q=english-patch) |
+| Vietnamese Patch | Vietnamese dialogues and extended Vietnamese fonts; currently inherits the English UI graphics | About 50% complete | [Vietnamese releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases?q=vietnamese-patch) |
+| Portable Patch | No localization. Removes the CD and Setup-registry requirements, supports local WAV music, and can install cnc-ddraw | Compatibility release | [Portable releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases?q=portable-patch) |
+
+Every release contains a Windows patcher, its SHA-256 checksum, and a short
+README. It never contains a patched `Doraemon.exe` or complete `.dat` file.
+
+### Using a patcher
+
+1. Copy the patcher EXE into the folder containing your own `Doraemon.exe`.
+2. Run the patcher and press **Apply**.
+3. Review the colored task log. The window remains open until you close it.
+4. Use **Add graphics wrapper** for cnc-ddraw compatibility, then **Play**.
+
+The patcher verifies the installation, creates `backup/original/` and
+`backup/manifest.json`, applies only the requested changes, and verifies every
+result. **Restore** returns the tracked files to their exact original hashes.
+
+For background music, place either a valid `DoraemonMusic.wav` or the original
+matching CUE/BIN beside the game. With no audio source, the patched game still
+runs but remains silent.
+
+## Localization progress
+
+| Language | Overall | Dialogues | UI and graphics | Notes |
+| --- | ---: | --- | --- | --- |
+| English | **95%** | Complete | Nearly complete | Main gameplay, menus, gadgets, and dialogue are usable in English. Some visual text may remain. |
+| Vietnamese | **50%** | Complete | Uses English UI | Vietnamese text and font support are implemented. Vietnamese-specific menu and sprite artwork remains to be localized. |
+
+These percentages describe localization coverage, not build stability. Update
+them when translated resources are reviewed in game.
+
+## What is in this repository
+
+| Path | Purpose |
+| --- | --- |
+| `resource-studio/` | Svelte 5 editor for strings, fonts, bitmaps, `Sprite1.dat`, and `sprite2.dat`. |
+| `rust/game-patch/` | Archive formats, semantic string patches, binary deltas, backup and restore, PE patching, Vietnamese fonts, and CUE/BIN extraction. |
+| `rust/patch-build/` | Developer CLI for creating payloads and Windows patcher releases. |
+| `rust/patcher/` | Native Win32 patcher interface embedded in release EXEs. |
+| `patches/` | Tracked copyright-clean English and Vietnamese difference payloads. |
+| `third_party/cnc-ddraw/` | Vendored MIT-licensed cnc-ddraw runtime, shaders, license, and source hashes. |
+| `docs/` | File-format documentation, sprite localization catalogue, and reverse-engineering journal. |
+| `archive/` | Focused executable research notes retained for reference. |
+| `tmp/` | Ignored private inputs and generated output. Only `tmp/base/.gitkeep` is tracked. |
+
+## Contributor setup
+
+Install Bun and Rust. Building Windows patchers on macOS also requires the GNU
+Windows linker:
+
+```sh
+brew install mingw-w64
+```
+
+Copy these files from your own untouched Cantonese v1.26 game into
+`tmp/base/`:
 
 ```text
+Doraemon.exe
 strings.dat
 sysfont.dat
 Sprite1.dat
@@ -25,263 +92,163 @@ sprite2.dat
 bitmaps.dat
 ```
 
-`Doraemon.exe` is needed only when building or testing a player-facing patcher.
+All six files are ignored by Git. Never commit them.
 
-For local music in a no-disc build, also keep the original matching CUE/BIN
-beside the game, or a verified `DoraemonMusic.wav` produced from that image.
-Nothing in those folders is meant to be committed.
-
-For development, install Bun and Rust. Building Windows patchers from macOS
-also needs a GNU Windows cross-linker:
+Then prepare both private Studio workspaces:
 
 ```sh
-brew install mingw-w64
-```
-
-The Rust workspace pins a Windows-7-compatible toolchain. Players of a
-released patcher do **not** need Bun, Rust, or MinGW.
-
-## Quick start
-
-Copy your own untouched Cantonese game files into `tmp/base/`. The committed
-`.gitkeep` creates this empty folder, but every real file in it remains ignored.
-
-```sh
-make help
 make setup
-make build-patch LANGUAGE=english
-# After reviewing the ignored candidate:
-make build-patch LANGUAGE=english PUBLISH=1
-# Also create a local Windows patcher:
-make build-patch LANGUAGE=english PATCHER=1
-make build-patch LANGUAGE=english PATCHER=1 CNC_DDRAW_DIR=/path/to/cnc-ddraw
 ```
 
-`make setup` creates private English and Vietnamese Resource Studio workspaces
-from the tracked `patches/*.dmpatch` files. `make build-patch` creates a new,
-ignored candidate payload under `tmp/patches/`; review it, then copy it to
-`patches/` by rerunning with `PUBLISH=1`, then commit it when you are ready to
-share that localization update. Add `PATCHER=1` to also package the resulting
-payload as a local Windows EXE under `tmp/release/`. `make setup` refuses to
-overwrite an existing private workspace.
-
-## Repository map
-
-| Path | What it is |
-| --- | --- |
-| `resource-studio/` | Svelte 5 browser editor. It runs with no game files present. |
-| `rust/game-patch/` | File formats, deltas, archive rebuilding, backup/restore, Vietnamese font generation, PE compatibility patches, and CUE/BIN audio extraction. |
-| `rust/patch-build/` | Developer CLI that packages an English, Vietnamese, or portable Windows patcher. |
-| `rust/patcher/` | Native Win32 patcher window embedded in the release EXEs. |
-| `docs/` | Resource format references and reverse-engineering notes. |
-| `archive/` | Historical research notes. |
-
-## Resource Studio
-
-Start empty and load files using each route's buttons or drop areas:
+Start the editor for one language:
 
 ```sh
 cd resource-studio
 bun install
-bun run dev
-```
-
-For a private working copy, create ignored folders such as:
-
-```text
-resource-studio/local-game/
-├── origin/       # untouched Cantonese strings.dat
-├── english/      # your English target files
-└── vietnamese/   # your Vietnamese target files
-```
-
-Each language folder contains the five resource files above. Then launch a
-staged workspace:
-
-```sh
-cd resource-studio
 bun run dev-en
 # or
 bun run dev-vi
 ```
 
-The command copies only private files into ignored `public/game/`. It fails
-clearly when the inputs are absent; it never creates fake resources.
+The setup command combines your private original resources with the tracked
+copyright-clean payloads. It creates ignored workspaces under
+`resource-studio/local-game/`. It does not copy or create `Doraemon.exe` there.
 
-Useful details:
+## Make workflow
 
-- String exports preserve game archive structure and record IDs.
+Run `make` or `make help` for the current command summary.
+
+| Command | Result |
+| --- | --- |
+| `make setup` | Materializes private English and Vietnamese Studio workspaces from `tmp/base/` and the tracked payloads. |
+| `make build-patch LANGUAGE=english` | Compares the English workspace with `tmp/base/` and writes an ignored candidate to `tmp/patches/english.dmpatch`. |
+| `make build-patch LANGUAGE=vietnamese` | Creates the equivalent ignored Vietnamese candidate. |
+| `make build-patch LANGUAGE=english PUBLISH=1` | Writes the reviewed payload to tracked `patches/english.dmpatch`. |
+| `make build-patch LANGUAGE=english PATCHER=1` | Also builds a local Windows patcher in `tmp/release/` with the vendored cnc-ddraw runtime. |
+| `make build-patch LANGUAGE=english PATCHER=1 CNC_DDRAW_DIR=/path/to/cnc-ddraw` | Builds with a different complete cnc-ddraw distribution. |
+
+The payload and the patcher are different artifacts:
+
+```text
+private original files + private localized files
+                    |
+                    v
+        patches/english.dmpatch
+        copyright-clean differences
+                    |
+                    v
+       Doraemon-English-Patcher.exe
+       Rust program + embedded differences
+                    |
+                    v
+       player's own original installation
+```
+
+Only the first step needs the maintainer's original and localized `.dat`
+files. GitHub Actions can build the final patcher because the reviewed
+`.dmpatch` already contains the required differences, record replacements,
+validation hashes, and executable patch instructions.
+
+## Resource Studio
+
+The Studio can run completely empty with `bun run dev`. Optional ignored game
+files may be staged into `resource-studio/public/game/`, but missing files are
+treated as normal empty states.
+
+Its main workspaces support:
+
+- decoding, editing, reflowing, and rebuilding `strings.dat` without trimming
+  intentional spaces;
+- inspecting, editing, importing, and exporting `sysfont.dat` glyphs;
+- decoding bitmap palettes and both sprite archive formats;
+- lossless indexed-PNG sprite export and import for Aseprite;
+- rebuilding GameOne archives with corrected dynamic offsets;
+- server-side English and Vietnamese translation queues.
+
+See [Resource Studio documentation](resource-studio/README.md) for its routes
+and development commands.
 
 ## Vietnamese font extension
 
-Vietnamese keeps the original filenames: the game still loads `Doraemon.exe`
-and `sysfont.dat`. The Vietnamese patch expands `sysfont.dat` from 640 to
-1,920 glyph records, then patches the game’s text routines to recognize
-`CC xx` and `CD xx` as two-byte Vietnamese glyph codes. ASCII and Chinese text
-continue through their original paths.
+The Vietnamese patch keeps the original filenames `Doraemon.exe` and
+`sysfont.dat`. It expands `sysfont.dat` from 640 to 1,920 glyph records and
+patches four text routines in the executable.
 
-The first Vietnamese font variant contains the usable glyphs. The remaining
-four banks are structurally valid blank variants for future font work. The
-Font Studio exposes these banks once an extended `sysfont.dat` is loaded.
+The new encoding reserves two-byte sequences:
 
-## Build a language patcher
+- `CC 00` through `CC 7F` for Vietnamese slots 0 through 127;
+- `CD 00` through `CD 7F` for slots 128 through 255.
 
-A release is built from two private directories:
+The executable selects glyph record
+`640 + activeVariant * 256 + VietnameseSlot`. Existing ASCII and Chinese paths
+remain intact. Variant 0 contains the current Vietnamese artwork; variants 1
+through 4 are valid blank banks ready for future font editing.
 
-```text
-base-dir                 target-dir
-────────                 ──────────
-untouched game           finished localization
-Doraemon.exe + five      five localized resource files
-original resource files  strings, font, and sprite archives
-```
+More detail is recorded in
+[Executable font research](archive/EXECUTABLE_FONT_RESEARCH.md).
 
-`base-dir` is the exact untouched Cantonese game the player is expected to
-own. `target-dir` is the final localized resource workspace. The builder
-compares each resource pair and embeds only changes. It never embeds a
-complete game file.
+## How releases are built
 
-```sh
-cargo run -p patch-build -- release \
-  --language english \
-  --base-dir /private/path/to/original \
-  --target-dir /private/path/to/english \
-  --output-dir /private/path/to/release
-```
+The GitHub Actions workflow publishes all three patcher families:
 
-Change `english` to `vietnamese` for the Vietnamese patcher. The output is:
+| Tag pattern | Produced artifact |
+| --- | --- |
+| `english-patch-v*` | `Doraemon-English-Patcher.exe` |
+| `vietnamese-patch-v*` | `Doraemon-Vietnamese-Patcher.exe` |
+| `portable-patch-v*` | `Doraemon-Portable-Patcher.exe` |
 
-```text
-release/
-├── Doraemon-English-Patcher.exe       # or Doraemon-Vietnamese-Patcher.exe
-├── Doraemon-English-Patcher.exe.sha256
-└── README.txt
-```
-
-Optional: bundle a private cnc-ddraw copy for a **Add graphics wrapper** button:
-
-```sh
---cnc-ddraw-dir /path/to/cnc-ddraw
-```
-
-The player copies the one patcher EXE into their game folder and runs it. The
-window stays open while it works. It shows a colored live log, can Apply,
-Restore, add the wrapper, and launch the game with **Play**.
-
-Apply creates `backup/original/`, `backup/manifest.json`, and
-`backup/Restore.exe` before changing anything. Restore returns tracked files
-to their original hashes and removes a patcher-created WAV only when it has
-not been edited. A restored backup is recognized on the next Apply and is
-recreated automatically, so Restore → Apply works even when music is extracted
-from a CUE/BIN again.
-
-### Versioned localization changes, without versioning game data
-
-The shareable source of a language release is a `*.dmpatch` payload: a compact
-binary delta plus file hashes and translated string records. It is **not** a
-complete `.dat` archive and cannot be used without the exact supported base
-game. This repository permits only these payloads under `patches/`; all other
-`.dmpatch` files remain ignored.
-
-When a maintainer has finished an English or Vietnamese target, create the
-payload and commit it:
-
-```sh
-cargo run -p patch-build -- release \
-  --language english \
-  --base-dir /private/path/to/original \
-  --target-dir /private/path/to/english \
-  --output-dir patches \
-  --payload-only
-
-git add patches/english.dmpatch
-git commit -m "feat(english): update localization payload"
-```
-
-This is the only step that needs both the original and finished localized
-files. A fresh contributor clones the repository, supplies only their own
-untouched resource files, and materializes a private Studio workspace:
-
-```sh
-cd resource-studio
-bun run setup-en /path/to/their/game/folder
-# or
-bun run setup-vi /path/to/their/game/folder
-```
-
-The setup command verifies the original resource files in the selected folder,
-stores a private original `strings.dat`, and writes only the five materialized
-Studio resources to `resource-studio/local-game/english` or `vietnamese`. It
-does not copy, patch, or create `Doraemon.exe`. It refuses to overwrite an
-existing workspace unless you explicitly add `--force`.
-
-## Build the portable compatibility patcher
-
-This patcher has no language resource payload. It detects and patches the
-supported executable layout at runtime:
-
-```sh
-cargo run -p patch-build -- portable \
-  --output-dir /private/path/to/portable-release \
-  --cnc-ddraw-dir /path/to/cnc-ddraw
-```
-
-It independently handles the old Setup-registry check, CD startup check, and
-local WAV music hook. If no CUE/BIN or verified WAV is present beside the game,
-the game is patched to run quietly rather than failing for lack of a disc.
-
-## Automated GitHub releases
-
-Keep releases free of game data. For each release, attach only:
-
-- `Doraemon-English-Patcher.exe` **or** `Doraemon-Vietnamese-Patcher.exe`;
-- its `.sha256` checksum;
-- a short README/changelog.
-
-Suggested tags and titles:
-
-| Tag | Title | Scope |
-| --- | --- | --- |
-| `english-patch-v0.1.0` | English Patch v0.1.0 | Full dialogue; roughly 90% UI localization. |
-| `vietnamese-patch-v0.1.0` | Vietnamese Patch v0.1.0 | Full dialogue; English UI graphics for now. |
-| `portable-patch-v0.1.0` | Portable Compatibility Patch v0.1.0 | No-disc, registry, local-audio, and optional wrapper support. |
-
-The repository includes a GitHub Actions workflow that packages a committed
-language payload and creates a GitHub release automatically. It runs when you
-push one of these tags:
-
-```text
-english-patch-v*
-vietnamese-patch-v*
-```
-
-For example, after committing `patches/english.dmpatch`:
+For example:
 
 ```sh
 git tag english-patch-v0.1.0
 git push origin english-patch-v0.1.0
 ```
 
-GitHub builds the Windows patcher from the tracked payload, uploads the EXE
-and SHA-256 checksum to the release, and generates release notes. You do not
-need to build or upload those artifacts manually.
+GitHub compiles the Rust patcher, embeds the selected tracked payload and the
+vendored cnc-ddraw files, creates a checksum, and publishes the release. The
+workflow never receives the maintainer's `.dat`, original EXE, CUE, BIN, WAV,
+or disc image.
 
-The portable compatibility patch is intentionally not automated yet. It will
-get its own `portable-patch-v*` workflow after its runtime patching support is
-settled.
+You can also run the workflow manually from the
+[Actions page](https://github.com/lhuthng/doraemon-monopoly-localization/actions/workflows/release-language.yml)
+using an existing release tag.
 
-The workflow has access only to the repository and its tracked payloads. It
-never receives `.dat`, `.bin`, `.cue`, `.wav`, original EXEs, or full sprite
-exports.
+## Advanced commands
 
-## Other commands
+Create a language payload directly:
 
-Create an extended Vietnamese font from a user-supplied sysfont:
+```sh
+cargo run -p patch-build -- release \
+  --language english \
+  --base-dir /private/path/to/original \
+  --target-dir /private/path/to/english \
+  --output-dir /private/path/to/output \
+  --payload-only
+```
+
+Package an existing payload with cnc-ddraw:
+
+```sh
+cargo run -p patch-build -- package \
+  --payload patches/english.dmpatch \
+  --output-dir /private/path/to/release \
+  --cnc-ddraw-dir third_party/cnc-ddraw
+```
+
+Build the portable compatibility patcher:
+
+```sh
+cargo run -p patch-build -- portable \
+  --output-dir /private/path/to/release \
+  --cnc-ddraw-dir third_party/cnc-ddraw
+```
+
+Create the Vietnamese font extension from a user-supplied font:
 
 ```sh
 cargo run -p patch-build -- vi-font \
   --input /path/to/sysfont.dat \
-  --output /path/to/new/sysfont.dat
+  --output /path/to/new-sysfont.dat
 ```
 
 Extract a local WAV from a user-owned disc image:
@@ -292,7 +259,7 @@ cargo run -p patch-build -- extract-audio \
   --output /path/to/DoraemonMusic.wav
 ```
 
-Run project checks:
+## Verification
 
 ```sh
 cargo test --workspace
@@ -302,3 +269,21 @@ bun run test
 bun run lint
 bun run build
 ```
+
+Technical references:
+
+- [Known file formats](docs/file-formats.md)
+- [Reverse-engineering journal](docs/reverse-engineering-journal.md)
+- [Sprite localization catalogue](docs/sprite-localization-catalog/README.md)
+- [Executable portability research](archive/EXECUTABLE_PORTABILITY_RESEARCH.md)
+
+## Legal
+
+This project contains original tooling, documentation, compact difference
+payloads, and permissively licensed third-party compatibility files. It does
+not provide the game or make a legal copy unnecessary. Use it only with files
+you are entitled to use.
+
+cnc-ddraw is redistributed under its included MIT license. See
+[third_party/cnc-ddraw/LICENSE](third_party/cnc-ddraw/LICENSE) and
+[upstream](https://github.com/FunkyFr3sh/cnc-ddraw).

@@ -6,6 +6,7 @@ RELEASE_DIR := tmp/release
 PUBLISH ?=
 PATCHER ?=
 CNC_DDRAW_DIR ?=
+PATCHER_CNC_DDRAW_DIR := $(if $(strip $(CNC_DDRAW_DIR)),$(CNC_DDRAW_DIR),third_party/cnc-ddraw)
 RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat
 GAME_FILES := Doraemon.exe $(RESOURCE_FILES)
 
@@ -34,7 +35,7 @@ help:
 	  '  make build-patch LANGUAGE=english PUBLISH=1' \
 	  '      Write the reviewed payload directly to tracked patches/ for committing.' \
 	  '  make build-patch LANGUAGE=english PATCHER=1' \
-	  '      Also build a local Windows patcher EXE in tmp/release/.' \
+	  '      Build a local Windows patcher with the vendored cnc-ddraw runtime.' \
 	  '  make build-patch LANGUAGE=english PATCHER=1 CNC_DDRAW_DIR=/path/to/cnc-ddraw' \
 	  '      Bundle your local cnc-ddraw files for the patcher’s Add graphics wrapper button.' \
 	  '' \
@@ -71,10 +72,10 @@ check-wrapper:
 	@if [ -n "$(CNC_DDRAW_DIR)" ] && [ "$(PATCHER)" != 1 ]; then \
 	  printf '%s\n' 'CNC_DDRAW_DIR is only used with PATCHER=1.'; exit 2; \
 	fi
-	@if [ -n "$(CNC_DDRAW_DIR)" ]; then \
+	@if [ "$(PATCHER)" = 1 ]; then \
 	  missing=0; for file in ddraw.dll ddraw.ini 'cnc-ddraw config.exe'; do \
-	    if [ ! -f "$(CNC_DDRAW_DIR)/$$file" ]; then \
-	      printf '%s\n' "Missing $(CNC_DDRAW_DIR)/$$file. Choose a complete cnc-ddraw folder."; \
+	    if [ ! -f "$(PATCHER_CNC_DDRAW_DIR)/$$file" ]; then \
+	      printf '%s\n' "Missing $(PATCHER_CNC_DDRAW_DIR)/$$file. Choose a complete cnc-ddraw folder."; \
 	      missing=1; \
 	    fi; \
 	  done; test $$missing -eq 0; \
@@ -125,6 +126,7 @@ ifeq ($(PATCHER),1)
 	@mkdir -p "$(RELEASE_DIR)"
 	cargo run -p patch-build -- package \
 	  --payload "$(PATCH_DIR)/$(LANGUAGE).dmpatch" \
-	  --output-dir "$(RELEASE_DIR)" $(if $(CNC_DDRAW_DIR),--cnc-ddraw-dir "$(CNC_DDRAW_DIR)")
+	  --output-dir "$(RELEASE_DIR)" \
+	  --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 	@printf '%s\n' "Local Windows patcher written to $(RELEASE_DIR)/."
 endif
