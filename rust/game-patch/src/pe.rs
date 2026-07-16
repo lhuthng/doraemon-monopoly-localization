@@ -775,6 +775,8 @@ pub fn patch_language_runtime(
     input: &[u8],
     vietnamese: bool,
     no_disc: bool,
+    no_reg: bool,
+    local_audio: bool,
 ) -> Result<CompatibilityPatch> {
     let mut output = input.to_vec();
     let mut actions = Vec::new();
@@ -786,7 +788,7 @@ pub fn patch_language_runtime(
             actions.push("enabled Vietnamese font rendering".into());
         }
     }
-    let compatibility = patch_compatible(&output, no_disc, false)?;
+    let compatibility = patch_compatible(&output, no_disc, local_audio, no_reg)?;
     output = compatibility.bytes;
     actions.extend(compatibility.actions);
     Ok(CompatibilityPatch {
@@ -802,6 +804,7 @@ pub fn patch_compatible(
     input: &[u8],
     no_disc: bool,
     local_audio_requested: bool,
+    no_reg: bool,
 ) -> Result<CompatibilityPatch> {
     let canonical_layout = discover_font_layout(input)
         .map(|layout| layout.cseg_va == CSEG_VA && layout.cseg_raw == CSEG_RAW)
@@ -844,6 +847,9 @@ pub fn patch_compatible(
                 local_audio_supported: true,
             });
         }
+        if !no_reg {
+            return Ok(CompatibilityPatch { bytes: input.to_vec(), actions: Vec::new(), local_audio_supported: false });
+        }
         let (bytes, changed) = patch_registry_at(input, 0x2cc11)?;
         return Ok(CompatibilityPatch {
             bytes,
@@ -866,8 +872,10 @@ pub fn patch_compatible(
         }
         let (bytes, changed) = if no_disc {
             (patch_alternate_portable(input)?, true)
-        } else {
+        } else if no_reg {
             patch_registry_at(input, 0x2cb31)?
+        } else {
+            (input.to_vec(), false)
         };
         let mut actions = Vec::new();
         if changed && !no_disc {
@@ -943,7 +951,7 @@ mod tests {
                 old_portable[offset..offset + 4].copy_from_slice(&title_va.to_le_bytes());
             }
         }
-        let upgraded = patch_compatible(&old_portable, true, false).unwrap();
+        let upgraded = patch_compatible(&old_portable, true, false, true).unwrap();
         assert!(find_bytes(&upgraded.bytes, TITLE_CREDIT).is_some());
         assert!(upgraded
             .actions
@@ -964,12 +972,12 @@ mod tests {
             return;
         };
         let canonical = std::fs::read(canonical_path).unwrap();
-        let portable = patch_compatible(&canonical, true, false).unwrap();
+        let portable = patch_compatible(&canonical, true, false, true).unwrap();
         assert_eq!(portable.bytes.len(), canonical.len() + PORT_SIZE);
         assert!(portable.local_audio_supported);
 
         let december = std::fs::read(december_path).unwrap();
-        let fixed = patch_compatible(&december, true, false).unwrap();
+        let fixed = patch_compatible(&december, true, false, true).unwrap();
         assert_eq!(fixed.bytes.len(), december.len() + PORT_SIZE);
         assert_eq!(
             &fixed.bytes[0x2cb31..0x2cb38],
@@ -993,7 +1001,7 @@ mod tests {
         // structure. Runtime detection must continue to accept it.
         let pe = u32::from_le_bytes(canonical[0x3c..0x40].try_into().unwrap()) as usize;
         canonical[pe + 8] ^= 0x5a;
-        let canonical = patch_language_runtime(&canonical, true, true).unwrap();
+        let canonical = patch_language_runtime(&canonical, true, true, true, false).unwrap();
         assert!(has_vietnamese_font_hook(&canonical.bytes));
         assert!(canonical.local_audio_supported);
 
@@ -1010,7 +1018,7 @@ mod tests {
             )
             .unwrap();
         }
-        let migrated = patch_language_runtime(&legacy, true, false).unwrap();
+        let migrated = patch_language_runtime(&legacy, true, false, true, false).unwrap();
         assert!(has_vietnamese_font_hook(&migrated.bytes));
         assert_eq!(
             &migrated.bytes[layout.cseg_raw + 0x11d0..layout.cseg_raw + 0x11d5],
@@ -1018,7 +1026,7 @@ mod tests {
         );
 
         let december = std::fs::read(december_path).unwrap();
-        let december = patch_language_runtime(&december, true, true).unwrap();
+        let december = patch_language_runtime(&december, true, true, true, false).unwrap();
         assert!(has_vietnamese_font_hook(&december.bytes));
         assert!(!december.local_audio_supported);
     }

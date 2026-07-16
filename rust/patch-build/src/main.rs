@@ -63,7 +63,7 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build materialize --payload PATCH.dmpatch --base-dir DIR --output-dir DIR\n  patch-build package --payload PATCH.dmpatch --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]\n  patch-build portable --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
+    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build materialize --payload PATCH.dmpatch --base-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload PATCH.dmpatch] [--vietnamese-payload PATCH.dmpatch] [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
     std::process::exit(2)
 }
 
@@ -159,7 +159,8 @@ fn package(arguments: &[String]) -> Result<(), String> {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let status = Command::new("cargo")
         .current_dir(&workspace)
-        .env("DORAEMON_PATCH_PAYLOAD", &build_payload)
+        .env("DORAEMON_PATCH_PAYLOAD_ENGLISH", &build_payload)
+        .env("DORAEMON_PATCH_PAYLOAD_VIETNAMESE", &build_payload)
         .arg("build")
         .arg("--release")
         .arg("-p")
@@ -199,6 +200,44 @@ fn package(arguments: &[String]) -> Result<(), String> {
         destination.display(),
         payload_path.display()
     );
+    Ok(())
+}
+
+fn universal(arguments: &[String]) -> Result<(), String> {
+    let english_path = value(arguments, "--english-payload").map(PathBuf::from);
+    let vietnamese_path = value(arguments, "--vietnamese-payload").map(PathBuf::from);
+    let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
+    fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+    if english_path.is_none() && vietnamese_path.is_none() { return Err("universal needs at least one language payload".into()); }
+    let wrapper = wrapper_files(arguments)?;
+    let mut english = english_path.as_ref().map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?)).transpose()?;
+    let mut vietnamese = vietnamese_path.as_ref().map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?)).transpose()?;
+    if english.as_ref().is_some_and(|payload| payload.language != Language::English) || vietnamese.as_ref().is_some_and(|payload| payload.language != Language::Vietnamese) { return Err("universal payload language does not match its option".into()); }
+    if let Some(payload) = &mut english { payload.bundled = wrapper.clone(); }
+    if let Some(payload) = &mut vietnamese { payload.bundled = wrapper; }
+    let en_temp = output.join(".english-payload.dmpatch");
+    let vi_temp = output.join(".vietnamese-payload.dmpatch");
+    fs::write(&en_temp, english.map(|payload| payload::encode(&payload)).transpose()?.unwrap_or_default()).map_err(|e| e.to_string())?;
+    fs::write(&vi_temp, vietnamese.map(|payload| payload::encode(&payload)).transpose()?.unwrap_or_default()).map_err(|e| e.to_string())?;
+    let target = value(arguments, "--target").unwrap_or_else(|| "x86_64-pc-windows-gnu".into());
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let status = Command::new("cargo").current_dir(&workspace)
+        .env("DORAEMON_PATCH_PAYLOAD_ENGLISH", fs::canonicalize(&en_temp).map_err(|e| e.to_string())?)
+        .env("DORAEMON_PATCH_PAYLOAD_VIETNAMESE", fs::canonicalize(&vi_temp).map_err(|e| e.to_string())?)
+        .args(["build", "--release", "-p", "doraemon-patcher", "--target", &target])
+        .status().map_err(|e| format!("start Cargo: {e}"))?;
+    fs::remove_file(&en_temp).ok(); fs::remove_file(&vi_temp).ok();
+    if !status.success() { return Err(format!("Windows patcher build failed with {status}")); }
+    let built = workspace.join("target").join(&target).join("release/doraemon-patcher.exe");
+    let destination = output.join("patcher.exe");
+    fs::copy(&built, &destination).map_err(|e| format!("{}: {e}", built.display()))?;
+    fs::write(output.join("patcher.exe.sha256"), format!("{}  patcher.exe\n", hash::hex(&hash::file(&destination)?))).map_err(|e| e.to_string())?;
+    fs::write(
+        output.join("README.txt"),
+        "Doraemon universal patcher\r\n\r\nCopy patcher.exe into the folder containing Doraemon.exe, then run it there.\r\nChoose Unchanged, English, or Vietnamese, pick the compatibility options you want, and press Apply.\r\nThe patcher always works on its own folder, creates a backup before writing, and keeps the window open so you can read the log.\r\n",
+    )
+    .map_err(|e| e.to_string())?;
+    println!("Built {}.", destination.display());
     Ok(())
 }
 
@@ -354,7 +393,7 @@ fn release(arguments: &[String]) -> Result<(), String> {
     // Validate the code structure, not the whole-file hash. Timestamps,
     // checksums, resources, overlays, and previously applied compatible hooks
     // do not change whether the runtime instructions are patchable.
-    pe::patch_language_runtime(&original_exe, language == Language::Vietnamese, false)
+    pe::patch_language_runtime(&original_exe, language == Language::Vietnamese, false, false, false)
         .map_err(|error| format!("unsupported base Doraemon.exe structure: {error}"))?;
     let profiles = vec![build_profile("Original v1.26", &base, &target)?];
     let payload = Payload {
@@ -450,9 +489,10 @@ fn portable(arguments: &[String]) -> Result<(), String> {
     let status = Command::new("cargo")
         .current_dir(&workspace)
         .env(
-            "DORAEMON_PATCH_PAYLOAD",
+            "DORAEMON_PATCH_PAYLOAD_ENGLISH",
             fs::canonicalize(&payload_path).map_err(|e| e.to_string())?,
         )
+        .env("DORAEMON_PATCH_PAYLOAD_VIETNAMESE", fs::canonicalize(&payload_path).map_err(|e| e.to_string())?)
         .args([
             "build",
             "--release",
@@ -495,6 +535,7 @@ fn main() {
         Some("release") => release(&arguments[1..]),
         Some("materialize") => materialize(&arguments[1..]),
         Some("package") => package(&arguments[1..]),
+        Some("universal") => universal(&arguments[1..]),
         Some("portable") => portable(&arguments[1..]),
         _ => usage(),
     };

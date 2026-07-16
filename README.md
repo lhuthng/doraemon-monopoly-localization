@@ -11,7 +11,7 @@
 
 A copyright-clean toolkit for researching and localizing GameOne's 1998
 Windows 95/98 game **Doraemon Monopoly**. It provides English and Vietnamese
-localization patchers, a portable compatibility patch, a Svelte resource
+localization resources, a portable compatibility mode, a Svelte resource
 editor, and the reverse-engineered file tooling needed to build them.
 
 The repository does not contain the original game, complete game archives,
@@ -25,9 +25,7 @@ Download the patcher you want from
 
 | Release | What it changes | Status | Link |
 | --- | --- | --- | --- |
-| English Patch | English dialogues, menus, sprites, gadget descriptions, compatibility fixes, and optional local music | About 95% complete | [English releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases?q=english-patch) |
-| Vietnamese Patch | Vietnamese dialogues and extended Vietnamese fonts; currently inherits the English UI graphics | About 50% complete | [Vietnamese releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases?q=vietnamese-patch) |
-| Portable Patch | No localization. Removes the CD and Setup-registry requirements, supports local WAV music, and can install cnc-ddraw | Compatibility release | [Portable releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases?q=portable-patch) |
+| Doraemon Patcher | Select unchanged, English, or Vietnamese, then choose CD, registry, and local-audio compatibility options | English about 95%, Vietnamese about 50% | [Patcher releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases) |
 
 Every release contains a Windows patcher, its SHA-256 checksum, and a short
 README. It never contains a patched `Doraemon.exe` or complete `.dat` file.
@@ -35,7 +33,7 @@ README. It never contains a patched `Doraemon.exe` or complete `.dat` file.
 ### Using a patcher
 
 1. Copy the patcher EXE into the folder containing your own `Doraemon.exe`.
-2. Run the patcher and press **Apply**.
+2. Select **Unchanged**, **English**, or **Vietnamese**, then press **Apply**.
 3. Review the colored task log. The window remains open until you close it.
 4. Use **Add graphics wrapper** for cnc-ddraw compatibility, then **Play**.
 
@@ -137,7 +135,7 @@ private original files + private localized files
         copyright-clean differences
                     |
                     v
-       Doraemon-English-Patcher.exe
+            patcher.exe
        Rust program + embedded differences
                     |
                     v
@@ -189,29 +187,27 @@ More detail is recorded in
 
 ## How releases are built
 
-The GitHub Actions workflow publishes all three patcher families:
+The GitHub Actions workflow now publishes one configurable patcher release:
 
-| Tag pattern | Produced artifact |
+| Tag pattern | Produced artifacts |
 | --- | --- |
-| `english-patch-v*` | `Doraemon-English-Patcher.exe` |
-| `vietnamese-patch-v*` | `Doraemon-Vietnamese-Patcher.exe` |
-| `portable-patch-v*` | `Doraemon-Portable-Patcher.exe` |
+| `patcher-v*` | `patcher.exe`, `patcher.exe.sha256`, `README.txt` |
 
 For example:
 
 ```sh
-git tag english-patch-v0.1.0
-git push origin english-patch-v0.1.0
+git tag patcher-v0.1.0
+git push origin patcher-v0.1.0
 ```
 
-GitHub compiles the Rust patcher, embeds the selected tracked payload and the
-vendored cnc-ddraw files, creates a checksum, and publishes the release. The
-workflow never receives the maintainer's `.dat`, original EXE, CUE, BIN, WAV,
-or disc image.
+GitHub compiles the Rust patcher, embeds whichever tracked language payloads
+exist in `patches/`, bundles the vendored cnc-ddraw files, creates the
+checksum, and publishes the release. The workflow never receives the
+maintainer's `.dat`, original EXE, CUE, BIN, WAV, or disc image.
 
 You can also run the workflow manually from the
 [Actions page](https://github.com/lhuthng/doraemon-monopoly-localization/actions/workflows/release-language.yml)
-using an existing release tag.
+by supplying an existing `patcher-v*` tag.
 
 ## Advanced commands
 
@@ -241,6 +237,12 @@ Build the portable compatibility patcher:
 cargo run -p patch-build -- portable \
   --output-dir /private/path/to/release \
   --cnc-ddraw-dir third_party/cnc-ddraw
+```
+
+Build the one-for-all patcher from tracked payloads:
+
+```sh
+make build-patcher
 ```
 
 Create the Vietnamese font extension from a user-supplied font:

@@ -3,19 +3,9 @@ name: Release patcher
 on:
   push:
     tags:
-      - 'english-patch-v*'
-      - 'vietnamese-patch-v*'
-      - 'portable-patch-v*'
+      - 'patcher-v*'
   workflow_dispatch:
     inputs:
-      language:
-        description: Patcher release to package
-        required: true
-        type: choice
-        options:
-          - english
-          - vietnamese
-          - portable
       tag:
         description: Existing tag to publish
         required: true
@@ -33,29 +23,13 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
-      - name: Select release kind
+      - name: Check release payloads
         id: release
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            kind="${{ inputs.language }}"
-            tag="${{ inputs.tag }}"
-          elif [[ "${GITHUB_REF_NAME}" == english-patch-v* ]]; then
-            kind="english"
-            tag="${GITHUB_REF_NAME}"
-          elif [[ "${GITHUB_REF_NAME}" == vietnamese-patch-v* ]]; then
-            kind="vietnamese"
-            tag="${GITHUB_REF_NAME}"
-          else
-            kind="portable"
-            tag="${GITHUB_REF_NAME}"
-          fi
-          case "$kind" in
-            english|vietnamese) test -f "patches/${kind}.dmpatch" ;;
-            portable) ;;
-            *) echo "Unknown release kind: $kind" >&2; exit 2 ;;
-          esac
-          echo "kind=${kind}" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then tag="${{ inputs.tag }}"; else tag="${GITHUB_REF_NAME}"; fi
+          test -f patches/english.dmpatch
+          test -f patches/vietnamese.dmpatch
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust
@@ -68,16 +42,11 @@ jobs:
 
       - name: Package Windows patcher
         run: |
-          if [[ "${{ steps.release.outputs.kind }}" == "portable" ]]; then
-            cargo run -p patch-build -- portable \
-              --output-dir release \
-              --cnc-ddraw-dir third_party/cnc-ddraw
-          else
-            cargo run -p patch-build -- package \
-              --payload "patches/${{ steps.release.outputs.kind }}.dmpatch" \
-              --output-dir release \
-              --cnc-ddraw-dir third_party/cnc-ddraw
-          fi
+          cargo run -p patch-build -- universal \
+            --english-payload patches/english.dmpatch \
+            --vietnamese-payload patches/vietnamese.dmpatch \
+            --output-dir release \
+            --cnc-ddraw-dir third_party/cnc-ddraw
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

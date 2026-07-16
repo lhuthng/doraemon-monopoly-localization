@@ -1,7 +1,13 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
-const EMBEDDED_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.bin"));
+const ENGLISH_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/english-payload.bin"));
+#[cfg(windows)]
+const VIETNAMESE_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/vietnamese-payload.bin"));
+#[cfg(windows)]
+const ENGLISH_ICON: &[u8] = include_bytes!("../../../assets/icons/english.ico");
+#[cfg(windows)]
+const VIETNAMESE_ICON: &[u8] = include_bytes!("../../../assets/icons/vietnamese.ico");
 
 #[cfg(not(windows))]
 fn main() {
@@ -43,7 +49,10 @@ mod windows_app {
         group_font: nwg::Font,
         options_group: nwg::ControlHandle,
         game_label: nwg::Label,
+        language: nwg::ComboBox<String>,
         no_disc: nwg::CheckBox,
+        no_reg: nwg::CheckBox,
+        local_audio: nwg::CheckBox,
 
         music: nwg::Label,
         refresh_music: nwg::Button,
@@ -138,6 +147,29 @@ mod windows_app {
         ui.log.set_selection(end..end);
     }
 
+    fn apply_game_icon(game: &std::path::Path, icon: &[u8]) -> Result<(), String> {
+        use std::{ffi::OsStr, iter, os::windows::ffi::OsStrExt};
+        extern "system" {
+            fn BeginUpdateResourceW(path: *const u16, delete_existing: i32) -> *mut core::ffi::c_void;
+            fn UpdateResourceW(handle: *mut core::ffi::c_void, kind: *const u16, name: *const u16, language: u16, data: *const core::ffi::c_void, len: u32) -> i32;
+            fn EndUpdateResourceW(handle: *mut core::ffi::c_void, discard: i32) -> i32;
+        }
+        if icon.len() < 22 || &icon[0..4] != [0, 0, 1, 0] { return Err("embedded game icon is invalid".into()); }
+        let size = u32::from_le_bytes(icon[14..18].try_into().unwrap()) as usize;
+        let offset = u32::from_le_bytes(icon[18..22].try_into().unwrap()) as usize;
+        let image = icon.get(offset..offset + size).ok_or("embedded game icon is truncated")?;
+        let mut group = vec![0, 0, 1, 0, 1, 0, 32, 32, 0, 0, 1, 0, 32, 0];
+        group.extend_from_slice(&(image.len() as u32).to_le_bytes());
+        group.extend_from_slice(&2u16.to_le_bytes()); // existing 32x32 icon resource ID
+        let path: Vec<u16> = OsStr::new(&game.join("Doraemon.exe")).encode_wide().chain(iter::once(0)).collect();
+        let handle = unsafe { BeginUpdateResourceW(path.as_ptr(), 0) };
+        if handle.is_null() { return Err(format!("open executable resources: {}", std::io::Error::last_os_error())); }
+        let image_ok = unsafe { UpdateResourceW(handle, 3usize as *const u16, 2usize as *const u16, 0x409, image.as_ptr().cast(), image.len() as u32) } != 0;
+        let group_ok = image_ok && unsafe { UpdateResourceW(handle, 14usize as *const u16, 101usize as *const u16, 0x409, group.as_ptr().cast(), group.len() as u32) } != 0;
+        let committed = unsafe { EndUpdateResourceW(handle, if group_ok { 0 } else { 1 }) } != 0;
+        if group_ok && committed { Ok(()) } else { Err(format!("update executable icon: {}", std::io::Error::last_os_error())) }
+    }
+
     fn write_diagnostic(game: &std::path::Path, state: TaskState, message: &str) {
         let state = match state {
             TaskState::Working => "WORKING",
@@ -211,11 +243,11 @@ mod windows_app {
     }
 
     impl Ui {
-        fn build(payload: &Payload, game: &std::path::Path) -> Result<Self, nwg::NwgError> {
+        fn build(game: &std::path::Path, languages: Vec<String>) -> Result<Self, nwg::NwgError> {
             let mut ui = Self::default();
 
             nwg::Window::builder()
-                .size((640, 600))
+                .size((640, 640))
                 .position((300, 150))
                 .title("Doraemon Monopoly Patcher")
                 .flags(
@@ -248,25 +280,8 @@ mod windows_app {
                 .build(&mut ui.title_bar)?;
             ui.title_bar.set_font(Some(&ui.title_font));
 
-            let subtitle_text = match payload.language {
-                payload::Language::Custom => {
-                    "Let's make Doraemon travel-friendly! - Compatibility edition".into()
-                }
-                _ => {
-                    let coverage = match payload.language {
-                        payload::Language::English => {
-                            "Full dialogue translation - UI approximately 90% localized"
-                        }
-                        payload::Language::Vietnamese => {
-                            "Full Vietnamese dialogue - currently uses English UI graphics"
-                        }
-                        _ => "",
-                    };
-                    format!("{} localization - {}", payload.language.label(), coverage)
-                }
-            };
             nwg::Label::builder()
-                .text(&subtitle_text)
+                .text("Choose a language, then pick the compatibility extras you want.")
                 .position((16, 42))
                 .size((608, 18))
                 .parent(&ui.window)
@@ -275,7 +290,7 @@ mod windows_app {
             // -- Options group box --
 
             ui.options_group =
-                make_group_box(&ui.window, " Options ", 12, 66, 616, 152, &ui.group_font)?;
+                make_group_box(&ui.window, " Patch options ", 12, 66, 616, 190, &ui.group_font)?;
 
             nwg::Label::builder()
                 .text(&format!("Game folder: {}", game.display()))
@@ -284,24 +299,48 @@ mod windows_app {
                 .parent(&ui.window)
                 .build(&mut ui.game_label)?;
 
+            nwg::ComboBox::builder()
+                .collection(languages)
+                .selected_index(Some(0))
+                .position((24, 112))
+                .size((180, 26))
+                .parent(&ui.window)
+                .build(&mut ui.language)?;
+
             nwg::CheckBox::builder()
                 .text("Play without the original disc")
                 .check_state(nwg::CheckBoxState::Checked)
-                .position((24, 112))
+                .position((24, 145))
                 .size((420, 20))
                 .parent(&ui.window)
                 .build(&mut ui.no_disc)?;
 
+            nwg::CheckBox::builder()
+                .text("Skip the original Setup registry check")
+                .check_state(nwg::CheckBoxState::Checked)
+                .position((24, 169))
+                .size((420, 20))
+                .parent(&ui.window)
+                .build(&mut ui.no_reg)?;
+
+            nwg::CheckBox::builder()
+                .text("Use local background music when available")
+                .check_state(if find_cue(game).is_some() || cue::valid_wav(&game.join("DoraemonMusic.wav")) { nwg::CheckBoxState::Checked } else { nwg::CheckBoxState::Unchecked })
+                .position((24, 193))
+                .size((420, 20))
+                .parent(&ui.window)
+                .build(&mut ui.local_audio)?;
+
             nwg::Label::builder()
                 .text(&music_text(game))
-                .position((24, 136))
+                .position((24, 217))
                 .size((420, 28))
                 .parent(&ui.window)
                 .build(&mut ui.music)?;
 
             nwg::Button::builder()
                 .text("Refresh")
-                .position((520, 166))
+                .position((520, 222))
                 .size((85, 24))
                 .parent(&ui.window)
                 .build(&mut ui.refresh_music)?;
@@ -309,11 +348,11 @@ mod windows_app {
             // -- Actions group box --
 
             ui.actions_group =
-                make_group_box(&ui.window, " Actions ", 12, 228, 616, 56, &ui.group_font)?;
+                make_group_box(&ui.window, " Actions ", 12, 266, 616, 56, &ui.group_font)?;
 
             nwg::Button::builder()
                 .text("Apply patch")
-                .position((24, 246))
+                .position((24, 284))
                 .size((125, 30))
                 .parent(&ui.window)
                 .build(&mut ui.apply)?;
@@ -321,15 +360,15 @@ mod windows_app {
             nwg::Button::builder()
                 .text("Restore backup")
                 .enabled(game.join("backup").is_dir())
-                .position((160, 246))
+                .position((160, 284))
                 .size((130, 30))
                 .parent(&ui.window)
                 .build(&mut ui.restore)?;
 
             nwg::Button::builder()
                 .text("Add graphics wrapper")
-                .enabled(!payload.bundled.is_empty())
-                .position((301, 246))
+                .enabled(true)
+                .position((301, 284))
                 .size((165, 30))
                 .parent(&ui.window)
                 .build(&mut ui.wrapper)?;
@@ -337,7 +376,7 @@ mod windows_app {
             nwg::Button::builder()
                 .text("Play")
                 .enabled(game.join("Doraemon.exe").is_file())
-                .position((477, 246))
+                .position((477, 284))
                 .size((128, 30))
                 .parent(&ui.window)
                 .build(&mut ui.play)?;
@@ -349,19 +388,19 @@ mod windows_app {
                 .pos(0)
                 .step(1)
                 .size((616, 22))
-                .position((12, 296))
+                .position((12, 334))
                 .parent(&ui.window)
                 .build(&mut ui.progress)?;
 
             // -- Log group box --
 
-            ui.log_group = make_group_box(&ui.window, " Log ", 12, 330, 616, 264, &ui.group_font)?;
+            ui.log_group = make_group_box(&ui.window, " Log ", 12, 368, 616, 240, &ui.group_font)?;
 
             nwg::RichTextBox::builder()
-                .text("Ready when you are. I'll make a backup before touching the game.")
+                .text("")
                 .readonly(true)
-                .position((24, 352))
-                .size((592, 232))
+                .position((24, 390))
+                .size((592, 208))
                 .parent(&ui.window)
                 .build(&mut ui.log)?;
             ui.log.set_background_color([250, 250, 248]);
@@ -370,7 +409,7 @@ mod windows_app {
 
             nwg::Button::builder()
                 .text("Exit")
-                .position((548, 596))
+                .position((548, 610))
                 .size((80, 24))
                 .parent(&ui.window)
                 .build(&mut ui.exit)?;
@@ -405,10 +444,14 @@ mod windows_app {
                 .ok_or("the patcher executable has no parent game folder")?
                 .to_path_buf()
         };
-        let payload = payload::decode(super::EMBEDDED_PAYLOAD).map_err(|error| {
-            format!("This development build has no valid embedded payload: {error}")
-        })?;
-        let ui = Rc::new(Ui::build(&payload, &game).map_err(|error| error.to_string())?);
+        let english = if super::ENGLISH_PAYLOAD.is_empty() { None } else { Some(payload::decode(super::ENGLISH_PAYLOAD).map_err(|error| format!("This patcher has an invalid English payload: {error}"))?) };
+        let vietnamese = if super::VIETNAMESE_PAYLOAD.is_empty() { None } else { Some(payload::decode(super::VIETNAMESE_PAYLOAD).map_err(|error| format!("This patcher has an invalid Vietnamese payload: {error}"))?) };
+        let mut languages = vec!["Unchanged".into()];
+        let english_index = english.as_ref().map(|_| { let index = languages.len(); languages.push("English".into()); index });
+        let vietnamese_index = vietnamese.as_ref().map(|_| { let index = languages.len(); languages.push("Vietnamese".into()); index });
+        let wrapper_available = english.as_ref().or(vietnamese.as_ref()).is_some_and(|payload| !payload.bundled.is_empty());
+        let ui = Rc::new(Ui::build(&game, languages).map_err(|error| error.to_string())?);
+        append_log(&ui, TaskState::Skipped, "Ready. Applying a new choice restores the original files first.");
         if restore_mode {
             ui.window.set_text("Restore Doraemon Monopoly");
             ui.title_bar.set_text("Restore Doraemon Monopoly");
@@ -424,12 +467,17 @@ mod windows_app {
                 "Ready to restore the original game files.",
             );
         }
-        let payload = Rc::new(payload);
+        let english = Rc::new(english);
+        let vietnamese = Rc::new(vietnamese);
         let game = Rc::new(game);
         let busy = Rc::new(Cell::new(false));
         let events_ui = ui.clone();
         let events_game = game.clone();
-        let events_payload = payload.clone();
+        let events_payload = english.clone();
+        let events_vietnamese = vietnamese.clone();
+        let events_english_index = english_index;
+        let events_vietnamese_index = vietnamese_index;
+        let events_wrapper_available = wrapper_available;
         let events_busy = busy.clone();
         let (events_tx, events_rx) = mpsc::channel::<UiEvent>();
         let handler = nwg::full_bind_event_handler(
@@ -474,7 +522,7 @@ mod windows_app {
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.wrapper.set_enabled(
-                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                    events_wrapper_available && !restore_mode,
                                 );
                                 ui.play
                                     .set_enabled(events_game.join("Doraemon.exe").is_file());
@@ -491,7 +539,7 @@ mod windows_app {
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(
-                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                    events_wrapper_available && !restore_mode,
                                 );
                                 ui.play
                                     .set_enabled(events_game.join("Doraemon.exe").is_file());
@@ -508,7 +556,7 @@ mod windows_app {
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.wrapper.set_enabled(
-                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                    events_wrapper_available && !restore_mode,
                                 );
                                 ui.play
                                     .set_enabled(events_game.join("Doraemon.exe").is_file());
@@ -526,7 +574,7 @@ mod windows_app {
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.wrapper.set_enabled(
-                                    !events_payload.bundled.is_empty() && !restore_mode,
+                                    events_wrapper_available && !restore_mode,
                                 );
                                 ui.play
                                     .set_enabled(events_game.join("Doraemon.exe").is_file());
@@ -591,15 +639,47 @@ mod windows_app {
                     write_diagnostic(&events_game, TaskState::Working, "Apply button pressed.");
                     let options = ApplyOptions {
                         no_disc: ui.no_disc.check_state() == nwg::CheckBoxState::Checked,
+                        no_reg: ui.no_reg.check_state() == nwg::CheckBoxState::Checked,
+                        local_audio: ui.local_audio.check_state() == nwg::CheckBoxState::Checked,
                         cue: find_cue(&events_game),
                     };
                     let game = (*events_game).clone();
-                    let payload = (*events_payload).clone();
+                    let selection = ui.language.selection();
+                    let payload = if selection == events_english_index { events_payload.as_ref().as_ref().expect("English is available").clone() } else if selection == events_vietnamese_index { events_vietnamese.as_ref().as_ref().expect("Vietnamese is available").clone() } else {
+                        let mut payload = events_payload.as_ref().as_ref().or(events_vietnamese.as_ref().as_ref()).cloned().unwrap_or(Payload { language: payload::Language::Custom, profiles: Vec::new(), strings: None, bundled: Vec::new() });
+                        payload.language = payload::Language::Custom;
+                        payload.profiles.clear(); payload.strings = None; payload
+                    };
+                    let icon = if selection == events_english_index { Some(super::ENGLISH_ICON) } else if selection == events_vietnamese_index { Some(super::VIETNAMESE_ICON) } else { None };
                     let executable = executable.clone();
                     let tx = events_tx.clone();
                     thread::spawn(move || {
                         let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                            install::apply_with_progress(
+                            let wants_changes = payload.language != payload::Language::Custom
+                                || options.no_disc
+                                || options.no_reg
+                                || options.local_audio;
+                            let backup = game.join("backup");
+                            if backup.is_dir() {
+                                let message = if wants_changes {
+                                    "Restoring the original files before applying your new choices…"
+                                } else {
+                                    "No patch choices selected; restoring the original files…"
+                                };
+                                let update = TaskProgress { state: TaskState::Working, message: message.into(), progress: Some(3) };
+                                write_diagnostic(&game, update.state, &update.message);
+                                let _ = tx.send(UiEvent::Progress(update));
+                                let restored = install::restore(&backup)?;
+                                let update = TaskProgress { state: TaskState::Done, message: format!("Original files restored: {}.", restored.join(", ")), progress: Some(10) };
+                                write_diagnostic(&game, update.state, &update.message);
+                                let _ = tx.send(UiEvent::Progress(update));
+                                if !wants_changes {
+                                    return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing selected, so the game is back to its original files.".into() });
+                                }
+                            } else if !wants_changes {
+                                return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing is selected and no backup was found. The game is unchanged.".into() });
+                            }
+                            let mut report = install::apply_with_progress(
                                 &game,
                                 &payload,
                                 &options,
@@ -608,7 +688,14 @@ mod windows_app {
                                     write_diagnostic(&game, update.state, &update.message);
                                     let _ = tx.send(UiEvent::Progress(update));
                                 },
-                            )
+                            )?;
+                            if let Some(icon) = icon {
+                                let update = TaskProgress { state: TaskState::Working, message: "Applying the selected game icon…".into(), progress: Some(98) };
+                                let _ = tx.send(UiEvent::Progress(update));
+                                apply_game_icon(&game, icon)?;
+                                report.changed.push("Doraemon.exe icon".into());
+                            }
+                            Ok(report)
                         }))
                         .unwrap_or_else(|_| {
                             Err(
@@ -658,7 +745,7 @@ mod windows_app {
                     ui.play.set_enabled(false);
                     append_log(&ui, TaskState::Working, "Adding the graphics wrapper…");
                     let game = (*events_game).clone();
-                    let payload = (*events_payload).clone();
+                    let payload = events_payload.as_ref().as_ref().or(events_vietnamese.as_ref().as_ref()).cloned().unwrap_or(Payload { language: payload::Language::Custom, profiles: Vec::new(), strings: None, bundled: Vec::new() });
                     let tx = events_tx.clone();
                     thread::spawn(move || {
                         let result = panic::catch_unwind(AssertUnwindSafe(|| install::add_wrapper(&game, &payload)))

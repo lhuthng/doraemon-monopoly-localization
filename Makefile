@@ -17,7 +17,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help setup build-patch check-language check-publish check-patcher check-wrapper check-resources check-game check-payloads
+.PHONY: help setup build-patch build-patcher check-language check-publish check-patcher check-wrapper check-resources check-game check-payloads
 
 help:
 	@printf '%s\n' \
@@ -38,6 +38,8 @@ help:
 	  '      Build a local Windows patcher with the vendored cnc-ddraw runtime.' \
 	  '  make build-patch LANGUAGE=english PATCHER=1 CNC_DDRAW_DIR=/path/to/cnc-ddraw' \
 	  '      Bundle your local cnc-ddraw files for the patcher’s Add graphics wrapper button.' \
+	  '  make build-patcher' \
+	  '      Build one configurable Windows patcher from whichever tracked patches/*.dmpatch files exist.' \
 	  '' \
 	  'Tracked: patches/*.dmpatch (shareable resource changes only)' \
 	  'Ignored: tmp/base/ (your game), resource-studio/local-game/, tmp/patches/, tmp/release/'
@@ -122,6 +124,7 @@ ifeq ($(PUBLISH),1)
 else
 	@printf '%s\n' "Review it, then rerun with PUBLISH=1 to write patches/$(LANGUAGE).dmpatch."
 endif
+
 ifeq ($(PATCHER),1)
 	@mkdir -p "$(RELEASE_DIR)"
 	cargo run -p patch-build -- package \
@@ -130,3 +133,11 @@ ifeq ($(PATCHER),1)
 	  --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 	@printf '%s\n' "Local Windows patcher written to $(RELEASE_DIR)/."
 endif
+
+build-patcher:
+	@mkdir -p "$(RELEASE_DIR)"
+	@set --; \
+	if [ -f patches/english.dmpatch ]; then set -- "$$@" --english-payload patches/english.dmpatch; else printf '%s\n' 'English payload missing: English will be unavailable in the patcher.'; fi; \
+	if [ -f patches/vietnamese.dmpatch ]; then set -- "$$@" --vietnamese-payload patches/vietnamese.dmpatch; else printf '%s\n' 'Vietnamese payload missing: Vietnamese will be unavailable in the patcher.'; fi; \
+	if [ "$$#" -eq 0 ]; then printf '%s\n' 'No language payloads found in patches/. Nothing to build.'; exit 2; fi; \
+	cargo run -p patch-build -- universal --output-dir "$(RELEASE_DIR)" --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)" "$$@"

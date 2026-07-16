@@ -14,6 +14,8 @@ use crate::{
 #[derive(Clone, Debug, Default)]
 pub struct ApplyOptions {
     pub no_disc: bool,
+    pub no_reg: bool,
+    pub local_audio: bool,
     pub cue: Option<PathBuf>,
 }
 
@@ -304,8 +306,8 @@ fn apply_compatibility(
     );
     let original = fs::read(&exe_path).map_err(|e| format!("{}: {e}", exe_path.display()))?;
     let wav = folder.join("DoraemonMusic.wav");
-    let has_audio_source = cue::valid_wav(&wav) || options.cue.is_some();
-    let result = pe::patch_compatible(&original, options.no_disc, has_audio_source)?;
+    let has_audio_source = options.local_audio && (cue::valid_wav(&wav) || options.cue.is_some());
+    let result = pe::patch_compatible(&original, options.no_disc, has_audio_source, options.no_reg)?;
     if result.bytes == original {
         progress(
             sink,
@@ -348,7 +350,7 @@ fn apply_compatibility(
 
     let mut created_audio = None;
     let mut staged_audio = None;
-    let audio = if options.no_disc && result.local_audio_supported && cue::valid_wav(&wav) {
+    let audio = if options.local_audio && options.no_disc && result.local_audio_supported && cue::valid_wav(&wav) {
         progress(
             sink,
             TaskState::Skipped,
@@ -356,7 +358,7 @@ fn apply_compatibility(
             Some(50),
         );
         "Using existing verified DoraemonMusic.wav.".to_string()
-    } else if options.no_disc && result.local_audio_supported {
+    } else if options.local_audio && options.no_disc && result.local_audio_supported {
         if wav.exists() {
             progress(
                 sink,
@@ -675,6 +677,8 @@ pub fn apply_with_progress(
         &exe_source,
         payload.language == Language::Vietnamese,
         options.no_disc,
+        options.no_reg,
+        options.local_audio,
     )?;
     let local_audio_supported = exe_patch.local_audio_supported;
     let exe_bytes = exe_patch.bytes;
@@ -702,7 +706,7 @@ pub fn apply_with_progress(
     let wav = folder.join("DoraemonMusic.wav");
     let mut created_audio = None;
     let mut staged_audio = None;
-    let audio = if options.no_disc && local_audio_supported && cue::valid_wav(&wav) {
+    let audio = if options.local_audio && options.no_disc && local_audio_supported && cue::valid_wav(&wav) {
         progress(
             sink,
             TaskState::Skipped,
@@ -710,7 +714,7 @@ pub fn apply_with_progress(
             Some(50),
         );
         "Using existing verified DoraemonMusic.wav.".to_string()
-    } else if options.no_disc && local_audio_supported {
+    } else if options.local_audio && options.no_disc && local_audio_supported {
         if wav.exists() {
             progress(
                 sink,
@@ -1016,6 +1020,8 @@ mod tests {
             &payload,
             &ApplyOptions {
                 no_disc: false,
+                no_reg: false,
+                local_audio: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
@@ -1029,6 +1035,8 @@ mod tests {
             &payload,
             &ApplyOptions {
                 no_disc: false,
+                no_reg: false,
+                local_audio: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
@@ -1047,6 +1055,8 @@ mod tests {
             &payload,
             &ApplyOptions {
                 no_disc: false,
+                no_reg: false,
+                local_audio: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
@@ -1084,6 +1094,8 @@ mod tests {
             &payload,
             &ApplyOptions {
                 no_disc: true,
+                no_reg: true,
+                local_audio: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
