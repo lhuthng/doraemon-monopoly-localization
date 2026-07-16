@@ -15,16 +15,17 @@ It has two jobs:
 ## What you need
 
 To edit resources, obtain your own legal copy of the Cantonese release and
-keep these canonical files in a private, ignored folder:
+keep these resource files in a private, ignored folder:
 
 ```text
-Doraemon.exe
 strings.dat
 sysfont.dat
 Sprite1.dat
 sprite2.dat
 bitmaps.dat
 ```
+
+`Doraemon.exe` is needed only when building or testing a player-facing patcher.
 
 For local music in a no-disc build, also keep the original matching CUE/BIN
 beside the game, or a verified `DoraemonMusic.wav` produced from that image.
@@ -70,7 +71,7 @@ resource-studio/local-game/
 └── vietnamese/   # your Vietnamese target files
 ```
 
-Each language folder contains the six canonical files above. Then launch a
+Each language folder contains the five resource files above. Then launch a
 staged workspace:
 
 ```sh
@@ -109,6 +110,9 @@ base-dir                 target-dir
 untouched game           finished localization
 all six files            same six filenames
 ```
+
+For a player-facing patcher, the six files are the five resources plus
+`Doraemon.exe`.
 
 `base-dir` is the exact untouched Cantonese game the player is expected to
 own. `target-dir` is the final localized state you edited. Copy unchanged
@@ -174,18 +178,20 @@ git commit -m "feat(english): update localization payload"
 
 This is the only step that needs both the original and finished localized
 files. A fresh contributor clones the repository, supplies only their own
-untouched game, and packages the tracked payload into a distributable EXE:
+untouched resource files, and materializes a private Studio workspace:
 
 ```sh
-cargo run -p patch-build -- package \
-  --payload patches/english.dmpatch \
-  --output-dir release/english
+cd resource-studio
+bun run setup-en /path/to/their/game/folder
+# or
+bun run setup-vi /path/to/their/game/folder
 ```
 
-They do not need anyone else's `local-game/` folder or a reconstructed target
-archive. The resulting patcher verifies the player’s base files at Apply time,
-then recreates the localized resources from the payload. Use the same workflow
-with `patches/vietnamese.dmpatch`.
+The setup command verifies the original resource files in the selected folder,
+stores a private original `strings.dat`, and writes only the five materialized
+Studio resources to `resource-studio/local-game/english` or `vietnamese`. It
+does not copy, patch, or create `Doraemon.exe`. It refuses to overwrite an
+existing workspace unless you explicitly add `--force`.
 
 ## Build the portable compatibility patcher
 

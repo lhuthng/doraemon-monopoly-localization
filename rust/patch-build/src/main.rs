@@ -19,6 +19,14 @@ const FILES: &[&str] = &[
     "bitmaps.dat",
 ];
 
+const RESOURCE_FILES: &[&str] = &[
+    "strings.dat",
+    "sysfont.dat",
+    "Sprite1.dat",
+    "sprite2.dat",
+    "bitmaps.dat",
+];
+
 const SUPPORTED: &[(&str, &[&str])] = &[
     (
         "strings.dat",
@@ -55,8 +63,68 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build package --payload PATCH.dmpatch --output-dir DIR [--target x86_64-pc-windows-gnu]\n  patch-build portable --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
+    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build materialize --payload PATCH.dmpatch --base-dir DIR --output-dir DIR\n  patch-build package --payload PATCH.dmpatch --output-dir DIR [--target x86_64-pc-windows-gnu]\n  patch-build portable --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
     std::process::exit(2)
+}
+
+fn materialize(arguments: &[String]) -> Result<(), String> {
+    let payload_path = PathBuf::from(value(arguments, "--payload").unwrap_or_else(|| usage()));
+    let base = PathBuf::from(value(arguments, "--base-dir").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
+    let payload_bytes =
+        fs::read(&payload_path).map_err(|error| format!("{}: {error}", payload_path.display()))?;
+    let payload = payload::decode(&payload_bytes).map_err(|error| {
+        format!(
+            "{} is not a valid Doraemon resource payload: {error}",
+            payload_path.display()
+        )
+    })?;
+    if payload.language == Language::Custom {
+        return Err("portable compatibility payloads do not contain localizable resources".into());
+    }
+    let profile = payload
+        .profiles
+        .iter()
+        .find(|profile| {
+            profile.required.iter().all(|required| {
+                read(&base, &required.name)
+                    .map(|bytes| {
+                        bytes.len() as u64 == required.len && hash::bytes(&bytes) == required.hash
+                    })
+                    .unwrap_or(false)
+            })
+        })
+        .ok_or("the supplied folder does not contain a supported original resource set")?;
+    let strings_patch = payload
+        .strings
+        .as_ref()
+        .ok_or("this language payload has no strings.dat changes")?;
+
+    fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+    let source_strings = read(&base, "strings.dat")?;
+    let rebuilt_strings = strings::apply_patch(&source_strings, strings_patch)?;
+    fs::write(output.join("strings.dat"), rebuilt_strings)
+        .map_err(|error| format!("write strings.dat: {error}"))?;
+
+    for name in RESOURCE_FILES
+        .iter()
+        .copied()
+        .filter(|name| *name != "strings.dat")
+    {
+        let source = read(&base, name)?;
+        let rebuilt = match profile.files.iter().find(|patch| patch.name == name) {
+            Some(patch) => patch.apply(&source)?,
+            None => source,
+        };
+        fs::write(output.join(name), rebuilt).map_err(|error| format!("write {name}: {error}"))?;
+    }
+    println!(
+        "Materialized {} resource files in {} from {}.",
+        RESOURCE_FILES.len(),
+        output.display(),
+        payload.language.label()
+    );
+    Ok(())
 }
 
 fn package(arguments: &[String]) -> Result<(), String> {
@@ -413,6 +481,7 @@ fn main() {
         Some("vi-font") => vi_font(&arguments[1..]),
         Some("extract-audio") => extract_audio(&arguments[1..]),
         Some("release") => release(&arguments[1..]),
+        Some("materialize") => materialize(&arguments[1..]),
         Some("package") => package(&arguments[1..]),
         Some("portable") => portable(&arguments[1..]),
         _ => usage(),

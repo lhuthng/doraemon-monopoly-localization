@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "setup-en": "bun scripts/prepare-local-game.ts english",
+    "setup-vi": "bun scripts/prepare-local-game.ts vietnamese",
     "dev-en": "bun scripts/stage-game.ts english && vite",
     "dev-vi": "bun scripts/stage-game.ts vietnamese && vite",
     "translate-server": "bun scripts/translate-server.ts",
