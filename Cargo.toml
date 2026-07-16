@@ -1,0 +1,13 @@
+[workspace]
+members = ["rust/game-patch", "rust/patch-build", "rust/patcher"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.77"
+
+[workspace.dependencies]
+sha2 = "0.10.8"
+

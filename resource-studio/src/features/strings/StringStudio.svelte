@@ -26,7 +26,7 @@
 
   const TARGET_LANGUAGES: { code: TargetLanguage; label: string; cleanup: string }[] = [
     { code: 'en', label: 'English', cleanup: 'server punctuation cleanup' },
-    { code: 'vi', label: 'Vietnamese', cleanup: 'server ASCII without accents + Doraemon terms' }
+    { code: 'vi', label: 'Vietnamese', cleanup: 'supported Vietnamese glyphs + Doraemon terms' }
   ];
 
   let records = $state<StringRecord[]>([]);
@@ -59,8 +59,8 @@
   let sysfontWidths = $state<number[] | undefined>();
 
   onMount(() => {
-    void loadBundledOriginal();
-    void loadBundledSysfont();
+    void loadOptionalOriginal();
+    void loadOptionalSysfont();
   });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
@@ -121,6 +121,7 @@
     let text = '';
     for (const token of record.tokens) {
       if (token.type === 'glyph') text += CHIFONT_MAP[token.id] || `⟦g${token.id}⟧`;
+      else if (token.type === 'vietnamese') text += token.text;
       else if (token.type === 'ascii') text += token.text;
       else if (token.type === 'newline') text += '\n';
     }
@@ -221,30 +222,71 @@
     }
   }
 
-  async function loadBundledSysfont() {
+  async function loadSysfont(file: Blob, name: string) {
     try {
-      const response = await fetch('/game/sysfont.dat');
-      if (!response.ok) throw new Error(`Bundled sysfont.dat returned HTTP ${response.status}.`);
-      const font = parseSysFont(new Uint8Array(await response.arrayBuffer()));
+      const font = parseSysFont(new Uint8Array(await file.arrayBuffer()));
       sysfontWidths = font.glyphs.slice(0, 128).map((glyph) => glyph.width);
     } catch (error) {
-      loadError = `Could not load sysfont.dat for reflow: ${error instanceof Error ? error.message : String(error)}`;
+      loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
-  async function loadBundledOriginal() {
+  async function resetAndLoadOriginal(file: Blob, name: string) {
     loadError = '';
+    translations = {};
+    translationMeta = {};
+    localStorage.removeItem('doraemon-translations');
+    localStorage.removeItem('doraemon-translation-meta');
+    await loadArchive(file, name);
+  }
+
+  async function loadOptionalOriginal() {
     try {
-      translations = {};
-      translationMeta = {};
-      localStorage.removeItem('doraemon-translations');
-      localStorage.removeItem('doraemon-translation-meta');
-      const response = await fetch('/game/strings-CN.dat');
-      if (!response.ok) throw new Error(`Bundled strings-CN.dat returned HTTP ${response.status}.`);
-      await loadArchive(await response.blob(), 'strings-CN.dat');
-    } catch (error) {
-      loadError = error instanceof Error ? error.message : String(error);
+      const response = await fetch('/game/strings-origin.dat');
+      if (response.ok) await resetAndLoadOriginal(await response.blob(), 'strings-origin.dat');
+    } catch {
+      /* Optional local development file. */
     }
+    try {
+      const response = await fetch('/game/strings.dat');
+      if (response.ok && records.length) await importTranslationArchive(await response.blob(), 'strings.dat');
+    } catch {
+      /* No previously modified strings.dat to import. */
+    }
+  }
+
+  async function loadOptionalSysfont() {
+    try {
+      const response = await fetch('/game/sysfont.dat');
+      if (response.ok) await loadSysfont(await response.blob(), 'sysfont.dat');
+    } catch {
+      /* Reflow remains unavailable until the user loads a font. */
+    }
+  }
+
+  async function originalInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await resetAndLoadOriginal(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
+  async function sysfontInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await loadSysfont(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
+  function dropOriginal(event: DragEvent) {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    const stringsOrigin = files.find((file) => file.name.toLowerCase() === 'strings-origin.dat');
+    const stringsModified = !stringsOrigin && files.find((file) => file.name.toLowerCase() === 'strings.dat');
+    const sysfont = files.find((file) => file.name.toLowerCase() === 'sysfont.dat');
+    if (stringsOrigin) void resetAndLoadOriginal(stringsOrigin, stringsOrigin.name);
+    else if (stringsModified) void importTranslationArchive(stringsModified, stringsModified.name);
+    if (sysfont) void loadSysfont(sysfont, sysfont.name);
+    if (!stringsOrigin && !stringsModified && !sysfont)
+      loadError = 'Drop strings-origin.dat, strings.dat, or sysfont.dat here.';
   }
 
   async function importTranslationArchive(file: Blob, name: string) {
@@ -252,7 +294,7 @@
     exportStatus = '';
     try {
       if (!records.length || !archiveBytes)
-        throw new Error('Load the original strings.dat before importing a translated .dat file.');
+        throw new Error('Load the original strings-origin.dat before importing a translated .dat file.');
       const importedRecords = parseStrings(new Uint8Array(await file.arrayBuffer()));
       const importedById = new Map(importedRecords.map((record) => [record.id, sourceText(record)]));
       const now = Date.now();
@@ -618,7 +660,7 @@
     loadError = '';
     exportStatus = '';
     try {
-      if (!archiveBytes) throw new Error('Load the original strings.dat first.');
+      if (!archiveBytes) throw new Error('Load the original strings-origin.dat first.');
       const rebuilt = rebuildStrings(archiveBytes, records, translations);
       downloadBlob(binaryBlob(rebuilt), 'strings-exported.dat');
       exportStatus = `Built and verified strings-exported.dat: ${translatedCount} translated, ${records.length - translatedCount} preserved in Chinese.`;
@@ -648,7 +690,20 @@
     <div class="header-actions">
       <a class="load-button" href="/assets" data-route>Graphics studio</a>
       <a class="load-button" href="/fonts" data-route>Font studio</a>
-      <button type="button" onclick={loadBundledOriginal}>Reload bundled strings-CN.dat</button>
+      <label class="load-button"
+        >Load original .dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={originalInput}
+        /></label
+      >
+      <label class="load-button"
+        >Load sysfont.dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={sysfontInput}
+        /></label
+      >
       <label class="load-button"
         >Load modified strings.dat<input
           type="file"
@@ -658,6 +713,22 @@
       >
     </div>
   </header>
+
+  {#if !records.length}
+    <section
+      class="drop-zone"
+      role="group"
+      aria-label="Load string resources"
+      ondragover={(event) => event.preventDefault()}
+      ondrop={dropOriginal}
+    >
+      <strong>Load your own game files</strong>
+      <span
+        >Drop <code>strings-origin.dat</code> (original) or <code>strings.dat</code> (modified) here. You may
+        include <code>sysfont.dat</code> to enable exact-width reflow.</span
+      >
+    </section>
+  {/if}
 
   {#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 
@@ -830,7 +901,7 @@
                     onclick={() => {
                       layoutPreset = 'dialog';
                       layoutWidth = DIALOG_LAYOUT.maxWidth;
-                    }}>Dialog preset · 309px</button
+                    }}>Dialog preset · 264px</button
                   >
                   <button type="button" class="primary" onclick={() => reflowTranslation(record)}
                     >Reflow text</button

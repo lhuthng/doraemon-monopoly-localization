@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev-en": "bun scripts/stage-game.ts english && vite",
+    "dev-vi": "bun scripts/stage-game.ts vietnamese && vite",
     "translate-server": "bun scripts/translate-server.ts",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "bun test",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "build": "vite build",

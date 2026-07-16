@@ -1,10 +1,10 @@
 # Doraemon Monopoly (Windows 95/98) — reverse-engineering notes
 
-This repository investigates the resource architecture used by the Chinese and
-Taiwanese releases of GameOne's 1998 _Doraemon Monopoly_. It contains no game
-executable. The researched game installations are not retained as a full
-preservation set in this repository; only the working resources required by the
-studio are bundled under `resource-studio/public/game/`.
+This repository investigates the resource architecture used by the Cantonese
+and Taiwanese releases of GameOne's 1998 _Doraemon Monopoly_. It distributes no
+game executable or resource archive. The Studio accepts user-supplied files and
+may auto-load ignored private copies from `resource-studio/public/game/` during
+local development.
 
 The findings below come from static inspection of the supplied installations,
 comparison between releases, visual rendering, controlled file-removal and

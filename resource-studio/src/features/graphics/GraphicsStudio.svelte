@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import '../../styles/graphics.css';
   import {
     diagnosticPalette,
@@ -42,7 +43,7 @@
   let exportTo = $state('95');
   let query = $state('');
   let paletteId = $state('1');
-  let status = $state('Load the bundled bitmap and sprite archives when needed.');
+  let status = $state('Load bitmaps.dat, Sprite1.dat, or sprite2.dat from your game.');
   let error = $state('');
   let busy = $state(false);
   let dragging = $state(false);
@@ -137,17 +138,53 @@
     }
   }
 
-  async function loadBundled(url: string, name: string, target?: 'sprite1' | 'sprite2') {
+  async function loadBundled(url: string, name: string, target?: 'sprite1' | 'sprite2', optional = false) {
     error = '';
     status = `Loading ${name}…`;
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`${name} returned HTTP ${response.status}.`);
+      if (!response.ok) {
+        if (optional && response.status === 404) return;
+        throw new Error(`${name} returned HTTP ${response.status}.`);
+      }
       await loadBytes(new Uint8Array(await response.arrayBuffer()), name, target);
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
-      status = 'Loading failed.';
+      if (!optional) {
+        error = cause instanceof Error ? cause.message : String(cause);
+        status = 'Loading failed.';
+      }
     }
+  }
+
+  onMount(() => {
+    void loadBundled('/game/bitmaps.dat', 'bitmaps.dat', undefined, true);
+    void loadBundled('/game/Sprite1.dat', 'Sprite1.dat', 'sprite1', true);
+    void loadBundled('/game/sprite2.dat', 'sprite2.dat', 'sprite2', true);
+  });
+
+  async function archiveInput(event: Event, target?: 'sprite1' | 'sprite2') {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0])
+      await loadBytes(new Uint8Array(await input.files[0].arrayBuffer()), input.files[0].name, target);
+    input.value = '';
+  }
+
+  function dropArchives(event: DragEvent) {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    for (const file of files) {
+      const name = file.name.toLowerCase();
+      if (name === 'bitmaps.dat')
+        void file.arrayBuffer().then((bytes) => loadBytes(new Uint8Array(bytes), file.name));
+      else if (name === 'sprite1.dat')
+        void file.arrayBuffer().then((bytes) => loadBytes(new Uint8Array(bytes), file.name, 'sprite1'));
+      else if (name === 'sprite2.dat')
+        void file.arrayBuffer().then((bytes) => loadBytes(new Uint8Array(bytes), file.name, 'sprite2'));
+    }
+    if (
+      !files.some((file) => ['bitmaps.dat', 'sprite1.dat', 'sprite2.dat'].includes(file.name.toLowerCase()))
+    )
+      error = 'Drop bitmaps.dat, Sprite1.dat, or sprite2.dat.';
   }
   function go(delta: number) {
     page = Math.max(0, Math.min(pages - 1, page + delta));
@@ -432,19 +469,38 @@
       </article>
     </section>
 
-    <section class="load-panel" aria-label="Asset loaders">
-      <strong>Bundled working archives</strong>
+    <section
+      class="load-panel"
+      aria-label="Asset loaders"
+      ondragover={(event) => event.preventDefault()}
+      ondrop={dropArchives}
+    >
+      <strong>Your local game archives</strong>
       <span
-        >Load the project's current copies. Sprite and font resources may include localization edits; nothing
-        is uploaded.</span
+        >Choose or drop your own files. Optional ignored copies in <code>public/game</code> load automatically during
+        local development; nothing is uploaded.</span
       >
       <div>
-        <button type="button" onclick={() => loadBundled('/game/bitmaps.dat', 'bitmaps.dat')}
-          >Load bitmaps.dat</button
-        ><button type="button" onclick={() => loadBundled('/game/Sprite1.dat', 'Sprite1.dat', 'sprite1')}
-          >Load Sprite1.dat</button
-        ><button type="button" onclick={() => loadBundled('/game/sprite2.dat', 'sprite2.dat', 'sprite2')}
-          >Load sprite2.dat</button
+        <label class="file-button"
+          >Load bitmaps.dat<input
+            type="file"
+            accept=".dat,application/octet-stream"
+            onchange={(event) => archiveInput(event)}
+          /></label
+        >
+        <label class="file-button"
+          >Load Sprite1.dat<input
+            type="file"
+            accept=".dat,application/octet-stream"
+            onchange={(event) => archiveInput(event, 'sprite1')}
+          /></label
+        >
+        <label class="file-button"
+          >Load sprite2.dat<input
+            type="file"
+            accept=".dat,application/octet-stream"
+            onchange={(event) => archiveInput(event, 'sprite2')}
+          /></label
         >
       </div>
     </section>
