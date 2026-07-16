@@ -142,6 +142,44 @@ not been edited. A restored backup is recognized on the next Apply and is
 recreated automatically, so Restore → Apply works even when music is extracted
 from a CUE/BIN again.
 
+### Versioned localization changes, without versioning game data
+
+The shareable source of a language release is a `*.dmpatch` payload: a compact
+binary delta plus file hashes and translated string records. It is **not** a
+complete `.dat` archive and cannot be used without the exact supported base
+game. This repository permits only these payloads under `patches/`; all other
+`.dmpatch` files remain ignored.
+
+When a maintainer has finished an English or Vietnamese target, create the
+payload and commit it:
+
+```sh
+cargo run -p patch-build -- release \
+  --language english \
+  --base-dir /private/path/to/original \
+  --target-dir /private/path/to/english \
+  --output-dir patches \
+  --payload-only
+
+git add patches/english.dmpatch
+git commit -m "feat(english): update localization payload"
+```
+
+This is the only step that needs both the original and finished localized
+files. A fresh contributor clones the repository, supplies only their own
+untouched game, and packages the tracked payload into a distributable EXE:
+
+```sh
+cargo run -p patch-build -- package \
+  --payload patches/english.dmpatch \
+  --output-dir release/english
+```
+
+They do not need anyone else's `local-game/` folder or a reconstructed target
+archive. The resulting patcher verifies the player’s base files at Apply time,
+then recreates the localized resources from the payload. Use the same workflow
+with `patches/vietnamese.dmpatch`.
+
 ## Build the portable compatibility patcher
 
 This patcher has no language resource payload. It detects and patches the

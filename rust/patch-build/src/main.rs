@@ -55,8 +55,71 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build portable --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
+    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build package --payload PATCH.dmpatch --output-dir DIR [--target x86_64-pc-windows-gnu]\n  patch-build portable --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
     std::process::exit(2)
+}
+
+fn package(arguments: &[String]) -> Result<(), String> {
+    let payload_path = PathBuf::from(value(arguments, "--payload").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
+    let payload_bytes =
+        fs::read(&payload_path).map_err(|error| format!("{}: {error}", payload_path.display()))?;
+    let payload = payload::decode(&payload_bytes).map_err(|error| {
+        format!(
+            "{} is not a valid Doraemon patch payload: {error}",
+            payload_path.display()
+        )
+    })?;
+    if payload.language == Language::Custom {
+        return Err("package accepts English or Vietnamese language payloads; use portable for the compatibility patcher".into());
+    }
+    fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+    let rust_target =
+        value(arguments, "--target").unwrap_or_else(|| "x86_64-pc-windows-gnu".into());
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let status = Command::new("cargo")
+        .current_dir(&workspace)
+        .env(
+            "DORAEMON_PATCH_PAYLOAD",
+            fs::canonicalize(&payload_path).map_err(|error| error.to_string())?,
+        )
+        .arg("build")
+        .arg("--release")
+        .arg("-p")
+        .arg("doraemon-patcher")
+        .arg("--target")
+        .arg(&rust_target)
+        .status()
+        .map_err(|error| format!("start Cargo: {error}"))?;
+    if !status.success() {
+        return Err(format!("Windows patcher build failed with {status}"));
+    }
+    let built = workspace
+        .join("target")
+        .join(&rust_target)
+        .join("release")
+        .join("doraemon-patcher.exe");
+    let destination = output.join(format!("Doraemon-{}-Patcher.exe", payload.language.label()));
+    fs::copy(&built, &destination).map_err(|error| format!("{}: {error}", built.display()))?;
+    let checksum = hash::file(&destination)?;
+    fs::write(
+        output.join(format!(
+            "Doraemon-{}-Patcher.exe.sha256",
+            payload.language.label()
+        )),
+        format!(
+            "{}  {}\n",
+            hash::hex(&checksum),
+            destination.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    println!(
+        "Packaged {} from {}.",
+        destination.display(),
+        payload_path.display()
+    );
+    Ok(())
 }
 
 fn value(arguments: &[String], name: &str) -> Option<String> {
@@ -350,6 +413,7 @@ fn main() {
         Some("vi-font") => vi_font(&arguments[1..]),
         Some("extract-audio") => extract_audio(&arguments[1..]),
         Some("release") => release(&arguments[1..]),
+        Some("package") => package(&arguments[1..]),
         Some("portable") => portable(&arguments[1..]),
         _ => usage(),
     };
