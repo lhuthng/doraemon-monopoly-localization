@@ -33,7 +33,7 @@ README. It never contains a patched `Doraemon.exe` or complete `.dat` file.
 ### Using a patcher
 
 1. Copy the patcher EXE into the folder containing your own `Doraemon.exe`.
-2. Select **Unchanged**, **English**, or **Vietnamese**, then press **Apply**.
+2. Select **\<unchanged\>**, **English**, or **Vietnamese**, then press **Apply**.
 3. Review the colored task log. The window remains open until you close it.
 4. Use **Add graphics wrapper** for cnc-ddraw compatibility, then **Play**.
 
@@ -42,7 +42,7 @@ The patcher verifies the installation, creates `backup/original/` and
 result. **Restore** returns the tracked files to their exact original hashes.
 
 For local background music, place a valid `DoraemonMusic.wav` or the original
-matching CUE/BIN beside the game and select **Use local background music**. The
+matching CUE/BIN beside the game and select **Use local music**. The
 patcher creates a compressed `Music.dat` and installs its DirectSound helper.
 If that option is off, it does not install the helper or alter the original
 CD/MCI music and volume code. If the option is on but no source is available,

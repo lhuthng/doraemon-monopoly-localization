@@ -56,12 +56,12 @@ does not create the original WinMM one-second replay timer. `0x004851D9` is also
 the worker and releases the DirectSound buffer without issuing legacy MCI or mixer calls.
 
 The original BGM slider targeted the Compact Disc mixer control. For local playback only, its calculated
-0–65535 value is forwarded to `IDirectSoundBuffer::SetVolume`. If **Use local background music** is not
+0–65535 value is forwarded to `IDirectSoundBuffer::SetVolume`. If **Use local music** is not
 selected, the helper is not installed, no music file is generated, and all original CD/MCI music and slider
 instructions remain untouched. If local music is selected but no valid `Music.dat`, WAV, or CUE/BIN source
 exists, the patcher warns and likewise leaves the original music code untouched.
 
-The patcher also offers an opt-in **Modern volume controls** mode for systems that ignore the old mixer API.
+The patcher also offers an opt-in **Fix volume control** mode for systems that ignore the old mixer API.
 It redirects the SFX slider to DirectSound-buffer volume, using a logarithmic 54-step table so halfway remains
 audible at approximately -6 dB. This mode is never applied unless selected.
 

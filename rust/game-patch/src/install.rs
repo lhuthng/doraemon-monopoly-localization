@@ -204,12 +204,12 @@ fn prepare_local_audio(
         progress(
             sink,
             TaskState::Skipped,
-            "Local background music is off; original CD/MCI playback is unchanged.",
+            "Local music is off; original CD/MCI playback is unchanged.",
             Some(42),
         );
         return Ok(LocalAudioPreparation {
             enabled: false,
-            summary: "Original music playback was left unchanged.".into(),
+            summary: "Music playback was left unchanged.".into(),
             created: Vec::new(),
         });
     }
@@ -232,7 +232,7 @@ fn prepare_local_audio(
         );
         return Ok(LocalAudioPreparation {
             enabled: false,
-            summary: "No local music source was available, so original music playback was left unchanged.".into(),
+            summary:             "No local music source was available, so music playback was left unchanged.".into(),
             created: Vec::new(),
         });
     };

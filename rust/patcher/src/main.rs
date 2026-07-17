@@ -50,7 +50,7 @@ mod windows_app {
         title_font: nwg::Font,
         group_font: nwg::Font,
         options_group: nwg::ControlHandle,
-        game_label: nwg::Label,
+        language_label: nwg::Label,
         language: nwg::ComboBox<String>,
         no_disc: nwg::CheckBox,
         no_reg: nwg::CheckBox,
@@ -123,8 +123,7 @@ mod windows_app {
                 path.file_name().unwrap_or_default().to_string_lossy()
             )
         } else {
-            "♫ No Music.dat, WAV, or CUE/BIN here yet. Leave local music off to keep the original CD playback."
-                .into()
+            String::new()
         }
     }
 
@@ -353,11 +352,11 @@ mod windows_app {
             )?;
 
             nwg::Label::builder()
-                .text(&format!("Game folder: {}", game.display()))
+                .text("Language:")
                 .position((24, 88))
                 .size((592, 18))
                 .parent(&ui.window)
-                .build(&mut ui.game_label)?;
+                .build(&mut ui.language_label)?;
 
             nwg::ComboBox::builder()
                 .collection(languages)
@@ -368,7 +367,7 @@ mod windows_app {
                 .build(&mut ui.language)?;
 
             nwg::CheckBox::builder()
-                .text("Play without the original disc")
+                .text("Skip disc check")
                 .check_state(nwg::CheckBoxState::Checked)
                 .position((24, 145))
                 .size((420, 20))
@@ -376,32 +375,31 @@ mod windows_app {
                 .build(&mut ui.no_disc)?;
 
             nwg::CheckBox::builder()
-                .text("Skip the original Setup registry check")
+                .text("Skip registry check")
                 .check_state(nwg::CheckBoxState::Checked)
                 .position((24, 169))
                 .size((420, 20))
                 .parent(&ui.window)
                 .build(&mut ui.no_reg)?;
 
+            let has_music = music::valid(&game.join("Music.dat"))
+                || find_cue(game).is_some()
+                || cue::valid_wav(&game.join("DoraemonMusic.wav"));
             nwg::CheckBox::builder()
-                .text("Use local background music when available")
-                .check_state(
-                    if music::valid(&game.join("Music.dat"))
-                        || find_cue(game).is_some()
-                        || cue::valid_wav(&game.join("DoraemonMusic.wav"))
-                    {
-                        nwg::CheckBoxState::Checked
-                    } else {
-                        nwg::CheckBoxState::Unchecked
-                    },
-                )
+                .text("Use local music")
+                .check_state(if has_music {
+                    nwg::CheckBoxState::Checked
+                } else {
+                    nwg::CheckBoxState::Unchecked
+                })
+                .enabled(has_music)
                 .position((24, 193))
                 .size((420, 20))
                 .parent(&ui.window)
                 .build(&mut ui.local_audio)?;
 
             nwg::CheckBox::builder()
-                .text("Modern SFX volume control (Windows 7+ / CrossOver)")
+                .text("Fix volume control (Windows 7+ / CrossOver)")
                 .check_state(nwg::CheckBoxState::Unchecked)
                 .position((24, 217))
                 .size((440, 20))
@@ -536,7 +534,7 @@ mod windows_app {
                 format!("This patcher has an invalid Vietnamese payload: {error}")
             })?)
         };
-        let mut languages = vec!["Unchanged".into()];
+        let mut languages = vec!["<unchanged>".into()];
         let english_index = english.as_ref().map(|_| {
             let index = languages.len();
             languages.push("English".into());
@@ -629,6 +627,11 @@ mod windows_app {
                                 append_log(&ui, TaskState::Done, &report.audio);
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.music.set_text(&music_text(&events_game));
+                                ui.local_audio.set_enabled(
+                                    music::valid(&events_game.join("Music.dat"))
+                                        || find_cue(&events_game).is_some()
+                                        || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
+                                );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
                                 ui.wrapper
@@ -668,6 +671,11 @@ mod windows_app {
                                 ui.play
                                     .set_enabled(events_game.join("Doraemon.exe").is_file());
                                 ui.music.set_text(&music_text(&events_game));
+                                ui.local_audio.set_enabled(
+                                    music::valid(&events_game.join("Music.dat"))
+                                        || find_cue(&events_game).is_some()
+                                        || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
+                                );
                                 ui.refresh_music.set_enabled(!restore_mode);
                             }
                             UiEvent::Restored(Err(error)) => {
@@ -732,6 +740,10 @@ mod windows_app {
                     }
                 } else if event == nwg::Event::OnButtonClick && handle == ui.refresh_music.handle {
                     ui.music.set_text(&music_text(&events_game));
+                    let has_music = music::valid(&events_game.join("Music.dat"))
+                        || find_cue(&events_game).is_some()
+                        || cue::valid_wav(&events_game.join("DoraemonMusic.wav"));
+                    ui.local_audio.set_enabled(has_music);
                 } else if event == nwg::Event::OnButtonClick && handle == ui.apply.handle {
                     events_busy.set(true);
                     ui.apply.set_enabled(false);
