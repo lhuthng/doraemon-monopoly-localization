@@ -1,7 +1,18 @@
+//! Executable patch orchestration for the analyzed 1.26 Win32 build.
+//!
+//! This module locates the original machine-code routines and installs font,
+//! no-disc, registry, and optional local-audio hooks. Since the game has no
+//! source-level extension point, every patch preserves its calling
+//! conventions, object layouts, and untouched PE bytes. The `assembler`
+//! submodule emits new caves, while this layer validates known instruction
+//! signatures before redirecting existing call sites.
+
 use std::collections::HashMap;
 
 use crate::Result;
-const IMAGE_BASE: u32 = 0x0040_0000;
+mod assembler;
+use assembler::{patch_call, patch_cseg_jump, patch_jump, Asm, Target, IMAGE_BASE};
+
 const CSEG_VA: u32 = 0x004d_1000;
 const CSEG_RAW: usize = 0x000c_c000;
 const PORT_VA: u32 = 0x004d_6000;
@@ -9,140 +20,11 @@ const PORT_SIZE: usize = 0x2000;
 const PORT_TITLE_OFFSET: usize = 0x0c00;
 const PORT_VOLUME_OFFSET: usize = 0x0d00;
 const PORT_SFX_OFFSET: usize = 0x0f00;
-const TITLE_VERSION: &[u8] = b"Version 1.26\0";
-const TITLE_CREDIT: &[u8] = b"Version 1.26 - Patched by Thang\0";
+const TITLE_PREFIX: &[u8] = b"Version ";
+const TITLE_SUFFIX: &[u8] = b" - Patched by Thang\0";
 
-#[derive(Clone)]
-enum Target {
-    Label(&'static str),
-    Address(u32),
-}
-#[derive(Clone)]
-struct Fixup {
-    offset: usize,
-    target: Target,
-    relative: bool,
-}
-
-#[derive(Default)]
-struct Asm {
-    base: u32,
-    bytes: Vec<u8>,
-    labels: HashMap<&'static str, u32>,
-    fixups: Vec<Fixup>,
-}
-
-impl Asm {
-    fn new(base: u32) -> Self {
-        Self {
-            base,
-            ..Self::default()
-        }
-    }
-    fn va(&self) -> u32 {
-        self.base + self.bytes.len() as u32
-    }
-    fn emit(&mut self, bytes: &[u8]) {
-        self.bytes.extend_from_slice(bytes);
-    }
-    fn u32(&mut self, value: u32) {
-        self.emit(&value.to_le_bytes());
-    }
-    fn label(&mut self, name: &'static str) {
-        self.labels.insert(name, self.va());
-    }
-    fn fix(&mut self, opcode: &[u8], target: Target, relative: bool) {
-        self.emit(opcode);
-        self.fixups.push(Fixup {
-            offset: self.bytes.len(),
-            target,
-            relative,
-        });
-        self.u32(0);
-    }
-    fn jmp(&mut self, target: Target) {
-        self.fix(&[0xe9], target, true);
-    }
-    fn call(&mut self, target: Target) {
-        self.fix(&[0xe8], target, true);
-    }
-    fn je(&mut self, target: Target) {
-        self.fix(&[0x0f, 0x84], target, true);
-    }
-    fn jne(&mut self, target: Target) {
-        self.fix(&[0x0f, 0x85], target, true);
-    }
-    fn jbe(&mut self, target: Target) {
-        self.fix(&[0x0f, 0x86], target, true);
-    }
-    fn jge(&mut self, target: Target) {
-        self.fix(&[0x0f, 0x8d], target, true);
-    }
-    fn absolute(&mut self, opcode: &[u8], label: &'static str) {
-        self.fix(opcode, Target::Label(label), false);
-    }
-    fn call_iat(&mut self, address: u32) {
-        self.emit(&[0xff, 0x15]);
-        self.u32(address);
-    }
-    fn finish(mut self) -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
-        for fixup in &self.fixups {
-            let target = match fixup.target {
-                Target::Label(name) => *self
-                    .labels
-                    .get(name)
-                    .ok_or_else(|| format!("missing assembler label {name}"))?,
-                Target::Address(address) => address,
-            };
-            let value = if fixup.relative {
-                target.wrapping_sub(self.base + fixup.offset as u32 + 4)
-            } else {
-                target
-            };
-            self.bytes[fixup.offset..fixup.offset + 4].copy_from_slice(&value.to_le_bytes());
-        }
-        Ok((self.bytes, self.labels))
-    }
-}
-
-fn patch_jump(output: &mut [u8], va: u32, target: u32, replaced: usize) -> Result<()> {
-    let raw = (va - IMAGE_BASE) as usize;
-    let bytes = output
-        .get_mut(raw..raw + replaced)
-        .ok_or("executable jump patch is outside file")?;
-    bytes.fill(0x90);
-    bytes[0] = 0xe9;
-    bytes[1..5].copy_from_slice(&target.wrapping_sub(va + 5).to_le_bytes());
-    Ok(())
-}
-
-fn patch_call(output: &mut [u8], va: u32, target: u32, replaced: usize) -> Result<()> {
-    let raw = (va - IMAGE_BASE) as usize;
-    let bytes = output
-        .get_mut(raw..raw + replaced)
-        .ok_or("executable call patch is outside file")?;
-    bytes.fill(0x90);
-    bytes[0] = 0xe8;
-    bytes[1..5].copy_from_slice(&target.wrapping_sub(va + 5).to_le_bytes());
-    Ok(())
-}
-
-fn patch_cseg_jump(
-    output: &mut [u8],
-    cseg_va: u32,
-    cseg_raw: usize,
-    va: u32,
-    target: u32,
-) -> Result<()> {
-    let raw = cseg_raw + (va - cseg_va) as usize;
-    let bytes = output
-        .get_mut(raw..raw + 5)
-        .ok_or("CSEG jump patch is outside file")?;
-    bytes[0] = 0xe9;
-    bytes[1..5].copy_from_slice(&target.wrapping_sub(va + 5).to_le_bytes());
-    Ok(())
-}
-
+/// Routes an encoded byte to the Chinese path or one of the CC/CD Vietnamese
+/// two-byte paths. The second byte is consumed only for a recognized prefix.
 fn prefix_check(a: &mut Asm, chinese: &'static str, check_cd: &'static str, second: &'static str) {
     a.emit(&[0x3c, 0xcc]);
     a.jne(Target::Label(check_cd));
@@ -155,6 +37,8 @@ fn prefix_check(a: &mut Asm, chinese: &'static str, check_cd: &'static str, seco
     a.jne(Target::Label(chinese));
 }
 
+/// Converts a CC/CD pair and the active Vietnamese variant into sysfont slot
+/// `640 + variant * 256 + slot`, matching the expanded 1,920-record file.
 fn vietnamese_index(a: &mut Asm, dseg_va: u32) {
     a.emit(&[
         0x0f, 0xb6, 0xc0, 0x2d, 0xcc, 0, 0, 0, 0xc1, 0xe0, 0x07, 0x0f, 0xb6, 0x0e, 0x01, 0xc8,
@@ -167,6 +51,8 @@ fn vietnamese_index(a: &mut Asm, dseg_va: u32) {
     a.u32(640);
 }
 
+/// Builds the four rendering/measurement entry points used by the Vietnamese
+/// runtime patch. It preserves ASCII and Chinese fallbacks byte-for-byte.
 fn vietnamese_cave(
     cave_va: u32,
     dseg_va: u32,
@@ -222,6 +108,7 @@ fn vietnamese_cave(
     a.finish()
 }
 
+/// Finds a PE section header by its eight-byte name and returns its file offset.
 fn find_section(output: &[u8], wanted: &[u8]) -> Result<usize> {
     let pe = u32::from_le_bytes(
         output
@@ -267,6 +154,7 @@ struct FontLayout {
     cseg_raw: usize,
 }
 
+/// Reads a section's virtual address, raw file offset, and raw size.
 fn section_location(input: &[u8], name: &[u8]) -> Result<(u32, usize, usize)> {
     let header = find_section(input, name)?;
     let pe = u32::from_le_bytes(
@@ -298,6 +186,7 @@ fn section_location(input: &[u8], name: &[u8]) -> Result<(u32, usize, usize)> {
     Ok((image_base + relative_va, raw, raw_size))
 }
 
+/// Converts a raw file offset into the image VA used by x86 branch fixups.
 fn raw_to_va(input: &[u8], raw: usize) -> Result<u32> {
     let pe = u32::from_le_bytes(
         input
@@ -324,18 +213,56 @@ fn raw_to_va(input: &[u8], raw: usize) -> Result<u32> {
     Err("title text is outside the executable's mapped sections".into())
 }
 
+/// Searches the executable for a literal signature without interpreting data.
 fn find_bytes(input: &[u8], needle: &[u8]) -> Option<usize> {
     input
         .windows(needle.len())
         .position(|window| window == needle)
 }
 
-/// Redirects the fixed title-screen `push "Version 1.26"` instructions to
-/// the longer credit text. The game already right-aligns the rendered surface,
-/// so its right edge stays in the original position without a coordinate patch.
+/// Finds a printable, NUL-terminated `Version ...` label in the executable.
+/// The bounded scan avoids mistaking arbitrary binary data for a title while
+/// allowing releases whose version text is not exactly `Version 1.26`.
+fn find_version_string(input: &[u8]) -> Option<(usize, usize)> {
+    for raw in input
+        .windows(TITLE_PREFIX.len())
+        .enumerate()
+        .filter_map(|(raw, bytes)| (bytes == TITLE_PREFIX).then_some(raw))
+    {
+        let Some(end) = input[raw + TITLE_PREFIX.len()..]
+            .iter()
+            .position(|byte| *byte == 0)
+            .map(|offset| raw + TITLE_PREFIX.len() + offset)
+        else {
+            continue;
+        };
+        let text = &input[raw..end];
+        if text.len() > TITLE_PREFIX.len()
+            && text.len() <= 64
+            && text[TITLE_PREFIX.len()..]
+                .iter()
+                .all(|byte| (0x20..=0x7e).contains(byte))
+        {
+            return Some((raw, end - raw));
+        }
+    }
+    None
+}
+
+/// Builds the credit string while retaining the original version suffix.
+fn title_credit(input: &[u8]) -> Result<Vec<u8>> {
+    let (raw, length) =
+        find_version_string(input).ok_or("could not find a printable Version title string")?;
+    let mut credit = input[raw..raw + length].to_vec();
+    credit.extend_from_slice(TITLE_SUFFIX);
+    Ok(credit)
+}
+
+/// Repoints every title-screen push of the short version string at the longer
+/// credit stored in `.port`, keeping the game's existing text placement.
 fn patch_title_credit(output: &mut [u8], credit_va: u32) -> Result<usize> {
-    let raw =
-        find_bytes(output, TITLE_VERSION).ok_or("could not find the Version 1.26 title text")?;
+    let (raw, _) =
+        find_version_string(output).ok_or("could not find a printable Version title string")?;
     let source_va = raw_to_va(output, raw)?;
     let mut changed = 0;
     for offset in 1..output.len().saturating_sub(4) {
@@ -348,7 +275,7 @@ fn patch_title_credit(output: &mut [u8], credit_va: u32) -> Result<usize> {
     }
     if changed != 4 {
         return Err(format!(
-            "expected four Version 1.26 title references, found {changed}; executable was not changed"
+            "expected four Version title references, found {changed}; executable was not changed"
         ));
     }
     Ok(changed)
@@ -356,10 +283,10 @@ fn patch_title_credit(output: &mut [u8], credit_va: u32) -> Result<usize> {
 
 /// Upgrades a portable EXE made by an older patcher. `.port` already reserves
 /// a 4 KiB raw section, so its unused tail is a stable place for the credit.
+/// Migrates an older portable patch in place by refreshing its title text and
+/// extending the existing section's mapped tail when necessary.
 fn install_title_credit_in_existing_port(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, TITLE_CREDIT).is_some() {
-        return Ok(false);
-    }
+    let credit = title_credit(output)?;
     let section = find_section(output, b".port")?;
     let pe = u32::from_le_bytes(output[0x3c..0x40].try_into().unwrap()) as usize;
     let image_base = u32::from_le_bytes(output[pe + 24 + 28..pe + 24 + 32].try_into().unwrap());
@@ -367,20 +294,32 @@ fn install_title_credit_in_existing_port(output: &mut [u8]) -> Result<bool> {
     let raw_size =
         u32::from_le_bytes(output[section + 16..section + 20].try_into().unwrap()) as usize;
     let raw = u32::from_le_bytes(output[section + 20..section + 24].try_into().unwrap()) as usize;
-    if raw_size < PORT_TITLE_OFFSET + TITLE_CREDIT.len()
-        || raw + PORT_TITLE_OFFSET + TITLE_CREDIT.len() > output.len()
+    if raw_size < PORT_TITLE_OFFSET + credit.len()
+        || raw + PORT_TITLE_OFFSET + credit.len() > output.len()
     {
         return Err("existing .port section has no safe room for the title credit".into());
     }
-    output[raw + PORT_TITLE_OFFSET..raw + PORT_TITLE_OFFSET + TITLE_CREDIT.len()]
-        .copy_from_slice(TITLE_CREDIT);
+    let title_range = raw + PORT_TITLE_OFFSET..raw + PORT_TITLE_OFFSET + credit.len();
+    let changed = output[title_range.clone()] != credit;
+    if changed {
+        output[title_range].copy_from_slice(&credit);
+    }
     // Older patchers set the virtual size to their code length. Extend it so
     // Windows maps the reserved tail where the new text lives.
     output[section + 8..section + 12].copy_from_slice(&(raw_size as u32).to_le_bytes());
-    patch_title_credit(output, image_base + relative_va + PORT_TITLE_OFFSET as u32)?;
-    Ok(true)
+    let (source_raw, _) =
+        find_version_string(output).ok_or("could not find a printable Version title string")?;
+    let source_va = raw_to_va(output, source_raw)?;
+    let source_is_still_referenced = output
+        .windows(5)
+        .any(|instruction| instruction[0] == 0x68 && instruction[1..] == source_va.to_le_bytes());
+    if source_is_still_referenced {
+        patch_title_credit(output, image_base + relative_va + PORT_TITLE_OFFSET as u32)?;
+    }
+    Ok(changed)
 }
 
+/// Discovers the canonical CSEG/DSEG locations required by the font cave.
 fn discover_font_layout(input: &[u8]) -> Result<FontLayout> {
     let (dseg_va, _, _) = section_location(input, b"DSEG")?;
     let (cseg_va, cseg_raw, cseg_size) = section_location(input, b"CSEG")?;
@@ -394,6 +333,7 @@ fn discover_font_layout(input: &[u8]) -> Result<FontLayout> {
     })
 }
 
+/// Returns the exact analyzed executable layout, rejecting unsupported builds.
 fn font_layout(input: &[u8]) -> Result<FontLayout> {
     let layout = discover_font_layout(input)?;
     for (offset, expected) in [
@@ -413,6 +353,7 @@ fn installed_font_layout(input: &[u8]) -> Option<FontLayout> {
     discover_font_layout(input).ok()
 }
 
+/// Reports whether the Vietnamese renderer's CSEG redirects are already present.
 pub fn has_vietnamese_font_hook(input: &[u8]) -> bool {
     let Some(layout) = installed_font_layout(input) else {
         return false;
@@ -429,6 +370,7 @@ pub fn has_vietnamese_font_hook(input: &[u8]) -> bool {
     target == (layout.cseg_va + 0x1c00) as i64
 }
 
+/// Detects the earlier font patch so it can be upgraded without stacking caves.
 fn has_legacy_vietnamese_hook(input: &[u8], layout: FontLayout) -> bool {
     let raw = layout.cseg_raw + 0x11d0;
     let Some(bytes) = input.get(raw..raw + 5) else {
@@ -442,6 +384,8 @@ fn has_legacy_vietnamese_hook(input: &[u8], layout: FontLayout) -> bool {
     target == (layout.cseg_va + 0x1c00) as i64
 }
 
+/// Adds Vietnamese CC/CD decoding to the game while retaining ASCII/Chinese
+/// branches and the original `sysfont.dat` filename.
 pub fn patch_vietnamese(original: &[u8]) -> Result<Vec<u8>> {
     let layout = font_layout(original)?;
     let mut output = original.to_vec();
@@ -489,7 +433,12 @@ pub fn patch_vietnamese(original: &[u8]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-fn portable_section(modern_sfx: bool) -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
+/// Emits the `.port` code/data section shared by no-disc and local-audio modes.
+/// Labels are returned so callers can redirect original executable call sites.
+fn portable_section(
+    modern_sfx: bool,
+    credit: &[u8],
+) -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
     let mut a = Asm::new(PORT_VA);
     const IAT_MODULE: u32 = 0x004b_90d0;
     const IAT_GET_PROC: u32 = 0x004b_9108;
@@ -615,7 +564,7 @@ fn portable_section(modern_sfx: bool) -> Result<(Vec<u8>, HashMap<&'static str, 
     a.label("audio_export_name");
     a.emit(b"DoraAudioDispatch\0");
     a.label("title_credit");
-    a.emit(TITLE_CREDIT);
+    a.emit(credit);
     a.label("path_buffer");
     a.emit(&[0_u8; 256]);
     if a.bytes.len() > PORT_VOLUME_OFFSET {
@@ -652,6 +601,8 @@ fn portable_section(modern_sfx: bool) -> Result<(Vec<u8>, HashMap<&'static str, 
 
 /// For local music only, forwards the game's BGM slider value to the helper's
 /// DirectSound stream. The normal CD/MCI path never points at this block.
+/// Emits the Music-slider bridge. It forwards the game's 0..65535 value to
+/// DoraAudioDispatch command 5 and reports full width when no legacy mixer exists.
 fn local_music_volume_block(
     base: u32,
     dispatch_pointer: u32,
@@ -693,6 +644,7 @@ fn local_music_volume_block(
 /// Replaces the ignored legacy WaveOut mixer control with the equivalent
 /// DirectSound-buffer attenuation. The table is logarithmic: 50% is roughly
 /// -6 dB, while zero is muted, matching a conventional modern volume slider.
+/// Emits the optional modern SFX mixer bridge; it is independent of local music.
 fn portable_sfx_volume_block(base: u32) -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
     let mut a = Asm::new(base);
     // The old mixer read returns unusable values under CrossOver even though
@@ -763,7 +715,8 @@ fn portable_sfx_volume_block(base: u32) -> Result<(Vec<u8>, HashMap<&'static str
     a.finish()
 }
 
-fn alternate_no_disc_section() -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
+/// Builds the no-disc cave for the alternate 1.26 executable layout.
+fn alternate_no_disc_section(credit: &[u8]) -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
     const IAT_GET_MODULE_FILENAME: u32 = 0x004b_611c;
     const CD_ROOT: u32 = 0x004c_9a78;
     let mut a = Asm::new(PORT_VA);
@@ -796,10 +749,11 @@ fn alternate_no_disc_section() -> Result<(Vec<u8>, HashMap<&'static str, u32>)> 
     a.emit(&[0x5f, 0x5e]);
     a.jmp(Target::Address(0x0043_721a));
     a.label("title_credit");
-    a.emit(TITLE_CREDIT);
+    a.emit(credit);
     a.finish()
 }
 
+/// Guards a patch site against silently modifying an unknown executable build.
 fn expect_bytes(output: &[u8], raw: usize, expected: &[u8]) -> Result<()> {
     if output.get(raw..raw + expected.len()) != Some(expected) {
         return Err(format!("unexpected executable bytes at {raw:#x}"));
@@ -807,6 +761,7 @@ fn expect_bytes(output: &[u8], raw: usize, expected: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Appends a mapped executable section while preserving all original sections.
 fn add_section(input: &[u8], section: &[u8]) -> Result<Vec<u8>> {
     if section.len() > PORT_SIZE {
         return Err(format!(
@@ -845,6 +800,8 @@ fn add_section(input: &[u8], section: &[u8]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// Applies the requested compatibility options to the canonical executable.
+/// Each option is independently guarded so already-applied options remain safe.
 fn patch_portable_options(
     verified: &[u8],
     no_disc: bool,
@@ -871,7 +828,8 @@ fn patch_portable_options(
     ] {
         expect_bytes(verified, raw, bytes)?;
     }
-    let (section, labels) = portable_section(modern_volume)?;
+    let credit = title_credit(verified)?;
+    let (section, labels) = portable_section(modern_volume, &credit)?;
     let mut output = add_section(verified, &section)?;
     patch_title_credit(&mut output, labels["title_credit"])?;
     if modern_volume {
@@ -905,10 +863,13 @@ fn patch_portable_options(
     Ok(output)
 }
 
+/// Convenience wrapper for the default no-disc portable configuration.
 pub fn patch_portable(verified: &[u8]) -> Result<Vec<u8>> {
     patch_portable_options(verified, true, true, true, false)
 }
 
+/// Redirects the two legacy SFX mixer call sites to the generated DirectSound
+/// implementation and updates the initial knob position.
 fn install_modern_sfx_volume_hook(
     output: &mut [u8],
     labels: &HashMap<&'static str, u32>,
@@ -1001,6 +962,8 @@ fn install_modern_sfx_volume_hook(
 /// result to the helper's DirectSound buffer. These hooks are installed only
 /// for local Music.dat playback; normal CD-audio builds retain the exact
 /// original calls.
+/// Redirects the legacy Music mixer calls to local DirectSound volume control,
+/// including the constructor fallback that controls the initial Music bell.
 fn install_local_music_bgm_volume_hook(
     output: &mut [u8],
     write_target: u32,
@@ -1096,6 +1059,7 @@ fn install_local_music_bgm_volume_hook(
     Ok(changed)
 }
 
+/// Upgrades an older `.port` patch with the current Music volume hook in place.
 fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     let section = find_section(output, b".port")?;
     let raw_size =
@@ -1125,11 +1089,12 @@ fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     )
 }
 
+/// Upgrades an already portable executable to local Music.dat playback.
 fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
     if find_bytes(output, b"doraudio.dll\0").is_none() {
         return Err("this older portable build predates the DirectSound Music.dat backend; restore the original executable before enabling local music".into());
     }
-    let (_, labels) = portable_section(false)?;
+    let (_, labels) = portable_section(false, b"\0")?;
     let mut changed = false;
     for (raw, original, source, label) in [
         (
@@ -1190,11 +1155,12 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
     Ok(changed)
 }
 
+/// Restores the original CD/MCI Music routines and constructor fallback.
 fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
     if find_bytes(output, b"doraudio.dll\0").is_none() || output.get(0x85043) != Some(&0xe9) {
         return Ok(false);
     }
-    let (_, labels) = portable_section(false)?;
+    let (_, labels) = portable_section(false, b"\0")?;
     for (raw, original, source, label) in [
         (
             0x85043,
@@ -1252,6 +1218,7 @@ fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
     Ok(true)
 }
 
+/// Installs modern SFX volume support into an existing `.port` section.
 fn install_modern_sfx_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     let section = find_section(output, b".port")?;
     let raw_size =
@@ -1268,10 +1235,12 @@ fn install_modern_sfx_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     install_modern_sfx_volume_hook(output, &labels)
 }
 
+/// Applies no-disc behavior to the recognized alternate executable layout.
 fn patch_alternate_portable(input: &[u8]) -> Result<Vec<u8>> {
     expect_bytes(input, 0x3713b, &[0x68, 0x90, 0xeb, 0x4b, 0x00])?;
     let (registry, _) = patch_registry_at(input, 0x2cb31)?;
-    let (section, labels) = alternate_no_disc_section()?;
+    let credit = title_credit(input)?;
+    let (section, labels) = alternate_no_disc_section(&credit)?;
     let mut output = add_section(&registry, &section)?;
     patch_title_credit(&mut output, labels["title_credit"])?;
     patch_jump(&mut output, 0x0043_713b, labels["no_disc"], 5)?;
@@ -1280,6 +1249,7 @@ fn patch_alternate_portable(input: &[u8]) -> Result<Vec<u8>> {
 
 /// Applies only the Setup/registry bypass to an already CD-bypassed build.
 /// The existing executable's CD/audio code is deliberately left untouched.
+/// NOPs the Setup registry gate at a layout-specific verified offset.
 fn patch_registry_at(input: &[u8], offset: usize) -> Result<(Vec<u8>, bool)> {
     const ORIGINAL: &[u8] = &[0x33, 0xc0, 0xe9, 0x35, 0x02, 0, 0];
     const PATCHED: &[u8] = &[0xc7, 0x45, 0xf4, 0, 0, 0, 0];
@@ -1298,6 +1268,7 @@ pub struct CompatibilityPatch {
     pub local_audio_supported: bool,
 }
 
+/// Combines Vietnamese font and compatibility edits for a selected language.
 pub fn patch_language_runtime(
     input: &[u8],
     vietnamese: bool,
@@ -1328,6 +1299,7 @@ pub fn patch_language_runtime(
 
 /// Detects the two v1.26 layouts encountered so far and applies only missing features.
 /// Unknown layouts are rejected even when they contain a similar version string.
+/// Detects the executable layout and applies only requested missing features.
 pub fn patch_compatible(
     input: &[u8],
     no_disc: bool,
@@ -1468,6 +1440,7 @@ pub fn patch_compatible(
     Err("unsupported Doraemon.exe layout; it may be a different release or an unknown modification, so no bytes were changed".into())
 }
 
+/// Builds the optional Vietnamese variant and the selected portable executable.
 pub fn build_variants(original: &[u8], vietnamese: bool) -> Result<(Option<Vec<u8>>, Vec<u8>)> {
     // Runtime compatibility is established from PE sections and verified code
     // patterns. A harmless timestamp, checksum, resource, or overlay change
@@ -1488,8 +1461,19 @@ mod tests {
     use crate::hash;
 
     #[test]
+    fn title_credit_preserves_arbitrary_version_text() {
+        let input = b"noise Version 2.07-beta\0tail";
+        let (raw, length) = find_version_string(input).unwrap();
+        assert_eq!(&input[raw..raw + length], b"Version 2.07-beta");
+        assert_eq!(
+            title_credit(input).unwrap(),
+            b"Version 2.07-beta - Patched by Thang\0"
+        );
+    }
+
+    #[test]
     fn portable_hook_labels_point_to_instruction_boundaries() {
-        let (section, labels) = portable_section(true).unwrap();
+        let (section, labels) = portable_section(true, b"\0").unwrap();
         let open = (labels["open_music"] - PORT_VA) as usize;
         let play = (labels["play"] - PORT_VA) as usize;
         assert!(section[open..play]
@@ -1685,8 +1669,9 @@ mod tests {
                 IMAGE_BASE + source_raw as u32
             );
         }
-        assert!(find_bytes(&portable, TITLE_CREDIT).is_some());
-        let title_raw = find_bytes(&portable, TITLE_VERSION).unwrap();
+        let expected_credit = title_credit(&portable).unwrap();
+        assert!(find_bytes(&portable, &expected_credit).is_some());
+        let (title_raw, _) = find_version_string(&portable).unwrap();
         let title_va = raw_to_va(&portable, title_raw).unwrap();
         assert_eq!(
             portable
@@ -1699,9 +1684,9 @@ mod tests {
         // An EXE patched by the previous portable build did not contain this
         // credit. It must be safely upgradable without restoring first.
         let mut old_portable = portable.clone();
-        let credit_raw = find_bytes(&old_portable, TITLE_CREDIT).unwrap();
+        let credit_raw = find_bytes(&old_portable, &expected_credit).unwrap();
         let credit_va = raw_to_va(&old_portable, credit_raw).unwrap();
-        old_portable[credit_raw..credit_raw + TITLE_CREDIT.len()].fill(0);
+        old_portable[credit_raw..credit_raw + expected_credit.len()].fill(0);
         for offset in 1..old_portable.len().saturating_sub(4) {
             if old_portable[offset - 1] == 0x68
                 && u32::from_le_bytes(old_portable[offset..offset + 4].try_into().unwrap())
@@ -1711,7 +1696,7 @@ mod tests {
             }
         }
         let upgraded = patch_compatible(&old_portable, true, false, true, false).unwrap();
-        assert!(find_bytes(&upgraded.bytes, TITLE_CREDIT).is_some());
+        assert!(find_bytes(&upgraded.bytes, &expected_credit).is_some());
         assert!(upgraded
             .actions
             .iter()
