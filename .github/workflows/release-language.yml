@@ -37,8 +37,8 @@ jobs:
         with:
           targets: x86_64-pc-windows-gnu
 
-      - name: Install Windows GNU linker
-        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: Install Windows GNU linkers
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
 
       - name: Package Windows patcher
         run: |

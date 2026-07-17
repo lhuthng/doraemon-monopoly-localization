@@ -142,7 +142,7 @@ fn package(arguments: &[String]) -> Result<(), String> {
         return Err("package accepts English or Vietnamese language payloads; use portable for the compatibility patcher".into());
     }
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-    let wrapper = wrapper_files(arguments)?;
+    let wrapper = runtime_files(arguments)?;
     let mut temporary_payload = None;
     let build_payload = if wrapper.is_empty() {
         fs::canonicalize(&payload_path).map_err(|error| error.to_string())?
@@ -208,30 +208,89 @@ fn universal(arguments: &[String]) -> Result<(), String> {
     let vietnamese_path = value(arguments, "--vietnamese-payload").map(PathBuf::from);
     let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-    if english_path.is_none() && vietnamese_path.is_none() { return Err("universal needs at least one language payload".into()); }
-    let wrapper = wrapper_files(arguments)?;
-    let mut english = english_path.as_ref().map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?)).transpose()?;
-    let mut vietnamese = vietnamese_path.as_ref().map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?)).transpose()?;
-    if english.as_ref().is_some_and(|payload| payload.language != Language::English) || vietnamese.as_ref().is_some_and(|payload| payload.language != Language::Vietnamese) { return Err("universal payload language does not match its option".into()); }
-    if let Some(payload) = &mut english { payload.bundled = wrapper.clone(); }
-    if let Some(payload) = &mut vietnamese { payload.bundled = wrapper; }
+    if english_path.is_none() && vietnamese_path.is_none() {
+        return Err("universal needs at least one language payload".into());
+    }
+    let wrapper = runtime_files(arguments)?;
+    let mut english = english_path
+        .as_ref()
+        .map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?))
+        .transpose()?;
+    let mut vietnamese = vietnamese_path
+        .as_ref()
+        .map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?))
+        .transpose()?;
+    if english
+        .as_ref()
+        .is_some_and(|payload| payload.language != Language::English)
+        || vietnamese
+            .as_ref()
+            .is_some_and(|payload| payload.language != Language::Vietnamese)
+    {
+        return Err("universal payload language does not match its option".into());
+    }
+    if let Some(payload) = &mut english {
+        payload.bundled = wrapper.clone();
+    }
+    if let Some(payload) = &mut vietnamese {
+        payload.bundled = wrapper;
+    }
     let en_temp = output.join(".english-payload.dmpatch");
     let vi_temp = output.join(".vietnamese-payload.dmpatch");
-    fs::write(&en_temp, english.map(|payload| payload::encode(&payload)).transpose()?.unwrap_or_default()).map_err(|e| e.to_string())?;
-    fs::write(&vi_temp, vietnamese.map(|payload| payload::encode(&payload)).transpose()?.unwrap_or_default()).map_err(|e| e.to_string())?;
+    fs::write(
+        &en_temp,
+        english
+            .map(|payload| payload::encode(&payload))
+            .transpose()?
+            .unwrap_or_default(),
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        &vi_temp,
+        vietnamese
+            .map(|payload| payload::encode(&payload))
+            .transpose()?
+            .unwrap_or_default(),
+    )
+    .map_err(|e| e.to_string())?;
     let target = value(arguments, "--target").unwrap_or_else(|| "x86_64-pc-windows-gnu".into());
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let status = Command::new("cargo").current_dir(&workspace)
-        .env("DORAEMON_PATCH_PAYLOAD_ENGLISH", fs::canonicalize(&en_temp).map_err(|e| e.to_string())?)
-        .env("DORAEMON_PATCH_PAYLOAD_VIETNAMESE", fs::canonicalize(&vi_temp).map_err(|e| e.to_string())?)
-        .args(["build", "--release", "-p", "doraemon-patcher", "--target", &target])
-        .status().map_err(|e| format!("start Cargo: {e}"))?;
-    fs::remove_file(&en_temp).ok(); fs::remove_file(&vi_temp).ok();
-    if !status.success() { return Err(format!("Windows patcher build failed with {status}")); }
-    let built = workspace.join("target").join(&target).join("release/doraemon-patcher.exe");
+    let status = Command::new("cargo")
+        .current_dir(&workspace)
+        .env(
+            "DORAEMON_PATCH_PAYLOAD_ENGLISH",
+            fs::canonicalize(&en_temp).map_err(|e| e.to_string())?,
+        )
+        .env(
+            "DORAEMON_PATCH_PAYLOAD_VIETNAMESE",
+            fs::canonicalize(&vi_temp).map_err(|e| e.to_string())?,
+        )
+        .args([
+            "build",
+            "--release",
+            "-p",
+            "doraemon-patcher",
+            "--target",
+            &target,
+        ])
+        .status()
+        .map_err(|e| format!("start Cargo: {e}"))?;
+    fs::remove_file(&en_temp).ok();
+    fs::remove_file(&vi_temp).ok();
+    if !status.success() {
+        return Err(format!("Windows patcher build failed with {status}"));
+    }
+    let built = workspace
+        .join("target")
+        .join(&target)
+        .join("release/doraemon-patcher.exe");
     let destination = output.join("patcher.exe");
     fs::copy(&built, &destination).map_err(|e| format!("{}: {e}", built.display()))?;
-    fs::write(output.join("patcher.exe.sha256"), format!("{}  patcher.exe\n", hash::hex(&hash::file(&destination)?))).map_err(|e| e.to_string())?;
+    fs::write(
+        output.join("patcher.exe.sha256"),
+        format!("{}  patcher.exe\n", hash::hex(&hash::file(&destination)?)),
+    )
+    .map_err(|e| e.to_string())?;
     fs::write(
         output.join("README.txt"),
         "Doraemon universal patcher\r\n\r\nCopy patcher.exe into the folder containing Doraemon.exe, then run it there.\r\nChoose Unchanged, English, or Vietnamese, pick the compatibility options you want, and press Apply.\r\nThe patcher always works on its own folder, creates a backup before writing, and keeps the window open so you can read the log.\r\n",
@@ -298,6 +357,63 @@ fn wrapper_files(arguments: &[String]) -> Result<Vec<BundledFile>, String> {
     output.sort_by(|a, b| a.name.cmp(&b.name));
     println!("Bundled {} cnc-ddraw files.", output.len());
     Ok(output)
+}
+
+fn audio_helper_file() -> Result<BundledFile, String> {
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = workspace.join("native/doraudio/doraudio.c");
+    let build = workspace.join("target/doraudio");
+    fs::create_dir_all(&build).map_err(|error| error.to_string())?;
+    let object = build.join("doraudio.o");
+    let dll = build.join("doraudio.dll");
+    let compile = Command::new("i686-w64-mingw32-gcc")
+        .current_dir(&workspace)
+        .args([
+            "-Os",
+            "-D_WIN32_WINNT=0x0400",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-c",
+        ])
+        .arg(&source)
+        .arg("-o")
+        .arg(&object)
+        .status()
+        .map_err(|error| format!("start 32-bit Windows C compiler: {error}"))?;
+    if !compile.success() {
+        return Err(format!("doraudio.dll compilation failed with {compile}"));
+    }
+    let link = Command::new("i686-w64-mingw32-gcc")
+        .current_dir(&workspace)
+        .args([
+            "-shared",
+            "-nostdlib",
+            "-Wl,--entry,_DllMain@12",
+            "-Wl,--subsystem,windows:4.0",
+            "-Wl,--kill-at",
+            "-s",
+            "-o",
+        ])
+        .arg(&dll)
+        .arg(&object)
+        .arg("-lkernel32")
+        .status()
+        .map_err(|error| format!("link doraudio.dll: {error}"))?;
+    if !link.success() {
+        return Err(format!("doraudio.dll link failed with {link}"));
+    }
+    let bytes = fs::read(&dll).map_err(|error| format!("{}: {error}", dll.display()))?;
+    Ok(BundledFile {
+        name: "doraudio.dll".into(),
+        hash: hash::bytes(&bytes),
+        bytes,
+    })
+}
+
+fn runtime_files(arguments: &[String]) -> Result<Vec<BundledFile>, String> {
+    let mut files = wrapper_files(arguments)?;
+    files.push(audio_helper_file()?);
+    Ok(files)
 }
 
 fn build_profile(name: &str, base: &Path, target: &Path) -> Result<PatchProfile, String> {
@@ -393,14 +509,28 @@ fn release(arguments: &[String]) -> Result<(), String> {
     // Validate the code structure, not the whole-file hash. Timestamps,
     // checksums, resources, overlays, and previously applied compatible hooks
     // do not change whether the runtime instructions are patchable.
-    pe::patch_language_runtime(&original_exe, language == Language::Vietnamese, false, false, false)
-        .map_err(|error| format!("unsupported base Doraemon.exe structure: {error}"))?;
+    pe::patch_language_runtime(
+        &original_exe,
+        language == Language::Vietnamese,
+        false,
+        false,
+        false,
+        false,
+    )
+    .map_err(|error| format!("unsupported base Doraemon.exe structure: {error}"))?;
     let profiles = vec![build_profile("Original v1.26", &base, &target)?];
     let payload = Payload {
         language,
         profiles,
         strings: Some(strings_patch),
-        bundled: wrapper_files(arguments)?,
+        bundled: if arguments
+            .iter()
+            .any(|argument| argument == "--payload-only")
+        {
+            wrapper_files(arguments)?
+        } else {
+            runtime_files(arguments)?
+        },
     };
     let encoded = payload::encode(&payload)?;
     let payload_path = output.join(format!("{}.dmpatch", language.label().to_ascii_lowercase()));
@@ -455,7 +585,7 @@ fn release(arguments: &[String]) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     fs::write(
         output.join("README.txt"),
-        "Doraemon Monopoly localization patcher\r\n\r\nUse only with your own supported Cantonese installation. Copy this patcher beside Doraemon.exe and run it there. It validates every required file, creates backup\\original, backup\\manifest.json, and backup\\Restore.exe, then installs verified differences. Music is detected automatically from DoraemonMusic.wav or a valid CUE/BIN in the same folder. If neither is available, the game continues without background music. Builds made with --cnc-ddraw-dir can also add the graphics wrapper from the patcher window.\r\n",
+        "Doraemon Monopoly localization patcher\r\n\r\nUse only with your own supported Cantonese installation. Copy this patcher beside Doraemon.exe and run it there. It validates every required file, creates backup\\original, backup\\manifest.json, and backup\\Restore.exe, then installs verified differences. When local music is selected, Music.dat is reused or built from a verified DoraemonMusic.wav or CUE/BIN. Leaving local music off preserves the original CD/MCI behavior exactly. Builds made with --cnc-ddraw-dir can also add the graphics wrapper from the patcher window.\r\n",
     )
     .map_err(|error| error.to_string())?;
     fs::remove_file(payload_path).map_err(|error| error.to_string())?;
@@ -479,7 +609,7 @@ fn portable(arguments: &[String]) -> Result<(), String> {
             executable_portable: patch,
         }],
         strings: None,
-        bundled: wrapper_files(arguments)?,
+        bundled: runtime_files(arguments)?,
     };
     let payload_path = output.join("portable.dmpatch");
     fs::write(&payload_path, payload::encode(&payload)?).map_err(|e| e.to_string())?;
@@ -492,7 +622,10 @@ fn portable(arguments: &[String]) -> Result<(), String> {
             "DORAEMON_PATCH_PAYLOAD_ENGLISH",
             fs::canonicalize(&payload_path).map_err(|e| e.to_string())?,
         )
-        .env("DORAEMON_PATCH_PAYLOAD_VIETNAMESE", fs::canonicalize(&payload_path).map_err(|e| e.to_string())?)
+        .env(
+            "DORAEMON_PATCH_PAYLOAD_VIETNAMESE",
+            fs::canonicalize(&payload_path).map_err(|e| e.to_string())?,
+        )
         .args([
             "build",
             "--release",
@@ -521,7 +654,7 @@ fn portable(arguments: &[String]) -> Result<(), String> {
         ),
     )
     .map_err(|e| e.to_string())?;
-    fs::write(output.join("README.txt"), "Doraemon v1.26 portable compatibility patcher\r\n\r\nCopy this patcher beside Doraemon.exe, then run it there. It always patches its own folder and does not ask for a game path. The patcher detects supported executable layouts and applies only missing registry, CD, and local-WAV changes. Existing compatible patches are skipped. If no WAV or original CUE/BIN is available, the soundtrack is muted. A backup is created before writing.\r\n").map_err(|e| e.to_string())?;
+    fs::write(output.join("README.txt"), "Doraemon v1.26 portable compatibility patcher\r\n\r\nCopy this patcher beside Doraemon.exe, then run it there. It always patches its own folder and does not ask for a game path. The patcher detects supported executable layouts and applies only selected registry, disc, local-music, and volume changes. Local music uses Music.dat through DirectSound and is installed only when its checkbox is selected and a verified source is available. A backup is created before writing.\r\n").map_err(|e| e.to_string())?;
     fs::remove_file(payload_path).ok();
     println!("Built {}", destination.display());
     Ok(())

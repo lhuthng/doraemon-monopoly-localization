@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    cue, hash,
+    cue, hash, music,
     payload::{FilePatch, Language, PatchProfile, Payload},
     pe, strings, Result,
 };
@@ -16,6 +16,7 @@ pub struct ApplyOptions {
     pub no_disc: bool,
     pub no_reg: bool,
     pub local_audio: bool,
+    pub modern_volume: bool,
     pub cue: Option<PathBuf>,
 }
 
@@ -56,11 +57,16 @@ fn progress(
 }
 
 pub fn add_wrapper(folder: &Path, payload: &Payload) -> Result<Vec<String>> {
-    if payload.bundled.is_empty() {
+    let wrapper_files: Vec<_> = payload
+        .bundled
+        .iter()
+        .filter(|file| !file.name.eq_ignore_ascii_case("doraudio.dll"))
+        .collect();
+    if wrapper_files.is_empty() {
         return Err("this patcher was built without the cnc-ddraw wrapper".into());
     }
     let mut targets = Vec::new();
-    for file in &payload.bundled {
+    for file in wrapper_files {
         let relative = Path::new(&file.name);
         if relative.is_absolute()
             || relative
@@ -174,13 +180,114 @@ fn selected_patches(profile: &PatchProfile, _no_disc: bool) -> Vec<&FilePatch> {
     profile.files.iter().collect()
 }
 
+fn bundled_audio_helper(payload: &Payload) -> Option<&crate::payload::BundledFile> {
+    payload
+        .bundled
+        .iter()
+        .find(|file| file.name.eq_ignore_ascii_case("doraudio.dll"))
+}
+
+struct LocalAudioPreparation {
+    enabled: bool,
+    summary: String,
+    created: Vec<(String, PathBuf, hash::Hash)>,
+}
+
+fn prepare_local_audio(
+    folder: &Path,
+    staging: &Path,
+    payload: &Payload,
+    options: &ApplyOptions,
+    sink: &mut ProgressSink<'_>,
+) -> Result<LocalAudioPreparation> {
+    if !options.local_audio {
+        progress(
+            sink,
+            TaskState::Skipped,
+            "Local background music is off; original CD/MCI playback is unchanged.",
+            Some(42),
+        );
+        return Ok(LocalAudioPreparation {
+            enabled: false,
+            summary: "Original music playback was left unchanged.".into(),
+            created: Vec::new(),
+        });
+    }
+    let music_path = folder.join("Music.dat");
+    let wav_path = folder.join("DoraemonMusic.wav");
+    let source = if music::valid(&music_path) {
+        None
+    } else if music_path.exists() {
+        return Err("Music.dat exists but is not a valid Doraemon local-music file; move it aside before applying local music".into());
+    } else if cue::valid_wav(&wav_path) {
+        Some((wav_path, true))
+    } else if let Some(cue_path) = options.cue.as_ref().filter(|path| cue::valid_cue(path)) {
+        Some((cue_path.clone(), false))
+    } else {
+        progress(
+            sink,
+            TaskState::Skipped,
+            "Local music was requested, but no Music.dat, verified WAV, or CUE/BIN was found. The original music code was left untouched.",
+            Some(45),
+        );
+        return Ok(LocalAudioPreparation {
+            enabled: false,
+            summary: "No local music source was available, so original music playback was left unchanged.".into(),
+            created: Vec::new(),
+        });
+    };
+    let helper = bundled_audio_helper(payload)
+        .ok_or("this patcher does not include doraudio.dll, so local music cannot be enabled")?;
+    let helper_path = folder.join("doraudio.dll");
+    if helper_path.exists() && hash::file(&helper_path)? != helper.hash {
+        return Err("doraudio.dll already exists and differs from this patcher; move it aside before enabling local music".into());
+    }
+    let mut created = Vec::new();
+    if let Some((source_path, is_wav)) = source {
+        progress(
+            sink,
+            TaskState::Working,
+            if is_wav {
+                "Compressing DoraemonMusic.wav into Music.dat…"
+            } else {
+                "Reading the disc image and building Music.dat…"
+            },
+            Some(43),
+        );
+        let staged = staging.join("Music.dat");
+        if is_wav {
+            music::encode_wav(&source_path, &staged)?;
+        } else {
+            music::encode_cue(&source_path, &staged)?;
+        }
+        let digest = hash::file(&staged)?;
+        created.push(("Music.dat".into(), staged, digest));
+    }
+    if !helper_path.exists() {
+        let staged = staging.join("doraudio.dll");
+        write_synced(&staged, &helper.bytes)?;
+        created.push(("doraudio.dll".into(), staged, helper.hash));
+    }
+    progress(
+        sink,
+        TaskState::Done,
+        "Local DirectSound music is ready.",
+        Some(47),
+    );
+    Ok(LocalAudioPreparation {
+        enabled: true,
+        summary: "Music.dat will play through the local DirectSound backend.".into(),
+        created,
+    })
+}
+
 fn backup_manifest(
     language: &str,
     originals: &[(String, hash::Hash)],
-    created_audio: Option<hash::Hash>,
+    created_files: &[(String, hash::Hash)],
 ) -> String {
     let mut output =
-        format!("{{\n  \"version\": 1,\n  \"language\": \"{language}\",\n  \"files\": {{\n");
+        format!("{{\n  \"version\": 2,\n  \"language\": \"{language}\",\n  \"files\": {{\n");
     for (index, (name, digest)) in originals.iter().enumerate() {
         output.push_str(&format!(
             "    \"{name}\": \"{}\"{}\n",
@@ -192,17 +299,58 @@ fn backup_manifest(
             }
         ));
     }
-    output.push_str("  },\n  \"created_audio\": ");
-    if let Some(digest) = created_audio {
+    output.push_str("  },\n  \"created_files\": {\n");
+    for (index, (name, digest)) in created_files.iter().enumerate() {
         output.push_str(&format!(
-            "{{ \"name\": \"DoraemonMusic.wav\", \"sha256\": \"{}\" }}\n",
-            hash::hex(&digest)
+            "    \"{name}\": \"{}\"{}\n",
+            hash::hex(digest),
+            if index + 1 == created_files.len() {
+                ""
+            } else {
+                ","
+            }
         ));
-    } else {
-        output.push_str("null\n");
     }
-    output.push_str("}\n");
+    output.push_str("  }\n}\n");
     output
+}
+
+fn manifest_created_files(manifest: &str) -> Result<HashMap<String, hash::Hash>> {
+    let mut files = HashMap::new();
+    let mut in_created = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed == "\"created_files\": {" {
+            in_created = true;
+            continue;
+        }
+        if in_created && trimmed == "}" {
+            break;
+        }
+        if in_created {
+            let entry = trimmed.trim_end_matches(',');
+            let (name, digest) = entry
+                .split_once(':')
+                .ok_or("invalid backup manifest created-file entry")?;
+            files.insert(
+                name.trim().trim_matches('"').to_string(),
+                hash::parse(digest.trim().trim_matches('"'))?,
+            );
+        } else if trimmed.starts_with("\"created_audio\": {") {
+            let name = trimmed
+                .split("\"name\": \"")
+                .nth(1)
+                .and_then(|value| value.split('"').next())
+                .ok_or("invalid legacy audio manifest")?;
+            let digest = trimmed
+                .split("\"sha256\": \"")
+                .nth(1)
+                .and_then(|value| value.split('"').next())
+                .ok_or("invalid legacy audio manifest")?;
+            files.insert(name.to_string(), hash::parse(digest)?);
+        }
+    }
+    Ok(files)
 }
 
 fn verified_backup_files(backup: &Path) -> Result<HashMap<String, hash::Hash>> {
@@ -235,15 +383,12 @@ fn verified_backup_files(backup: &Path) -> Result<HashMap<String, hash::Hash>> {
         }
         files.insert(name, expected);
     }
-    if files.is_empty() {
-        return Err("backup manifest contains no original files".into());
-    }
     Ok(files)
 }
 
 // Restore.exe intentionally stays in backup/ so it can be used later. When all
-// tracked live files are back to their original hashes (and the patcher-owned
-// WAV has been removed), that directory is stale rather than an active backup.
+// tracked live files are back to their original hashes (and patcher-owned
+// generated files have been removed), that directory is stale rather than an active backup.
 // A subsequent Apply may safely replace it with a fresh backup.
 fn backup_is_fully_restored(backup: &Path, game: &Path) -> Result<bool> {
     let originals = verified_backup_files(backup)?;
@@ -255,8 +400,10 @@ fn backup_is_fully_restored(backup: &Path, game: &Path) -> Result<bool> {
     }
     let manifest = fs::read_to_string(backup.join("manifest.json"))
         .map_err(|error| format!("read backup manifest: {error}"))?;
-    if manifest.contains("\"created_audio\": {") && game.join("DoraemonMusic.wav").exists() {
-        return Ok(false);
+    for name in manifest_created_files(&manifest)?.keys() {
+        if game.join(name).exists() {
+            return Ok(false);
+        }
     }
     Ok(true)
 }
@@ -297,6 +444,12 @@ fn apply_compatibility(
         },
         Some(0),
     );
+    let staging = folder.join(".doraemon-patch-staging");
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir(&staging).map_err(|e| e.to_string())?;
+    let local_audio = prepare_local_audio(folder, &staging, payload, options, sink)?;
     let exe_path = find_file(folder, "Doraemon.exe")?;
     progress(
         sink,
@@ -305,10 +458,19 @@ fn apply_compatibility(
         Some(15),
     );
     let original = fs::read(&exe_path).map_err(|e| format!("{}: {e}", exe_path.display()))?;
-    let wav = folder.join("DoraemonMusic.wav");
-    let has_audio_source = options.local_audio && (cue::valid_wav(&wav) || options.cue.is_some());
-    let result = pe::patch_compatible(&original, options.no_disc, has_audio_source, options.no_reg)?;
-    if result.bytes == original {
+    let result = pe::patch_compatible(
+        &original,
+        options.no_disc,
+        local_audio.enabled,
+        options.no_reg,
+        options.modern_volume,
+    )?;
+    if local_audio.enabled && !result.local_audio_supported {
+        return Err(
+            "this executable layout cannot safely use the local DirectSound music backend".into(),
+        );
+    }
+    if result.bytes == original && local_audio.created.is_empty() {
         progress(
             sink,
             TaskState::Skipped,
@@ -317,7 +479,7 @@ fn apply_compatibility(
         );
         return Ok(ApplyReport {
             changed: Vec::new(),
-            audio: "Nothing else needs to change.".into(),
+            audio: local_audio.summary,
         });
     }
     if backup.exists() && !discard_restored_backup(&backup, folder, sink)? {
@@ -332,11 +494,6 @@ fn apply_compatibility(
         );
     }
 
-    let staging = folder.join(".doraemon-patch-staging");
-    if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
-    }
-    fs::create_dir(&staging).map_err(|e| e.to_string())?;
     let staged_exe = staging.join("Doraemon.exe");
     progress(
         sink,
@@ -348,70 +505,7 @@ fn apply_compatibility(
     write_synced(&staged_exe, &patched)?;
     let target_hash = hash::bytes(&patched);
 
-    let mut created_audio = None;
-    let mut staged_audio = None;
-    let audio = if options.local_audio && options.no_disc && result.local_audio_supported && cue::valid_wav(&wav) {
-        progress(
-            sink,
-            TaskState::Skipped,
-            "DoraemonMusic.wav is already ready.",
-            Some(50),
-        );
-        "Using existing verified DoraemonMusic.wav.".to_string()
-    } else if options.local_audio && options.no_disc && result.local_audio_supported {
-        if wav.exists() {
-            progress(
-                sink,
-                TaskState::Failed,
-                "DoraemonMusic.wav could not be verified.",
-                None,
-            );
-            return Err("DoraemonMusic.wav exists but is not the verified disc extraction; move it away before patching".into());
-        }
-        if let Some(cue_path) = &options.cue {
-            progress(
-                sink,
-                TaskState::Working,
-                "Extracting music from the disc image…",
-                Some(50),
-            );
-            let staged = staging.join("DoraemonMusic.wav");
-            cue::extract(cue_path, &staged)?;
-            created_audio = Some(hash::file(&staged)?);
-            staged_audio = Some(staged);
-            progress(
-                sink,
-                TaskState::Done,
-                "Local background music is ready.",
-                Some(55),
-            );
-            "Extracted DoraemonMusic.wav from the supplied disc image.".into()
-        } else {
-            progress(
-                sink,
-                TaskState::Skipped,
-                "No music source was found; the game will run without background music.",
-                Some(55),
-            );
-            "No WAV or CUE/BIN was supplied; audio cannot be created, so the soundtrack will be muted.".into()
-        }
-    } else if options.no_disc {
-        progress(
-            sink,
-            TaskState::Skipped,
-            "This supported build already bypasses the CD check.",
-            Some(50),
-        );
-        "This executable already bypasses the CD. No audio source was supplied, so the soundtrack will be muted.".into()
-    } else {
-        progress(
-            sink,
-            TaskState::Skipped,
-            "Original disc and music behavior was requested.",
-            Some(50),
-        );
-        "CD and audio behavior were left unchanged.".into()
-    };
+    let audio = local_audio.summary.clone();
 
     fs::create_dir_all(backup.join("original")).map_err(|e| e.to_string())?;
     progress(
@@ -425,10 +519,15 @@ fn apply_compatibility(
     fs::copy(patcher_exe, backup.join("Restore.exe"))
         .map_err(|e| format!("create Restore.exe: {e}"))?;
     let original_hash = hash::bytes(&original);
+    let created_files: Vec<_> = local_audio
+        .created
+        .iter()
+        .map(|(name, _, digest)| (name.clone(), *digest))
+        .collect();
     let manifest = backup_manifest(
         payload.language.label(),
         &[("Doraemon.exe".into(), original_hash)],
-        created_audio,
+        &created_files,
     );
     write_synced(&backup.join("manifest.json"), manifest.as_bytes())?;
     progress(
@@ -441,17 +540,19 @@ fn apply_compatibility(
     if hash::file(&exe_path)? != target_hash {
         return Err("Doraemon.exe failed installation verification; restore from backup".into());
     }
-    if let Some(staged) = staged_audio {
-        replace_file(&staged, &wav)?;
-        if Some(hash::file(&wav)?) != created_audio {
-            return Err(
-                "DoraemonMusic.wav failed installation verification; restore from backup".into(),
-            );
-        }
-    }
-    let _ = fs::remove_dir(&staging);
     let mut changed = vec!["Doraemon.exe".into()];
     changed.extend(result.actions);
+    for (name, staged, digest) in local_audio.created {
+        let target = folder.join(&name);
+        replace_file(&staged, &target)?;
+        if hash::file(&target)? != digest {
+            return Err(format!(
+                "{name} failed installation verification; restore from backup"
+            ));
+        }
+        changed.push(name);
+    }
+    let _ = fs::remove_dir(&staging);
     progress(
         sink,
         TaskState::Done,
@@ -664,6 +765,7 @@ pub fn apply_with_progress(
         );
     }
 
+    let local_audio = prepare_local_audio(folder, &staging, payload, options, sink)?;
     let exe_path = find_file(folder, "Doraemon.exe")?;
     let exe_source =
         fs::read(&exe_path).map_err(|error| format!("{}: {error}", exe_path.display()))?;
@@ -678,9 +780,14 @@ pub fn apply_with_progress(
         payload.language == Language::Vietnamese,
         options.no_disc,
         options.no_reg,
-        options.local_audio,
+        local_audio.enabled,
+        options.modern_volume,
     )?;
-    let local_audio_supported = exe_patch.local_audio_supported;
+    if local_audio.enabled && !exe_patch.local_audio_supported {
+        return Err(
+            "this executable layout cannot safely use the local DirectSound music backend".into(),
+        );
+    }
     let exe_bytes = exe_patch.bytes;
     if exe_bytes == exe_source {
         progress(
@@ -703,74 +810,9 @@ pub fn apply_with_progress(
         }
     }
 
-    let wav = folder.join("DoraemonMusic.wav");
-    let mut created_audio = None;
-    let mut staged_audio = None;
-    let audio = if options.local_audio && options.no_disc && local_audio_supported && cue::valid_wav(&wav) {
-        progress(
-            sink,
-            TaskState::Skipped,
-            "DoraemonMusic.wav is already ready.",
-            Some(50),
-        );
-        "Using existing verified DoraemonMusic.wav.".to_string()
-    } else if options.local_audio && options.no_disc && local_audio_supported {
-        if wav.exists() {
-            progress(
-                sink,
-                TaskState::Failed,
-                "DoraemonMusic.wav could not be verified.",
-                None,
-            );
-            return Err("DoraemonMusic.wav exists but is not the verified disc extraction; move it away before patching".into());
-        }
-        if let Some(cue_path) = &options.cue {
-            progress(
-                sink,
-                TaskState::Working,
-                "Extracting music from the disc image…",
-                Some(50),
-            );
-            let staged = staging.join("DoraemonMusic.wav");
-            cue::extract(cue_path, &staged)?;
-            let digest = hash::file(&staged)?;
-            created_audio = Some(digest);
-            staged_audio = Some(staged);
-            progress(
-                sink,
-                TaskState::Done,
-                "Local background music is ready.",
-                Some(55),
-            );
-            "Extracted DoraemonMusic.wav from the supplied disc image.".into()
-        } else {
-            progress(
-                sink,
-                TaskState::Skipped,
-                "No music source was found; the game will run without background music.",
-                Some(55),
-            );
-            "No valid WAV or CUE was supplied. The patched game will continue silently.".into()
-        }
-    } else if options.no_disc {
-        progress(
-            sink,
-            TaskState::Skipped,
-            "This supported executable layout cannot safely use local WAV music yet.",
-            Some(50),
-        );
-        "This game build will run without local background music for now.".into()
-    } else {
-        progress(
-            sink,
-            TaskState::Skipped,
-            "Original disc and music behavior was requested.",
-            Some(50),
-        );
-        "Original CD and registry behavior retained.".into()
-    };
+    let audio = local_audio.summary.clone();
 
-    if generated.is_empty() && staged_audio.is_none() {
+    if generated.is_empty() && local_audio.created.is_empty() {
         let message = "Everything requested is already installed.".to_string();
         progress(sink, TaskState::Done, &message, Some(100));
         let _ = fs::remove_dir(&staging);
@@ -794,8 +836,8 @@ pub fn apply_with_progress(
                 ));
             }
         }
-        if staged_audio.is_some() {
-            return Err("the existing backup does not own this newly generated WAV; restore before adding local music".into());
+        if !local_audio.created.is_empty() {
+            return Err("the existing backup does not own these newly generated local-music files; restore before adding local music".into());
         }
         fs::copy(patcher_exe, backup.join("Restore.exe"))
             .map_err(|error| format!("refresh Restore.exe: {error}"))?;
@@ -823,7 +865,12 @@ pub fn apply_with_progress(
         fs::copy(patcher_exe, backup.join("Restore.exe"))
             .map_err(|error| format!("create Restore.exe: {error}"))?;
 
-        let manifest = backup_manifest(payload.language.label(), &originals, created_audio);
+        let created_files: Vec<_> = local_audio
+            .created
+            .iter()
+            .map(|(name, _, digest)| (name.clone(), *digest))
+            .collect();
+        let manifest = backup_manifest(payload.language.label(), &originals, &created_files);
         write_synced(&backup.join("manifest.json"), manifest.as_bytes())?;
         progress(
             sink,
@@ -849,13 +896,15 @@ pub fn apply_with_progress(
         }
         changed.push(name);
     }
-    if let Some(staged) = staged_audio {
-        replace_file(&staged, &wav)?;
-        if Some(hash::file(&wav)?) != created_audio {
-            return Err(
-                "DoraemonMusic.wav failed installation verification; restore from backup".into(),
-            );
+    for (name, staged, digest) in local_audio.created {
+        let target = folder.join(&name);
+        replace_file(&staged, &target)?;
+        if hash::file(&target)? != digest {
+            return Err(format!(
+                "{name} failed installation verification; restore from backup"
+            ));
         }
+        changed.push(name);
     }
     let _ = fs::remove_dir(&staging);
     progress(
@@ -875,7 +924,6 @@ pub fn restore(backup: &Path) -> Result<Vec<String>> {
         .parent()
         .ok_or("backup folder has no parent game folder")?;
     let mut restored = Vec::new();
-    let mut created_audio = None;
     let mut in_files = false;
     for line in manifest.lines() {
         let trimmed = line.trim();
@@ -907,21 +955,9 @@ pub fn restore(backup: &Path) -> Result<Vec<String>> {
                 return Err(format!("restored {name} failed verification"));
             }
             restored.push(name.to_string());
-        } else if trimmed.starts_with("\"created_audio\": {") {
-            let name = trimmed
-                .split("\"name\": \"")
-                .nth(1)
-                .and_then(|value| value.split('"').next())
-                .ok_or("invalid audio manifest")?;
-            let digest = trimmed
-                .split("\"sha256\": \"")
-                .nth(1)
-                .and_then(|value| value.split('"').next())
-                .ok_or("invalid audio manifest")?;
-            created_audio = Some((name.to_string(), hash::parse(digest)?));
         }
     }
-    if let Some((name, digest)) = created_audio {
+    for (name, digest) in manifest_created_files(&manifest)? {
         let path = game.join(name);
         if path.exists() && hash::file(&path)? == digest {
             fs::remove_file(path).map_err(|error| error.to_string())?;
@@ -967,6 +1003,58 @@ mod tests {
             .unwrap_err()
             .contains("different"));
         fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn local_music_files_are_never_staged_when_option_is_off() {
+        let folder = std::env::temp_dir().join(format!(
+            "doraemon-local-music-off-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        let staging = folder.join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        let helper = b"helper".to_vec();
+        let payload = Payload {
+            language: Language::Custom,
+            profiles: Vec::new(),
+            strings: None,
+            bundled: vec![BundledFile {
+                name: "doraudio.dll".into(),
+                hash: hash::bytes(&helper),
+                bytes: helper,
+            }],
+        };
+        let prepared = prepare_local_audio(
+            &folder,
+            &staging,
+            &payload,
+            &ApplyOptions {
+                local_audio: false,
+                ..ApplyOptions::default()
+            },
+            &mut |_| {},
+        )
+        .unwrap();
+        assert!(!prepared.enabled);
+        assert!(prepared.created.is_empty());
+        assert!(!staging.join("doraudio.dll").exists());
+        assert!(!staging.join("Music.dat").exists());
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn backup_manifest_tracks_all_generated_local_music_files() {
+        let music = hash::bytes(b"music");
+        let helper = hash::bytes(b"helper");
+        let manifest = backup_manifest(
+            "test",
+            &[],
+            &[("Music.dat".into(), music), ("doraudio.dll".into(), helper)],
+        );
+        let created = manifest_created_files(&manifest).unwrap();
+        assert_eq!(created.get("Music.dat"), Some(&music));
+        assert_eq!(created.get("doraudio.dll"), Some(&helper));
     }
 
     #[test]
@@ -1022,6 +1110,7 @@ mod tests {
                 no_disc: false,
                 no_reg: false,
                 local_audio: false,
+                modern_volume: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
@@ -1037,6 +1126,7 @@ mod tests {
                 no_disc: false,
                 no_reg: false,
                 local_audio: false,
+                modern_volume: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
@@ -1057,12 +1147,78 @@ mod tests {
                 no_disc: false,
                 no_reg: false,
                 local_audio: false,
+                modern_volume: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),
         )
         .unwrap();
         assert!(!reapplied.changed.is_empty());
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn real_local_music_installs_and_restores_when_fixtures_are_available() {
+        let (Ok(base), Ok(payload_path), Ok(cue_path), Ok(helper_path)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PAYLOAD"),
+            std::env::var("DORAEMON_TEST_CUE"),
+            std::env::var("DORAEMON_TEST_AUDIO_HELPER"),
+        ) else {
+            return;
+        };
+        let mut payload = crate::payload::decode(&fs::read(payload_path).unwrap()).unwrap();
+        let helper = fs::read(helper_path).unwrap();
+        payload.bundled.push(BundledFile {
+            name: "doraudio.dll".into(),
+            hash: hash::bytes(&helper),
+            bytes: helper,
+        });
+        let folder = std::env::temp_dir().join(format!(
+            "doraemon-local-music-install-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir(&folder).unwrap();
+        fs::copy(
+            Path::new(&base).join("Doraemon.exe"),
+            folder.join("Doraemon.exe"),
+        )
+        .unwrap();
+        for required in &payload.profiles[0].required {
+            fs::copy(
+                Path::new(&base).join(&required.name),
+                folder.join(&required.name),
+            )
+            .unwrap();
+        }
+        if payload.strings.is_some() {
+            fs::copy(
+                Path::new(&base).join("strings.dat"),
+                folder.join("strings.dat"),
+            )
+            .unwrap();
+        }
+        let report = apply(
+            &folder,
+            &payload,
+            &ApplyOptions {
+                no_disc: true,
+                no_reg: true,
+                local_audio: true,
+                modern_volume: false,
+                cue: Some(PathBuf::from(cue_path)),
+            },
+            &std::env::current_exe().unwrap(),
+        )
+        .unwrap();
+        assert!(report.changed.iter().any(|name| name == "Music.dat"));
+        assert!(report.changed.iter().any(|name| name == "doraudio.dll"));
+        assert!(music::valid(&folder.join("Music.dat")));
+        assert!(folder.join("doraudio.dll").is_file());
+        restore(&folder.join("backup")).unwrap();
+        assert!(!folder.join("Music.dat").exists());
+        assert!(!folder.join("doraudio.dll").exists());
         fs::remove_dir_all(folder).unwrap();
     }
 
@@ -1096,6 +1252,7 @@ mod tests {
                 no_disc: true,
                 no_reg: true,
                 local_audio: false,
+                modern_volume: false,
                 cue: None,
             },
             &std::env::current_exe().unwrap(),

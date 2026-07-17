@@ -41,9 +41,12 @@ The patcher verifies the installation, creates `backup/original/` and
 `backup/manifest.json`, applies only the requested changes, and verifies every
 result. **Restore** returns the tracked files to their exact original hashes.
 
-For background music, place either a valid `DoraemonMusic.wav` or the original
-matching CUE/BIN beside the game. With no audio source, the patched game still
-runs but remains silent.
+For local background music, place a valid `DoraemonMusic.wav` or the original
+matching CUE/BIN beside the game and select **Use local background music**. The
+patcher creates a compressed `Music.dat` and installs its DirectSound helper.
+If that option is off, it does not install the helper or alter the original
+CD/MCI music and volume code. If the option is on but no source is available,
+the patcher warns and also leaves the original music code unchanged.
 
 ## Localization progress
 
@@ -60,9 +63,10 @@ them when translated resources are reviewed in game.
 | Path | Purpose |
 | --- | --- |
 | `resource-studio/` | Svelte 5 editor for strings, fonts, bitmaps, `Sprite1.dat`, and `sprite2.dat`. |
-| `rust/game-patch/` | Archive formats, semantic string patches, binary deltas, backup and restore, PE patching, Vietnamese fonts, and CUE/BIN extraction. |
+| `rust/game-patch/` | Archive formats, semantic string patches, binary deltas, backup and restore, PE patching, Vietnamese fonts, and local music encoding. |
 | `rust/patch-build/` | Developer CLI for creating payloads and Windows patcher releases. |
 | `rust/patcher/` | Native Win32 patcher interface embedded in release EXEs. |
+| `native/doraudio/` | Small 32-bit DirectSound streaming helper compiled into patcher releases. |
 | `patches/` | Tracked copyright-clean English and Vietnamese difference payloads. |
 | `third_party/cnc-ddraw/` | Vendored MIT-licensed cnc-ddraw runtime, shaders, license, and source hashes. |
 | `docs/` | File-format documentation, sprite localization catalogue, and reverse-engineering journal. |

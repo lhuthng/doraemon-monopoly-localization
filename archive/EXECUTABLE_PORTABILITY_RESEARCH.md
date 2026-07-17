@@ -34,15 +34,36 @@ dependency from Wine/CrossOver and clean Windows installations.
 The executable imports `mciSendCommandA` at IAT address `0x004B929C` and opens device type `0x0204`
 (`MCI_DEVTYPE_CD_AUDIO`). It selects TMSF time format and addresses audio by CD track number.
 
-| Address      | Original responsibility               | Portable behavior                        |
-| ------------ | ------------------------------------- | ---------------------------------------- |
-| `0x00485043` | Open CD-audio device and select TMSF  | Open local WAV and select milliseconds   |
-| `0x00485288` | Play a numbered CD track              | Play the matching WAV start/end interval |
-| `0x0048545F` | Query a CD track's duration           | Read duration from the embedded table    |
-| `0x004855F3` | Query the physical disc's track count | Report the original 11-track numbering   |
+| Address      | Original responsibility               | Local-music behavior                         |
+| ------------ | ------------------------------------- | -------------------------------------------- |
+| `0x00485043` | Open CD-audio device and select TMSF  | Load `doraudio.dll` and open `Music.dat`     |
+| `0x00485288` | Play a numbered CD track              | Start the matching DirectSound stream        |
+| `0x00485366` | Stop CD playback                      | Stop the local DirectSound buffer             |
+| `0x0048545F` | Query a CD track's duration           | Read duration from the `Music.dat` directory |
+| `0x004855F3` | Query the physical disc's track count | Report the original 11-track numbering       |
 
-Stop, close, timer, looping-state, and auxiliary-volume routines remain original. Failure to open the
-WAV follows the original nonfatal MCI failure path, leaving music disabled.
+`0x00485043` is inside the constructor that begins at `0x00485020`, not a normal function entry.
+Immediately before the hook, the constructor saves its object at `[EBP-0x70]` and calls a memset-like
+helper that clobbers `ECX`. The injected continuation must therefore reload the object from `[EBP-0x70]`
+and return with the constructor’s original `mov esp,ebp; pop ebp; ret 4` convention. Treating `ECX` as
+the object here produces a null write at `.port+0xAD` during startup.
+
+`Music.dat` contains ten independently seekable stereo IMA ADPCM streams at 44.1 kHz. The helper decodes
+them into a four-second DirectSound circular buffer. It imports only Kernel32 and reuses the game’s existing
+`IDirectSound` object, which keeps the backend suitable for Windows 7 through 11 and Wine/CrossOver without
+depending on a system MP3 or ACM codec. The helper loops the active track itself because the local constructor
+does not create the original WinMM one-second replay timer. `0x004851D9` is also redirected so shutdown stops
+the worker and releases the DirectSound buffer without issuing legacy MCI or mixer calls.
+
+The original BGM slider targeted the Compact Disc mixer control. For local playback only, its calculated
+0–65535 value is forwarded to `IDirectSoundBuffer::SetVolume`. If **Use local background music** is not
+selected, the helper is not installed, no music file is generated, and all original CD/MCI music and slider
+instructions remain untouched. If local music is selected but no valid `Music.dat`, WAV, or CUE/BIN source
+exists, the patcher warns and likewise leaves the original music code untouched.
+
+The patcher also offers an opt-in **Modern volume controls** mode for systems that ignore the old mixer API.
+It redirects the SFX slider to DirectSound-buffer volume, using a logarithmic 54-step table so halfway remains
+audible at approximately -6 dB. This mode is never applied unless selected.
 
 ## Mixed-mode disc layout
 
@@ -68,10 +89,9 @@ The extracted payload is 169,179,360 bytes and has SHA-256
 
 ## Portable PE section
 
-The patch appends `.port` at RVA `0x000D6000`/VA `0x004D6000`, with a 0x1000-byte aligned raw section.
-It contains the injected code, timing table, `DoraemonMusic.wav` filename, and a 256-byte path buffer.
-The path is built with the executable's existing `GetModuleFileNameA` import, so it does not depend on
-the working directory.
+The patch appends `.port` at RVA `0x000D6000`/VA `0x004D6000`. It contains the startup bypasses,
+local-music dispatch stubs, optional volume hooks, and title credit. The helper resolves `Music.dat` beside
+the executable with `GetModuleFileNameA`, so playback does not depend on the working directory.
 
 The patch addresses only disc detection and music transport. DirectDraw, DirectInput, codecs, and other
 Windows 95 compatibility concerns are unchanged.
