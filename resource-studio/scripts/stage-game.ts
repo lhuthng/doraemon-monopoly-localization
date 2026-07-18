@@ -13,6 +13,15 @@ const languageSource = resolve(studio, 'local-game', language);
 const destination = resolve(studio, 'public', 'game');
 const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat'];
 
+function mapPairs(available: Set<string>) {
+  return [...available]
+    .map((file) => /^map(\d{4})\.dat$/i.exec(file)?.[1])
+    .filter((suffix): suffix is string => Boolean(suffix))
+    .filter((suffix) => available.has(`mapElem${suffix}.dat`))
+    .sort()
+    .flatMap((suffix) => [`map${suffix}.dat`, `mapElem${suffix}.dat`]);
+}
+
 let originAvailable: Set<string>;
 try {
   originAvailable = new Set(await readdir(originSource));
@@ -43,6 +52,7 @@ if (missing.length > 0) {
     `The ${language} workspace is incomplete (${missing.join(', ')}). Add the files from your own game installation before starting the Studio.`
   );
 }
+const mapFiles = mapPairs(languageAvailable);
 
 await mkdir(destination, { recursive: true });
 for (const entry of await readdir(destination)) {
@@ -50,7 +60,8 @@ for (const entry of await readdir(destination)) {
 }
 
 await copyFile(resolve(originSource, 'strings.dat'), resolve(destination, 'strings-origin.dat'));
-for (const file of files) await copyFile(resolve(languageSource, file), resolve(destination, file));
+for (const file of [...files, ...mapFiles])
+  await copyFile(resolve(languageSource, file), resolve(destination, file));
 
 const prepare = Bun.spawn(['bun', 'scripts/prepare-graphics.ts'], {
   cwd: studio,

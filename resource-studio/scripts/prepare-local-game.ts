@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,11 +31,21 @@ async function exists(path: string) {
   }
 }
 
+function mapPairs(available: Set<string>) {
+  return [...available]
+    .map((file) => /^map(\d{4})\.dat$/i.exec(file)?.[1])
+    .filter((suffix): suffix is string => Boolean(suffix))
+    .filter((suffix) => available.has(`mapElem${suffix}.dat`))
+    .sort()
+    .flatMap((suffix) => [`map${suffix}.dat`, `mapElem${suffix}.dat`]);
+}
+
 for (const file of files) {
   if (!(await exists(resolve(source, file)))) {
     throw new Error(`The selected game folder is missing ${file}. No files were created.`);
   }
 }
+const mapFiles = mapPairs(new Set(await readdir(source)));
 if (!(await exists(payload))) {
   throw new Error(
     `Missing ${payload}. This language has no tracked resource payload yet, so it cannot be prepared.`
@@ -83,6 +93,9 @@ const child = Bun.spawn(
 if ((await child.exited) !== 0) {
   throw new Error('Resource preparation failed. Check the error above before using the workspace.');
 }
+// Map resources are presently inspect-only and are absent from translation
+// payloads, so materialization does not create them in the language workspace.
+await Promise.all(mapFiles.map((file) => copyFile(resolve(source, file), resolve(target, file))));
 
 console.log(
   `Prepared ${language} resources in ${target}. Run bun run dev-${language === 'english' ? 'en' : 'vi'}.`

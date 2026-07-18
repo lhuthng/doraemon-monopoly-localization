@@ -17,6 +17,21 @@ export type IndexedImage = {
   byteLength: number;
 };
 
+export type MapElementMetadata = {
+  id: string;
+  group: string;
+  packed: Uint8Array;
+  decoded?: Uint8Array;
+  error?: string;
+};
+
+export type MapElements = {
+  entries: GameOneArchiveEntry[];
+  images: IndexedImage[];
+  palette?: Palette;
+  metadata: MapElementMetadata[];
+};
+
 const u16 = (data: Uint8Array, offset: number) => data[offset] | (data[offset + 1] << 8);
 const i16 = (data: Uint8Array, offset: number) => {
   const value = u16(data, offset);
@@ -276,4 +291,62 @@ export function readSprites(data: Uint8Array) {
     entries,
     images: entries.map(parseSprite).filter((image): image is IndexedImage => Boolean(image))
   };
+}
+
+/** Map-element archives reuse the Sprite2 scanline format, but also contain
+ * uncompressed 80×60 indexed tiles and a standalone 256-colour palette. */
+export function readMapElements(data: Uint8Array): MapElements {
+  return readMapElementEntries(extractGameOneArchive(data));
+}
+
+/** Classifies already-extracted map-element records. Exported separately so
+ * format tests and future import tooling can validate records before rebuild. */
+export function readMapElementEntries(entries: GameOneArchiveEntry[]): MapElements {
+  const images: IndexedImage[] = [];
+  const metadata: MapElementMetadata[] = [];
+  let palette: Palette | undefined;
+
+  for (const entry of entries) {
+    const [group] = entry.path.map(String);
+    if (group === '5' && entry.packed.length === 768) {
+      // Map palettes are VGA DAC values (six bits per channel), unlike PCX
+      // palettes which already use full 8-bit RGB. Expand before previewing
+      // or exporting indexed PNGs. The result closely matches record 001's
+      // embedded PCX palette without borrowing a generic bitmap palette.
+      palette = Uint8Array.from(entry.packed, (value) => Math.round((value * 255) / 63));
+      continue;
+    }
+    if (group === '1' && entry.data && entry.data.length >= 4) {
+      const width = u16(entry.data, 0);
+      const height = u16(entry.data, 2);
+      if (width > 0 && height > 0 && entry.data.length === 4 + width * height) {
+        images.push({
+          kind: 'sprite',
+          id: entry.id,
+          width,
+          height,
+          pixels: entry.data.slice(4),
+          alpha: new Uint8Array(width * height).fill(255),
+          byteLength: entry.data.length
+        });
+        continue;
+      }
+    }
+    const sprite = entry.data ? parseSprite(entry) : undefined;
+    if (sprite && (group === '0' || group === '2' || group === '3')) {
+      if (group === '0') {
+        // Terrain records are stored as full opaque 80×60 rectangles even
+        // though palette index 255 is the original renderer's colour key.
+        // Keeping it opaque exposes the rectangular background as repeated
+        // white triangles when adjacent isometric tiles overlap.
+        const alpha = sprite.alpha?.slice() ?? new Uint8Array(sprite.pixels.length).fill(255);
+        for (let index = 0; index < sprite.pixels.length; index += 1)
+          if (sprite.pixels[index] === 255) alpha[index] = 0;
+        images.push({ ...sprite, alpha });
+      } else images.push(sprite);
+      continue;
+    }
+    metadata.push({ id: entry.id, group, packed: entry.packed, decoded: entry.data, error: entry.error });
+  }
+  return { entries, images, palette, metadata };
 }

@@ -20,6 +20,8 @@
   } from '../../lib/indexed-png';
   import { storedZip } from '../../lib/stored-zip';
   import IndexedCanvas from './components/IndexedCanvas.svelte';
+  import AssetTile from './components/AssetTile.svelte';
+  import MapStudio from './MapStudio.svelte';
 
   const pageSize = 96;
   type AssetTab = 'bitmap' | 'sprite1' | 'sprite2';
@@ -77,6 +79,7 @@
   let busy = $state(false);
   let dragging = $state(false);
   let selected: IndexedImage | undefined = $state();
+  let mapActive = $state(false);
 
   let current = $derived(tab === 'bitmap' ? bitmaps : tab === 'sprite1' ? sprites : sprites2);
   let currentCatalogue = $derived(
@@ -129,6 +132,7 @@
   let chosenPalette: Palette = $derived(chosenBitmap?.palette ?? diagnosticPalette());
 
   function resetView(nextTab: AssetTab) {
+    mapActive = false;
     tab = nextTab;
     page = 0;
     query = '';
@@ -776,194 +780,196 @@
       <button class:active={tab === 'sprite2'} onclick={() => resetView('sprite2')}
         >UI sprites <b>{sprite2Catalogue.length.toLocaleString()}</b></button
       >
+      <button class:active={mapActive} onclick={() => (mapActive = true)}>Maps</button>
     </nav>
 
-    <section class="toolbar">
-      <label
-        >Find entry or size<input
-          type="search"
-          placeholder="e.g. 053 or 640x480"
-          bind:value={query}
-          oninput={() => (page = 0)}
-        /></label
-      >
-      {#if tab !== 'bitmap'}
-        <label
-          >Preview palette
-          <select class="palette-id" bind:value={paletteId} disabled={!paletteChoices.length}>
-            {#if !paletteChoices.length}<option value="1">Load bitmaps.dat first</option>{/if}
-            {#each paletteChoices as bitmap (bitmap.id)}<option value={String(Number(bitmap.id))}
-                >Bitmap #{bitmap.id} · {bitmap.width}×{bitmap.height}</option
-              >{/each}
-          </select>
-        </label>
-        <span class="palette-state"
-          >{chosenBitmap
-            ? `Using the 256-color palette embedded in bitmap ${chosenBitmap.id}`
-            : 'Using diagnostic colors'}</span
-        >
-      {/if}
-    </section>
-
-    {#if currentCatalogue.length}
-      <section class="sprite-editor" aria-label="Indexed sprite editor">
-        <div class="sprite-export">
-          <div>
-            <strong>Export indexed PNGs</strong><span
-              >Use IDs or inclusive ranges: <code>1-10, 15</code>, <code>1 2 4 5</code>, or
-              <code>1-2, 4-5</code>.</span
-            >
-          </div>
-          <label
-            >IDs<input
-              type="text"
-              inputmode="numeric"
-              placeholder="e.g. 1-10, 15"
-              bind:value={exportSelection}
-            /></label
-          >
-          <button
-            type="button"
-            disabled={busy || (tab !== 'bitmap' && !chosenBitmap?.palette)}
-            onclick={exportIndexedRange}>Export PNG ZIP</button
-          >
-        </div>
-        <div
-          class:dragging
-          class="sprite-import"
-          role="group"
-          aria-label="Indexed sprite PNG import"
-          ondragover={(event) => {
-            event.preventDefault();
-            dragging = true;
-          }}
-          ondragleave={() => (dragging = false)}
-          ondrop={dropPngs}
-        >
-          <div>
-            <strong>Import Aseprite replacements</strong><span
-              >Drop numbered indexed PNGs here, or choose several files. RGB/RGBA images are rejected.
-              {#if tab === 'bitmap'}Bitmap dimensions and opaque pixels must stay unchanged. Its imported
-                256-color palette becomes the palette used by sprites that select this bitmap.{:else}Resizing
-                is supported by rebuilding the dimensions and every row offset; Sprite1 retains its original
-                hotspot, while Sprite2 has no hotspot fields.{/if}</span
-            >
-          </div>
-          <label class="file-button"
-            >Choose PNGs<input type="file" accept="image/png,.png" multiple onchange={importInput} /></label
-          >
-        </div>
-        <div class="aseprite-note">
-          <strong>Aseprite safety</strong><span
-            >Keep <b>Indexed</b> color mode. {#if tab === 'bitmap'}Changing a bitmap palette is intentional
-              and can recolor any sprite rendered with that bitmap’s palette. Transparent pixels are not
-              supported by PCX bitmaps.{:else}Keep palette order and the transparent slot. Resizing is
-              experimental: the original hotspot is preserved unchanged, so the game may shift, clip, or
-              reject the sprite. Reordering palette colors changes the game’s pixel indices even when the
-              image still looks correct.{/if}</span
-          >
-        </div>
-        {#if tab === 'sprite2'}<div class="aseprite-note">
-            <strong>Sprite2 header</strong><span
-              >The executable confirms that 0x8002 means indexed RLE with no hotspot. Its row table starts at
-              byte 6 instead of byte 10; there is no extra zero opcode or hidden geometry footer.</span
-            >
-          </div>{/if}
-        <div class="sprite-save">
-          <span
-            ><b>{activeModified.size}</b> modified {tab === 'bitmap'
-              ? 'bitmap'
-              : 'sprite'}{activeModified.size === 1 ? '' : 's'}. {#if tab === 'bitmap'}Its edited palette is
-              retained in bitmaps.dat and immediately used by sprite previews when selected.{:else}Palette RGB
-              is preview-only; visible colours are constrained to palette slots proven by the original sprite.{/if}</span
-          ><button
-            type="button"
-            class="primary"
-            disabled={busy || !activeModified.size}
-            onclick={exportModifiedAssets}>Export modified {activeArchiveLabel}</button
-          >
-        </div>
-      </section>
-    {/if}
-
-    {#if !currentCatalogue.length}
-      <section class="empty">
-        Load {tab === 'bitmap' ? 'bitmaps.dat' : activeArchiveLabel} to inspect it here.
-      </section>
+    {#if mapActive}
+      <MapStudio />
     {:else}
-      <p class="count">
-        Showing {visible.length} of {filtered.length.toLocaleString()} loaded {tab === 'bitmap'
-          ? 'bitmaps'
-          : 'sprites'} · {tab === 'bitmap' ? bitmapName : activeName}
-      </p>
-      <section class="grid">
-        {#each visible as image (image.id)}
-          <button
-            class:modified={activeModified.has(image.id)}
-            class="asset"
-            onclick={() => (selected = image)}
-            title={`Open ${image.id}`}
-          >
-            <span class="preview"><IndexedCanvas {image} palette={chosenPalette} /></span>
-            <span class="meta"><b>#{image.id}</b><small>{image.width} × {image.height}</small></span>
-          </button>
-        {/each}
-      </section>
-    {/if}
-
-    <nav class="bottom-nav" aria-label="Asset page navigation">
-      <span>Page <b>{page + 1}</b> / {pages}</span>
-      <button aria-label="Previous page" onclick={() => go(-1)} disabled={page === 0}>←</button>
-      <button aria-label="Next page" onclick={() => go(1)} disabled={page + 1 >= pages}>→</button>
-      {#if tab !== 'bitmap'}
-        <form
-          class="page-jump"
-          onsubmit={(event) => {
-            event.preventDefault();
-            jumpToPage();
-          }}
+      <section class="toolbar">
+        <label
+          >Find entry or size<input
+            type="search"
+            placeholder="e.g. 053 or 640x480"
+            bind:value={query}
+            oninput={() => (page = 0)}
+          /></label
         >
+        {#if tab !== 'bitmap'}
           <label
-            >Go to page<input
-              type="number"
-              min="1"
-              max={pages}
-              placeholder="1–{pages}"
-              bind:value={jumpPage}
-            /></label
+            >Preview palette
+            <select class="palette-id" bind:value={paletteId} disabled={!paletteChoices.length}>
+              {#if !paletteChoices.length}<option value="1">Load bitmaps.dat first</option>{/if}
+              {#each paletteChoices as bitmap (bitmap.id)}<option value={String(Number(bitmap.id))}
+                  >Bitmap #{bitmap.id} · {bitmap.width}×{bitmap.height}</option
+                >{/each}
+            </select>
+          </label>
+          <span class="palette-state"
+            >{chosenBitmap
+              ? `Using the 256-color palette embedded in bitmap ${chosenBitmap.id}`
+              : 'Using diagnostic colors'}</span
           >
-          <button type="submit" disabled={!String(jumpPage).trim()}>Go</button>
-        </form>
-      {/if}
-    </nav>
-  </main>
+        {/if}
+      </section>
 
-  {#if selected}
-    <div class="modal">
-      <div
-        class="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Asset ${selected.id}`}
-        tabindex="-1"
-      >
-        <header>
-          <div>
-            <strong>#{selected.id}</strong><span
-              >{selected.kind} · {selected.width} × {selected.height} · {selected.byteLength.toLocaleString()} decoded
-              bytes</span
-            >{#if selected.kind === 'sprite'}<span
-                >{selected.hotspotX === undefined
-                  ? 'No hotspot'
-                  : `Hotspot ${selected.hotspotX}, ${selected.hotspotY}`} · format 0x{selected.magic?.toString(
-                  16
-                )}</span
-              >{/if}
+      {#if currentCatalogue.length}
+        <section class="sprite-editor" aria-label="Indexed sprite editor">
+          <div class="sprite-export">
+            <div>
+              <strong>Export indexed PNGs</strong><span
+                >Use IDs or inclusive ranges: <code>1-10, 15</code>, <code>1 2 4 5</code>, or
+                <code>1-2, 4-5</code>.</span
+              >
+            </div>
+            <label
+              >IDs<input
+                type="text"
+                inputmode="numeric"
+                placeholder="e.g. 1-10, 15"
+                bind:value={exportSelection}
+              /></label
+            >
+            <button
+              type="button"
+              disabled={busy || (tab !== 'bitmap' && !chosenBitmap?.palette)}
+              onclick={exportIndexedRange}>Export PNG ZIP</button
+            >
           </div>
-          <button onclick={() => (selected = undefined)}>Close</button>
-        </header>
-        <div class="large-preview"><IndexedCanvas image={selected} palette={chosenPalette} /></div>
-      </div>
-    </div>
-  {/if}
+          <div
+            class:dragging
+            class="sprite-import"
+            role="group"
+            aria-label="Indexed sprite PNG import"
+            ondragover={(event) => {
+              event.preventDefault();
+              dragging = true;
+            }}
+            ondragleave={() => (dragging = false)}
+            ondrop={dropPngs}
+          >
+            <div>
+              <strong>Import Aseprite replacements</strong><span
+                >Drop numbered indexed PNGs here, or choose several files. RGB/RGBA images are rejected.
+                {#if tab === 'bitmap'}Bitmap dimensions and opaque pixels must stay unchanged. Its imported
+                  256-color palette becomes the palette used by sprites that select this bitmap.{:else}Resizing
+                  is supported by rebuilding the dimensions and every row offset; Sprite1 retains its original
+                  hotspot, while Sprite2 has no hotspot fields.{/if}</span
+              >
+            </div>
+            <label class="file-button"
+              >Choose PNGs<input type="file" accept="image/png,.png" multiple onchange={importInput} /></label
+            >
+          </div>
+          <div class="aseprite-note">
+            <strong>Aseprite safety</strong><span
+              >Keep <b>Indexed</b> color mode. {#if tab === 'bitmap'}Changing a bitmap palette is intentional
+                and can recolor any sprite rendered with that bitmap’s palette. Transparent pixels are not
+                supported by PCX bitmaps.{:else}Keep palette order and the transparent slot. Resizing is
+                experimental: the original hotspot is preserved unchanged, so the game may shift, clip, or
+                reject the sprite. Reordering palette colors changes the game’s pixel indices even when the
+                image still looks correct.{/if}</span
+            >
+          </div>
+          {#if tab === 'sprite2'}<div class="aseprite-note">
+              <strong>Sprite2 header</strong><span
+                >The executable confirms that 0x8002 means indexed RLE with no hotspot. Its row table starts
+                at byte 6 instead of byte 10; there is no extra zero opcode or hidden geometry footer.</span
+              >
+            </div>{/if}
+          <div class="sprite-save">
+            <span
+              ><b>{activeModified.size}</b> modified {tab === 'bitmap'
+                ? 'bitmap'
+                : 'sprite'}{activeModified.size === 1 ? '' : 's'}. {#if tab === 'bitmap'}Its edited palette is
+                retained in bitmaps.dat and immediately used by sprite previews when selected.{:else}Palette
+                RGB is preview-only; visible colours are constrained to palette slots proven by the original
+                sprite.{/if}</span
+            ><button
+              type="button"
+              class="primary"
+              disabled={busy || !activeModified.size}
+              onclick={exportModifiedAssets}>Export modified {activeArchiveLabel}</button
+            >
+          </div>
+        </section>
+      {/if}
+
+      {#if !currentCatalogue.length}
+        <section class="empty">
+          Load {tab === 'bitmap' ? 'bitmaps.dat' : activeArchiveLabel} to inspect it here.
+        </section>
+      {:else}
+        <p class="count">
+          Showing {visible.length} of {filtered.length.toLocaleString()} loaded {tab === 'bitmap'
+            ? 'bitmaps'
+            : 'sprites'} · {tab === 'bitmap' ? bitmapName : activeName}
+        </p>
+        <section class="grid">
+          {#each visible as image (image.id)}
+            <AssetTile
+              {image}
+              palette={chosenPalette}
+              modified={activeModified.has(image.id)}
+              onopen={() => (selected = image)}
+            />
+          {/each}
+        </section>
+      {/if}
+
+      <nav class="bottom-nav" aria-label="Asset page navigation">
+        <span>Page <b>{page + 1}</b> / {pages}</span>
+        <button aria-label="Previous page" onclick={() => go(-1)} disabled={page === 0}>←</button>
+        <button aria-label="Next page" onclick={() => go(1)} disabled={page + 1 >= pages}>→</button>
+        {#if tab !== 'bitmap'}
+          <form
+            class="page-jump"
+            onsubmit={(event) => {
+              event.preventDefault();
+              jumpToPage();
+            }}
+          >
+            <label
+              >Go to page<input
+                type="number"
+                min="1"
+                max={pages}
+                placeholder="1–{pages}"
+                bind:value={jumpPage}
+              /></label
+            >
+            <button type="submit" disabled={!String(jumpPage).trim()}>Go</button>
+          </form>
+        {/if}
+      </nav>
+      {#if selected}
+        <div class="modal">
+          <div
+            class="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Asset ${selected.id}`}
+            tabindex="-1"
+          >
+            <header>
+              <div>
+                <strong>#{selected.id}</strong><span
+                  >{selected.kind} · {selected.width} × {selected.height} · {selected.byteLength.toLocaleString()}
+                  decoded bytes</span
+                >{#if selected.kind === 'sprite'}<span
+                    >{selected.hotspotX === undefined
+                      ? 'No hotspot'
+                      : `Hotspot ${selected.hotspotX}, ${selected.hotspotY}`} · format 0x{selected.magic?.toString(
+                      16
+                    )}</span
+                  >{/if}
+              </div>
+              <button onclick={() => (selected = undefined)}>Close</button>
+            </header>
+            <div class="large-preview"><IndexedCanvas image={selected} palette={chosenPalette} /></div>
+          </div>
+        </div>
+      {/if}
+    {/if}
+  </main>
 </div>
