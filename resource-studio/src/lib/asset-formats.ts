@@ -12,6 +12,8 @@ export type IndexedImage = {
   hotspotX?: number;
   hotspotY?: number;
   magic?: number;
+  pcxHeader?: Uint8Array;
+  pcxBytesPerLine?: number;
   byteLength: number;
 };
 
@@ -91,7 +93,62 @@ export function parsePcx(entry: GameOneArchiveEntry): IndexedImage | undefined {
   const pixels = new Uint8Array(width * height);
   for (let row = 0; row < height; row += 1)
     pixels.set(decoded.subarray(row * bytesPerLine, row * bytesPerLine + width), row * width);
-  return { kind: 'bitmap', id: entry.id, width, height, pixels, palette, byteLength: data.length };
+  return {
+    kind: 'bitmap',
+    id: entry.id,
+    width,
+    height,
+    pixels,
+    palette,
+    pcxHeader: data.slice(0, 128),
+    pcxBytesPerLine: bytesPerLine,
+    byteLength: data.length
+  };
+}
+
+/** Rebuilds an 8-bit, one-plane PCX bitmap while retaining its 256-color palette.
+ * Bitmap palettes are game data: sprites can reuse their slots, so imports keep
+ * their PNG palette verbatim rather than remapping colours to another bitmap. */
+export function encodePcx(image: IndexedImage) {
+  if (image.kind !== 'bitmap' || !image.palette || image.palette.length !== 768)
+    throw new Error(`Bitmap ${image.id} is missing a 256-color PCX palette.`);
+  if (image.width < 1 || image.height < 1 || image.width > 2048 || image.height > 2048)
+    throw new Error(`Bitmap ${image.id} has unsupported dimensions ${image.width}×${image.height}.`);
+  if (image.pixels.length !== image.width * image.height)
+    throw new Error(`Bitmap ${image.id} has inconsistent dimensions and pixel data.`);
+  const bytesPerLine = Math.max(image.width, image.pcxBytesPerLine ?? image.width);
+  const header = image.pcxHeader?.slice() ?? new Uint8Array(128);
+  if (header.length !== 128) throw new Error(`Bitmap ${image.id} has an invalid PCX header.`);
+  header[0] = 0x0a;
+  header[1] = header[1] || 5;
+  header[2] = 1;
+  header[3] = 8;
+  putU16(header, 4, 0);
+  putU16(header, 6, 0);
+  putU16(header, 8, image.width - 1);
+  putU16(header, 10, image.height - 1);
+  header[65] = 1;
+  putU16(header, 66, bytesPerLine);
+  const encoded: number[] = [...header];
+  for (let row = 0; row < image.height; row += 1) {
+    let runValue = 0;
+    let runLength = 0;
+    const flush = () => {
+      if (!runLength) return;
+      if (runLength > 1 || (runValue & 0xc0) === 0xc0) encoded.push(0xc0 | runLength);
+      encoded.push(runValue);
+      runLength = 0;
+    };
+    for (let column = 0; column < bytesPerLine; column += 1) {
+      const value = column < image.width ? image.pixels[row * image.width + column] : 0;
+      if (runLength && (value !== runValue || runLength === 63)) flush();
+      if (!runLength) runValue = value;
+      runLength += 1;
+    }
+    flush();
+  }
+  encoded.push(0x0c, ...image.palette);
+  return Uint8Array.from(encoded);
 }
 
 export function parseSprite(entry: GameOneArchiveEntry): IndexedImage | undefined {

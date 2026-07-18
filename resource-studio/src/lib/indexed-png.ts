@@ -72,7 +72,7 @@ export function transparencyIndex(pixels: Uint8Array, alpha: Uint8Array) {
   return available;
 }
 
-export async function encodeIndexedPng(image: IndexedPng, transparent: number) {
+export async function encodeIndexedPng(image: IndexedPng, transparent?: number) {
   if (
     image.width < 1 ||
     image.height < 1 ||
@@ -81,33 +81,34 @@ export async function encodeIndexedPng(image: IndexedPng, transparent: number) {
   ) {
     throw new Error('Indexed PNG dimensions do not match its pixels.');
   }
-  if (image.palette.length !== 768 || transparent < 0 || transparent > 255)
-    throw new Error('Indexed PNG requires a 256-color palette and one transparent index.');
+  if (image.palette.length !== 768) throw new Error('Indexed PNG requires a 256-color palette.');
+  if (transparent !== undefined && (transparent < 0 || transparent > 255))
+    throw new Error('Indexed PNG transparency must use a palette index from 0 through 255.');
+  if (transparent === undefined && image.alpha.some((value) => value === 0))
+    throw new Error('Transparent pixels require a transparent palette index.');
   const scanlines = new Uint8Array((image.width + 1) * image.height);
   for (let row = 0; row < image.height; row += 1) {
     const target = row * (image.width + 1);
     scanlines[target] = 0;
     for (let x = 0; x < image.width; x += 1) {
       const pixel = row * image.width + x;
-      scanlines[target + 1 + x] = image.alpha[pixel] ? image.pixels[pixel] : transparent;
+      scanlines[target + 1 + x] = image.alpha[pixel] ? image.pixels[pixel] : (transparent ?? 0);
     }
   }
   const header = new Uint8Array(13);
   putU32be(header, 0, image.width);
   putU32be(header, 4, image.height);
   header.set([8, 3, 0, 0, 0], 8);
-  const alpha = new Uint8Array(256);
-  alpha.fill(255);
-  alpha[transparent] = 0;
   const compressed = await transform(scanlines, new CompressionStream('deflate'));
-  return join([
-    signature,
-    chunk('IHDR', header),
-    chunk('PLTE', image.palette),
-    chunk('tRNS', alpha),
-    chunk('IDAT', compressed),
-    chunk('IEND', new Uint8Array())
-  ]);
+  const chunks = [signature, chunk('IHDR', header), chunk('PLTE', image.palette)];
+  if (transparent !== undefined) {
+    const alpha = new Uint8Array(256);
+    alpha.fill(255);
+    alpha[transparent] = 0;
+    chunks.push(chunk('tRNS', alpha));
+  }
+  chunks.push(chunk('IDAT', compressed), chunk('IEND', new Uint8Array()));
+  return join(chunks);
 }
 
 function paeth(left: number, above: number, upperLeft: number) {

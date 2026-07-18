@@ -52,4 +52,12 @@ for (const entry of await readdir(destination)) {
 await copyFile(resolve(originSource, 'strings.dat'), resolve(destination, 'strings-origin.dat'));
 for (const file of files) await copyFile(resolve(languageSource, file), resolve(destination, file));
 
-console.log(`Loaded the ${language} workspace into public/game. Starting Resource Studio…`);
+const prepare = Bun.spawn(['bun', 'scripts/prepare-graphics.ts'], {
+  cwd: studio,
+  stdout: 'inherit',
+  stderr: 'inherit'
+});
+if ((await prepare.exited) !== 0)
+  throw new Error('Graphics pre-preparation failed. The Studio was not started.');
+
+console.log(`Loaded and pre-prepared the ${language} workspace. Starting Resource Studio…`);

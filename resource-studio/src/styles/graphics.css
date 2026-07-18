@@ -268,7 +268,7 @@
     font-weight: 700;
   }
   .sprite-export input {
-    width: 105px;
+    width: min(220px, 30vw);
     border: 1px solid #a8b7c6;
     border-radius: 8px;
     padding: 8px;
