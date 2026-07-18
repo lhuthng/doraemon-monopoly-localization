@@ -80,6 +80,7 @@
   let dragging = $state(false);
   let selected: IndexedImage | undefined = $state();
   let mapActive = $state(false);
+  let fitPreviews = $state(true);
 
   let current = $derived(tab === 'bitmap' ? bitmaps : tab === 'sprite1' ? sprites : sprites2);
   let currentCatalogue = $derived(
@@ -130,6 +131,11 @@
   );
   let paletteChoices = $derived(bitmaps.filter((image) => image.palette));
   let chosenPalette: Palette = $derived(chosenBitmap?.palette ?? diagnosticPalette());
+
+  function thumbnailScale(image: IndexedImage) {
+    const largestSide = Math.max(image.width, image.height);
+    return largestSide < 48 ? Math.min(3, 48 / largestSide) : 1;
+  }
 
   function resetView(nextTab: AssetTab) {
     mapActive = false;
@@ -811,6 +817,9 @@
               : 'Using diagnostic colors'}</span
           >
         {/if}
+        <label class="fit-previews"
+          ><span>Fit artwork</span><input type="checkbox" bind:checked={fitPreviews} /></label
+        >
       </section>
 
       {#if currentCatalogue.length}
@@ -910,6 +919,8 @@
             <AssetTile
               {image}
               palette={chosenPalette}
+              fitVisible={fitPreviews}
+              scale={thumbnailScale(image)}
               modified={activeModified.has(image.id)}
               onopen={() => (selected = image)}
             />

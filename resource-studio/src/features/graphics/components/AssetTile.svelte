@@ -24,10 +24,12 @@
 </script>
 
 <button class="asset" class:modified onclick={onopen} title={`Open ${image.id}`}>
-  <span class="preview"><IndexedCanvas {image} {palette} {fitVisible} {scale} /></span>
-  <span class="meta">
-    <b>#{image.id}</b>
-    {#if oncheck}
+  <span class="preview">
+    <b class="preview-label">#{image.id}</b>
+    <IndexedCanvas {image} {palette} {fitVisible} {scale} />
+  </span>
+  {#if oncheck}
+    <span class="asset-select">
       <input
         type="checkbox"
         {checked}
@@ -37,6 +39,6 @@
         }}
         aria-label={`Select ${image.id}`}
       />
-    {/if}
-  </span>
+    </span>
+  {/if}
 </button>
