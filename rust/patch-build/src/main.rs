@@ -293,7 +293,7 @@ fn universal(arguments: &[String]) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     fs::write(
         output.join("README.txt"),
-        "Doraemon universal patcher\r\n\r\nCopy patcher.exe into the folder containing Doraemon.exe, then run it there.\r\nChoose <unchanged>, English, or Vietnamese, pick the compatibility options you want, and press Apply.\r\nThe patcher always works on its own folder, creates a backup before writing, and keeps the window open so you can read the log.\r\n",
+        "Doraemon universal patcher\r\n\r\nCopy patcher.exe into the folder containing Doraemon.exe, then run it there.\r\nChoose <original>, English, or Vietnamese, pick the compatibility options you want, and press Apply.\r\nThe patcher always works on its own folder, creates a backup before writing, and keeps the window open so you can read the log.\r\n",
     )
     .map_err(|e| e.to_string())?;
     println!("Built {}.", destination.display());

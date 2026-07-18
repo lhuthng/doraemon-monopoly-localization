@@ -534,7 +534,7 @@ mod windows_app {
                 format!("This patcher has an invalid Vietnamese payload: {error}")
             })?)
         };
-        let mut languages = vec!["<unchanged>".into()];
+        let mut languages = vec!["<original>".into()];
         let english_index = english.as_ref().map(|_| {
             let index = languages.len();
             languages.push("English".into());
