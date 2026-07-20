@@ -7,6 +7,18 @@ const gameFolder = process.argv[3];
 const force = process.argv.slice(4).includes('--force');
 const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat', 'voice.dat'];
 
+const PART_NAMES = [
+  'loc-doraemon.dmpatch',
+  'loc-nobita.dmpatch',
+  'loc-dorami.dmpatch',
+  'loc-shizuka.dmpatch',
+  'loc-suneo.dmpatch',
+  'loc-gian.dmpatch',
+  'loc-others.dmpatch',
+  'sprites.dmpatch',
+  'runtime.dmpatch',
+];
+
 if (language !== 'english' && language !== 'vietnamese') {
   throw new Error('Choose a workspace: english or vietnamese.');
 }
@@ -20,7 +32,8 @@ const source = resolve(gameFolder);
 const localGame = resolve(studio, 'local-game');
 const origin = resolve(localGame, 'origin');
 const target = resolve(localGame, language);
-const payload = resolve(repository, 'patches', `${language}.dmpatch`);
+const partsDir = resolve(repository, 'patches', language);
+const monolithicPayload = resolve(repository, 'patches', `${language}.dmpatch`);
 
 async function exists(path: string) {
   try {
@@ -46,9 +59,17 @@ for (const file of files) {
   }
 }
 const mapFiles = mapPairs(new Set(await readdir(source)));
-if (!(await exists(payload))) {
+
+// Check for either multipart directory or monolithic payload
+const hasParts = await exists(partsDir) && (await Promise.all(
+  PART_NAMES.map((name) => exists(resolve(partsDir, name)))
+)).every(Boolean);
+const hasMonolithic = await exists(monolithicPayload);
+
+if (!hasParts && !hasMonolithic) {
   throw new Error(
-    `Missing ${payload}. This language has no tracked resource payload yet, so it cannot be prepared.`
+    `Missing ${hasParts ? '' : partsDir + ' parts '}${!hasParts && !hasMonolithic ? 'or ' : ''}${!hasMonolithic ? monolithicPayload : ''}. ` +
+    `This language has no tracked resource payload yet, so it cannot be prepared.`
   );
 }
 
@@ -84,26 +105,50 @@ if (await exists(originalVoice)) {
 }
 
 await mkdir(target, { recursive: true });
-const child = Bun.spawn(
-  [
-    'cargo',
-    'run',
-    '-p',
-    'patch-build',
-    '--',
-    'materialize',
-    '--payload',
-    payload,
-    '--base-dir',
-    source,
-    '--output-dir',
-    target
-  ],
-  { cwd: repository, stdout: 'inherit', stderr: 'inherit' }
-);
+
+let child;
+if (hasParts) {
+  child = Bun.spawn(
+    [
+      'cargo',
+      'run',
+      '-p',
+      'patch-build',
+      '--',
+      'materialize-parts',
+      '--parts-dir',
+      partsDir,
+      '--base-dir',
+      source,
+      '--output-dir',
+      target
+    ],
+    { cwd: repository, stdout: 'inherit', stderr: 'inherit' }
+  );
+} else {
+  child = Bun.spawn(
+    [
+      'cargo',
+      'run',
+      '-p',
+      'patch-build',
+      '--',
+      'materialize',
+      '--payload',
+      monolithicPayload,
+      '--base-dir',
+      source,
+      '--output-dir',
+      target
+    ],
+    { cwd: repository, stdout: 'inherit', stderr: 'inherit' }
+  );
+}
+
 if ((await child.exited) !== 0) {
   throw new Error('Resource preparation failed. Check the error above before using the workspace.');
 }
+
 // Map resources are presently inspect-only and are absent from translation
 // payloads, so materialization does not create them in the language workspace.
 await Promise.all(mapFiles.map((file) => copyFile(resolve(source, file), resolve(target, file))));

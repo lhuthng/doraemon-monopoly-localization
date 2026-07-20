@@ -28,8 +28,12 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then tag="${{ inputs.tag }}"; else tag="${GITHUB_REF_NAME}"; fi
-          test -f patches/english.dmpatch
-          test -f patches/vietnamese.dmpatch
+          PARTS="loc-doraemon.dmpatch loc-nobita.dmpatch loc-dorami.dmpatch loc-shizuka.dmpatch loc-suneo.dmpatch loc-gian.dmpatch loc-others.dmpatch sprites.dmpatch runtime.dmpatch"
+          for lang in english vietnamese; do
+            for part in $PARTS; do
+              test -f "patches/$lang/$part" || { echo "Missing patches/$lang/$part"; exit 1; }
+            done
+          done
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust
@@ -43,8 +47,8 @@ jobs:
       - name: Package Windows patcher
         run: |
           cargo run -p patch-build -- universal \
-            --english-payload patches/english.dmpatch \
-            --vietnamese-payload patches/vietnamese.dmpatch \
+            --english-payload-dir patches/english \
+            --vietnamese-payload-dir patches/vietnamese \
             --output-dir release \
             --cnc-ddraw-dir third_party/cnc-ddraw
 

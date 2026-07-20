@@ -23,6 +23,8 @@ target/
 *.dmpatch
 !patches/
 !patches/*.dmpatch
+!patches/*/
+!patches/*/*.dmpatch
 resource-studio/public/game/*
 !resource-studio/public/game/.gitkeep
 resource-studio/local-game/

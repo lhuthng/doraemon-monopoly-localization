@@ -172,28 +172,62 @@ map cells, objects, event classes, source offsets, and decoded resource
 records, which makes it useful for reverse engineering without changing map
 data.
 
+### Payload parts
+
+Every language release consists of nine multipart `.dmpatch` files instead of one
+monolithic payload. This split gives each character owner their own reviewable
+file and prevents accidental conflicts. Each part contains only the records
+owned by its target, a version header, base-resource fingerprints, and an
+intentional-empty flag.
+
+| File                   | Owner                  | Contents                                                                 |
+| ---------------------- | ---------------------- | ------------------------------------------------------------------------ |
+| `loc-doraemon.dmpatch` | Doraemon contributor   | Strings group `003`; Doraemon dialogue records and voice replacements.   |
+| `loc-nobita.dmpatch`   | Nobita contributor     | Strings group `004`; Nobita dialogue records and voice replacements.     |
+| `loc-dorami.dmpatch`   | Dorami contributor     | Strings group `005`; Dorami dialogue records and voice replacements.     |
+| `loc-shizuka.dmpatch`  | Shizuka contributor    | Strings group `006`; Shizuka dialogue records and voice replacements.    |
+| `loc-suneo.dmpatch`    | Suneo contributor      | Strings group `007`; Suneo dialogue records and voice replacements.      |
+| `loc-gian.dmpatch`     | Gian contributor       | Strings group `008`; Gian dialogue records and voice replacements.       |
+| `loc-others.dmpatch`   | Global/gadget/events   | Strings groups `000`, `001`, `002`; menu/misc voice records; shared action text `000/031`–`000/035`; shared action voice `00*/001/011`–`00*/001/015`. |
+| `sprites.dmpatch`      | Sprite maintainer      | Binary deltas for `sysfont.dat`, `Sprite1.dat`, `sprite2.dat`, `bitmaps.dat`. No strings, voice, or executable changes. |
+| `runtime.dmpatch`      | Runtime maintainer     | Executable patches (language, no-disc, no-reg, local-audio, modern-volume) and bundled files (doraudio.dll, cnc-ddraw). |
+
+Validation rules:
+- A Doraemon string record inside `loc-nobita.dmpatch` is rejected.
+- No string or voice record may be owned by two targets.
+- Sprite changes cannot appear in character localization files.
+- Missing required part metadata causes a build failure.
+- Part names are fixed and validated at build time.
+
+Existing monolithic `.dmpatch` files remain readable for migration. New
+releases use the multipart format exclusively.
+
 ### Build workflow
 
 The workflow is based on differences:
 
 ```text
 private original game + private edited workspace
-                    -> reviewed .dmpatch difference
-                    -> Windows patcher with embedded differences
+                    -> reviewed multipart .dmpatch payload
+                    -> Windows patcher with embedded nine parts
                     -> user's own game installation
 ```
 
 Useful commands:
 
-| Command                                       | Purpose                                                   |
-| --------------------------------------------- | --------------------------------------------------------- |
-| `make setup`                                  | Prepare private English and Vietnamese Studio workspaces. |
-| `make build-patch LANGUAGE=english`           | Build an ignored candidate payload in `tmp/patches/`.     |
-| `make build-patch LANGUAGE=vietnamese`        | Build the Vietnamese candidate payload.                   |
-| `make build-patch LANGUAGE=english PUBLISH=1` | Write the reviewed payload to `patches/`.                 |
-| `make build-patch LANGUAGE=english PATCHER=1` | Build a local Windows patcher in `tmp/release/`.          |
-| `make build-patcher`                          | Build one configurable patcher from tracked payloads.     |
-| `make help`                                   | Show the current command summary.                         |
+| Command                                                | Purpose                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| `make setup`                                           | Prepare private English and Vietnamese Studio workspaces.     |
+| `make build-patch LANGUAGE=english TARGET=all`         | Build nine-part multipart payload in `tmp/patches/english/`.  |
+| `make build-patch LANGUAGE=english TARGET=doraemon`    | Build only the Doraemon part file.                            |
+| `make build-patch LANGUAGE=vietnamese TARGET=others`   | Build only the global/gadget/events part file.                |
+| `make build-patch LANGUAGE=english PUBLISH=1`          | Write reviewed payloads to tracked `patches/english/`.        |
+| `make build-patch LANGUAGE=english PATCHER=1`          | Build a local Windows patcher in `tmp/release/`.              |
+| `make build-patcher`                                   | Build one configurable patcher from tracked `patches/` dirs.  |
+| `make help`                                            | Show the current command summary.                             |
+
+Valid `TARGET` values: `all`, `doraemon`, `nobita`, `dorami`, `shizuka`, `suneo`,
+`gian`, `others`, `sprites`, `runtime`.
 
 The Rust workspace contains the archive formats, semantic string and voice patches,
 binary deltas, executable patches, backup/restore logic, font extension, and

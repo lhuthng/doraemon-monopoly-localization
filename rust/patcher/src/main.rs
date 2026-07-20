@@ -1,6 +1,11 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
+const ENGLISH_PARTS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/english-parts.bin"));
+#[cfg(windows)]
+const VIETNAMESE_PARTS: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/vietnamese-parts.bin"));
+#[cfg(windows)]
 const ENGLISH_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/english-payload.bin"));
 #[cfg(windows)]
 const VIETNAMESE_PAYLOAD: &[u8] =
@@ -13,6 +18,89 @@ const VIETNAMESE_ICON: &[u8] = include_bytes!("../../../assets/icons/vietnamese.
 #[cfg(not(windows))]
 fn main() {
     eprintln!("Doraemon patcher GUI is Windows-only. Use patch-build on this platform.");
+}
+
+/// Decode a "DPART" composite blob into a Vec of PayloadPart bytes.
+#[cfg(windows)]
+fn decode_parts_blob(blob: &[u8]) -> Option<Vec<Vec<u8>>> {
+    if blob.len() < 7 || &blob[..5] != b"DPART" {
+        return None;
+    }
+    let count = u16::from_le_bytes(blob[5..7].try_into().ok()?) as usize;
+    let toc_size = 7 + count * 8;
+    if blob.len() < toc_size {
+        return None;
+    }
+    let mut parts = Vec::with_capacity(count);
+    for i in 0..count {
+        let offset = 7 + i * 8;
+        let start = u32::from_le_bytes(blob[offset..offset + 4].try_into().ok()?) as usize;
+        let len = u32::from_le_bytes(blob[offset + 4..offset + 8].try_into().ok()?) as usize;
+        if start + len > blob.len() {
+            return None;
+        }
+        parts.push(blob[start..start + len].to_vec());
+    }
+    Some(parts)
+}
+
+/// Try to load a language: first check multipart parts, then monolithic
+/// payload. Returns the merged Payload or None if no data is available.
+#[cfg(windows)]
+fn load_language(
+    lang_name: &str,
+    parts_blob: &[u8],
+    monolithic: &[u8],
+) -> Option<doraemon_game_patch::payload::Payload> {
+    // Try multipart format first
+    if parts_blob.len() < 5 {
+        eprintln!("DIAG {lang_name}: parts_blob too small ({})", parts_blob.len());
+    } else if &parts_blob[..5] != b"DPART" {
+        eprintln!("DIAG {lang_name}: parts_blob has wrong magic ({:?}) — expecting DPART", &parts_blob[..5]);
+    } else if let Some(part_bytes) = decode_parts_blob(parts_blob) {
+        let mut parts = Vec::new();
+        let mut decoded = 0u32;
+        let mut errors = 0u32;
+        for bytes in &part_bytes {
+            if !bytes.is_empty() {
+                match doraemon_game_patch::payload::decode_part(bytes) {
+                    Ok(part) => {
+                        decoded += 1;
+                        parts.push(part);
+                    }
+                    Err(e) => {
+                        errors += 1;
+                        eprintln!("DIAG {lang_name}: decode_part failed ({e})");
+                    }
+                }
+            }
+        }
+        if decoded > 0 {
+            eprintln!("DIAG {lang_name}: multipart OK — {decoded} parts decoded, {errors} skipped");
+            match doraemon_game_patch::merge_parts(&parts) {
+                Ok(payload) => return Some(payload),
+                Err(error) => eprintln!("DIAG {lang_name}: multipart merge failed ({error})"),
+            }
+        }
+        eprintln!("DIAG {lang_name}: multipart failed: {decoded} decoded, {errors} errors");
+    }
+    // Fall back to monolithic
+    if !monolithic.is_empty() {
+        eprintln!("DIAG {lang_name}: trying monolithic payload ({} bytes)", monolithic.len());
+        match doraemon_game_patch::payload::decode(monolithic) {
+            Ok(payload) => {
+                eprintln!("DIAG {lang_name}: monolithic OK");
+                return Some(payload);
+            }
+            Err(e) => {
+                eprintln!("DIAG {lang_name}: monolithic decode failed ({e})");
+            }
+        }
+    } else {
+        eprintln!("DIAG {lang_name}: monolithic payload is empty");
+    }
+    eprintln!("DIAG {lang_name}: NO PAYLOAD AVAILABLE");
+    None
 }
 
 #[cfg(windows)]
@@ -111,7 +199,7 @@ mod windows_app {
         if music::valid(&game.join("Music.dat")) {
             "♪ Local music is ready: Music.dat found.".into()
         } else if cue::valid_wav(&game.join("DoraemonMusic.wav")) {
-            "♪ DoraemonMusic.wav found. I’ll compress it into Music.dat when you apply.".into()
+            "♪ DoraemonMusic.wav found. I'll compress it into Music.dat when you apply.".into()
         } else if let Some(path) = find_cue(game) {
             format!(
                 "♪ Disc music found: {}. I'll prepare it when you apply.",
@@ -519,21 +607,12 @@ mod windows_app {
                 .ok_or("the patcher executable has no parent game folder")?
                 .to_path_buf()
         };
-        let english =
-            if super::ENGLISH_PAYLOAD.is_empty() {
-                None
-            } else {
-                Some(payload::decode(super::ENGLISH_PAYLOAD).map_err(|error| {
-                    format!("This patcher has an invalid English payload: {error}")
-                })?)
-            };
-        let vietnamese = if super::VIETNAMESE_PAYLOAD.is_empty() {
-            None
-        } else {
-            Some(payload::decode(super::VIETNAMESE_PAYLOAD).map_err(|error| {
-                format!("This patcher has an invalid Vietnamese payload: {error}")
-            })?)
-        };
+
+        eprintln!("DIAG: ENGLISH_PARTS size={} ENGLISH_PAYLOAD size={}", super::ENGLISH_PARTS.len(), super::ENGLISH_PAYLOAD.len());
+        eprintln!("DIAG: VIETNAMESE_PARTS size={} VIETNAMESE_PAYLOAD size={}", super::VIETNAMESE_PARTS.len(), super::VIETNAMESE_PAYLOAD.len());
+        let english = super::load_language("English", super::ENGLISH_PARTS, super::ENGLISH_PAYLOAD);
+        let vietnamese = super::load_language("Vietnamese", super::VIETNAMESE_PARTS, super::VIETNAMESE_PAYLOAD);
+
         let mut languages = vec!["<original>".into()];
         let english_index = english.as_ref().map(|_| {
             let index = languages.len();
@@ -545,6 +624,7 @@ mod windows_app {
             languages.push("Vietnamese".into());
             index
         });
+
         let wrapper_available = english
             .as_ref()
             .or(vietnamese.as_ref())
@@ -554,7 +634,19 @@ mod windows_app {
                     .iter()
                     .any(|file| !file.name.eq_ignore_ascii_case("doraudio.dll"))
             });
+
         let ui = Rc::new(Ui::build(&game, languages).map_err(|error| error.to_string())?);
+        if english.is_none() && vietnamese.is_none() {
+            append_log(
+                &ui,
+                TaskState::Failed,
+                &format!(
+                    "No embedded language payloads found. English parts blob={}B, Vietnamese parts blob={}B. The patch data may not have been linked in.",
+                    super::ENGLISH_PARTS.len(),
+                    super::VIETNAMESE_PARTS.len(),
+                ),
+            );
+        }
         append_log(
             &ui,
             TaskState::Skipped,
@@ -575,6 +667,7 @@ mod windows_app {
                 "Ready to restore the original game files.",
             );
         }
+
         let english = Rc::new(english);
         let vietnamese = Rc::new(vietnamese);
         let game = Rc::new(game);
@@ -686,8 +779,8 @@ mod windows_app {
                                     &format!("Restore failed: {error}"),
                                 );
                                 events_busy.set(false);
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper
                                     .set_enabled(events_wrapper_available && !restore_mode);
                                 ui.play
