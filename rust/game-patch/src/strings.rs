@@ -242,6 +242,24 @@ pub fn records(data: &[u8]) -> Result<BTreeMap<String, Vec<u8>>> {
     Ok(output)
 }
 
+pub(crate) fn packed_records(data: &[u8]) -> Result<BTreeMap<String, Vec<u8>>> {
+    let nodes = archive_nodes(data)?;
+    let mut starts: Vec<_> = nodes.iter().map(|node| node.offset).collect();
+    starts.push(data.len());
+    starts.sort_unstable();
+    starts.dedup();
+    let mut output = BTreeMap::new();
+    for node in nodes.iter().filter(|node| !node.container) {
+        let end = starts
+            .iter()
+            .copied()
+            .find(|start| *start > node.offset)
+            .ok_or("cannot find packed record end")?;
+        output.insert(id(&node.path), data[node.offset..end].to_vec());
+    }
+    Ok(output)
+}
+
 fn id(path: &[u16]) -> String {
     path.iter()
         .map(|part| format!("{part:03}"))
@@ -293,6 +311,72 @@ fn rebuild_container(
         output.extend_from_slice(&child);
     }
     Ok(output)
+}
+
+fn rebuild_container_packed(
+    original: &[u8],
+    offset: usize,
+    path: &[u16],
+    ends: &HashMap<usize, usize>,
+    replacements: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<u8>> {
+    let count = u32_at(original, offset + 0x42)? as usize;
+    let table = offset + 0x66;
+    let children: Vec<_> = (0..count)
+        .map(|index| u32_at(original, table + index * 4).map(|value| offset + value as usize))
+        .collect::<Result<_>>()?;
+    let first = children.iter().copied().min().unwrap_or(table);
+    let mut header = original[offset..first].to_vec();
+    let mut rebuilt = Vec::new();
+    for (index, child) in children.iter().copied().enumerate() {
+        let mut child_path = path.to_vec();
+        child_path.push(index as u16);
+        if signature(original, child) {
+            rebuilt.push(rebuild_container_packed(
+                original,
+                child,
+                &child_path,
+                ends,
+                replacements,
+            )?);
+        } else if let Some(value) = replacements.get(&id(&child_path)) {
+            if value.is_empty() {
+                return Err(format!("packed replacement {} is empty", id(&child_path)));
+            }
+            rebuilt.push(value.clone());
+        } else {
+            rebuilt.push(original[child..ends[&child]].to_vec());
+        }
+    }
+    let mut cursor = header.len();
+    for (index, child) in rebuilt.iter().enumerate() {
+        put_u32(&mut header, 0x66 + index * 4, cursor)?;
+        cursor += child.len();
+    }
+    put_u32(&mut header, 0x66 + count * 4, cursor)?;
+    let mut output = header;
+    for child in rebuilt {
+        output.extend_from_slice(&child);
+    }
+    Ok(output)
+}
+
+pub(crate) fn rebuild_packed(
+    source: &[u8],
+    replacements: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<u8>> {
+    let nodes = archive_nodes(source)?;
+    let mut starts: Vec<_> = nodes.iter().map(|node| node.offset).collect();
+    starts.push(source.len());
+    starts.sort_unstable();
+    starts.dedup();
+    let ends = starts
+        .windows(2)
+        .map(|pair| (pair[0], pair[1]))
+        .collect::<HashMap<_, _>>();
+    let rebuilt = rebuild_container_packed(source, 0, &[], &ends, replacements)?;
+    validate(&rebuilt, 0, rebuilt.len())?;
+    Ok(rebuilt)
 }
 
 fn validate(data: &[u8], offset: usize, expected_end: usize) -> Result<()> {

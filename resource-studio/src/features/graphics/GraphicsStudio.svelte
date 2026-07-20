@@ -11,6 +11,7 @@
     type Palette
   } from '../../lib/asset-formats';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
+  import StudioHeader from '../../lib/components/StudioHeader.svelte';
   import { extractGameOneArchive, rebuildGameOneArchive, type GameOneArchiveEntry } from '../../lib/formats';
   import {
     decodeIndexedPng,
@@ -21,6 +22,8 @@
   import { storedZip } from '../../lib/stored-zip';
   import IndexedCanvas from './components/IndexedCanvas.svelte';
   import AssetTile from './components/AssetTile.svelte';
+  import GraphicsEditorControls from './components/GraphicsEditorControls.svelte';
+  import GraphicsResourceLoader from './components/GraphicsResourceLoader.svelte';
   import MapStudio from './MapStudio.svelte';
 
   const pageSize = 96;
@@ -703,75 +706,13 @@
 
 <div class="asset-viewer">
   <main>
-    <header>
-      <div>
-        <p class="eyebrow">DORAEMON MONOPOLY</p>
-        <h1>Graphics studio</h1>
-        <p class="lede">
-          Inspect, export, replace, and rebuild the game's indexed bitmap and sprite resources.
-        </p>
-      </div>
-      <div class="header-actions">
-        <a href="/" data-route>String studio</a><a href="/fonts" data-route>Font studio</a>
-      </div>
-    </header>
+    <StudioHeader
+      title="Graphics studio"
+      description="Inspect, export, replace, and rebuild the game's indexed bitmap and sprite resources."
+      active="graphics"
+    />
 
-    <section class="explanation">
-      <article>
-        <strong>bitmaps.dat</strong><span
-          >174 archive records in this release. Most drawable entries are complete 8-bit PCX screens,
-          backgrounds, portraits, and artwork. Chinese UI text may already be baked into these pixels.</span
-        >
-      </article>
-      <article>
-        <strong>Sprite1.dat</strong><span
-          >13,807 small transparent overlays in a custom scanline format. These are assembled over bitmaps by
-          the game and borrow a 256-color palette from screen artwork.</span
-        >
-      </article>
-      <article>
-        <strong>sprite2.dat</strong><span
-          >727 overlays using the same indexed RLE scanlines as Sprite1, but with the 0x8002 header variant:
-          it has no hotspot fields, so its row-offset table begins four bytes earlier.</span
-        >
-      </article>
-    </section>
-
-    <section
-      class="load-panel"
-      aria-label="Asset loaders"
-      ondragover={(event) => event.preventDefault()}
-      ondrop={dropArchives}
-    >
-      <strong>Your local game archives</strong>
-      <span
-        >Choose or drop your own files. Optional ignored copies in <code>public/game</code> load automatically during
-        local development; nothing is uploaded.</span
-      >
-      <div>
-        <label class="file-button"
-          >Load bitmaps.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={(event) => archiveInput(event)}
-          /></label
-        >
-        <label class="file-button"
-          >Load Sprite1.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={(event) => archiveInput(event, 'sprite1')}
-          /></label
-        >
-        <label class="file-button"
-          >Load sprite2.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={(event) => archiveInput(event, 'sprite2')}
-          /></label
-        >
-      </div>
-    </section>
+    <GraphicsResourceLoader onDrop={dropArchives} onInput={archiveInput} />
 
     {#if error}<p class="error">{error}</p>{/if}
     <p class="status">{status}</p>
@@ -823,85 +764,18 @@
       </section>
 
       {#if currentCatalogue.length}
-        <section class="sprite-editor" aria-label="Indexed sprite editor">
-          <div class="sprite-export">
-            <div>
-              <strong>Export indexed PNGs</strong><span
-                >Use IDs or inclusive ranges: <code>1-10, 15</code>, <code>1 2 4 5</code>, or
-                <code>1-2, 4-5</code>.</span
-              >
-            </div>
-            <label
-              >IDs<input
-                type="text"
-                inputmode="numeric"
-                placeholder="e.g. 1-10, 15"
-                bind:value={exportSelection}
-              /></label
-            >
-            <button
-              type="button"
-              disabled={busy || (tab !== 'bitmap' && !chosenBitmap?.palette)}
-              onclick={exportIndexedRange}>Export PNG ZIP</button
-            >
-          </div>
-          <div
-            class:dragging
-            class="sprite-import"
-            role="group"
-            aria-label="Indexed sprite PNG import"
-            ondragover={(event) => {
-              event.preventDefault();
-              dragging = true;
-            }}
-            ondragleave={() => (dragging = false)}
-            ondrop={dropPngs}
-          >
-            <div>
-              <strong>Import Aseprite replacements</strong><span
-                >Drop numbered indexed PNGs here, or choose several files. RGB/RGBA images are rejected.
-                {#if tab === 'bitmap'}Bitmap dimensions and opaque pixels must stay unchanged. Its imported
-                  256-color palette becomes the palette used by sprites that select this bitmap.{:else}Resizing
-                  is supported by rebuilding the dimensions and every row offset; Sprite1 retains its original
-                  hotspot, while Sprite2 has no hotspot fields.{/if}</span
-              >
-            </div>
-            <label class="file-button"
-              >Choose PNGs<input type="file" accept="image/png,.png" multiple onchange={importInput} /></label
-            >
-          </div>
-          <div class="aseprite-note">
-            <strong>Aseprite safety</strong><span
-              >Keep <b>Indexed</b> color mode. {#if tab === 'bitmap'}Changing a bitmap palette is intentional
-                and can recolor any sprite rendered with that bitmap’s palette. Transparent pixels are not
-                supported by PCX bitmaps.{:else}Keep palette order and the transparent slot. Resizing is
-                experimental: the original hotspot is preserved unchanged, so the game may shift, clip, or
-                reject the sprite. Reordering palette colors changes the game’s pixel indices even when the
-                image still looks correct.{/if}</span
-            >
-          </div>
-          {#if tab === 'sprite2'}<div class="aseprite-note">
-              <strong>Sprite2 header</strong><span
-                >The executable confirms that 0x8002 means indexed RLE with no hotspot. Its row table starts
-                at byte 6 instead of byte 10; there is no extra zero opcode or hidden geometry footer.</span
-              >
-            </div>{/if}
-          <div class="sprite-save">
-            <span
-              ><b>{activeModified.size}</b> modified {tab === 'bitmap'
-                ? 'bitmap'
-                : 'sprite'}{activeModified.size === 1 ? '' : 's'}. {#if tab === 'bitmap'}Its edited palette is
-                retained in bitmaps.dat and immediately used by sprite previews when selected.{:else}Palette
-                RGB is preview-only; visible colours are constrained to palette slots proven by the original
-                sprite.{/if}</span
-            ><button
-              type="button"
-              class="primary"
-              disabled={busy || !activeModified.size}
-              onclick={exportModifiedAssets}>Export modified {activeArchiveLabel}</button
-            >
-          </div>
-        </section>
+        <GraphicsEditorControls
+          bind:selection={exportSelection}
+          bind:dragging
+          {busy}
+          hasPalette={tab === 'bitmap' || !!chosenBitmap?.palette}
+          modifiedCount={activeModified.size}
+          archiveLabel={activeArchiveLabel}
+          onExportPng={exportIndexedRange}
+          onDropPng={dropPngs}
+          onImportPng={importInput}
+          onExportArchive={exportModifiedAssets}
+        />
       {/if}
 
       {#if !currentCatalogue.length}

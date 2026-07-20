@@ -77,10 +77,6 @@
     <span>Find & replace</span>
     <strong>Translations only</strong>
   </div>
-  <p>
-    Chinese source text is always preserved. Line breaks entered here are matched and inserted as real
-    newlines.
-  </p>
   <label>
     Find
     <textarea

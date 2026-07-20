@@ -11,7 +11,7 @@ const studio = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const originSource = resolve(studio, 'local-game', 'origin');
 const languageSource = resolve(studio, 'local-game', language);
 const destination = resolve(studio, 'public', 'game');
-const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat'];
+const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat', 'voice.dat'];
 
 function mapPairs(available: Set<string>) {
   return [...available]
@@ -31,9 +31,9 @@ try {
   );
 }
 
-if (!originAvailable.has('strings.dat')) {
+if (!originAvailable.has('strings.dat') || !originAvailable.has('voice.dat')) {
   throw new Error(
-    `The origin workspace is missing strings.dat. Add the original game file before starting the Studio.`
+    `The origin workspace is missing strings.dat or voice.dat. Add the original game files before starting the Studio.`
   );
 }
 
@@ -60,6 +60,7 @@ for (const entry of await readdir(destination)) {
 }
 
 await copyFile(resolve(originSource, 'strings.dat'), resolve(destination, 'strings-origin.dat'));
+await copyFile(resolve(originSource, 'voice.dat'), resolve(destination, 'voice-origin.dat'));
 for (const file of [...files, ...mapFiles])
   await copyFile(resolve(languageSource, file), resolve(destination, file));
 

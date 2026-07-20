@@ -13,6 +13,8 @@
 
   let groups = $derived(STRING_GROUPS.filter((item) => availableGroupIds.includes(item.id)));
   let selected = $derived(groups.find((item) => item.id === group));
+  let gameGroups = $derived(groups.filter((item) => Number(item.id) <= 2));
+  let dialogueGroups = $derived(groups.filter((item) => Number(item.id) >= 3));
 
   function select(id: string) {
     group = id;
@@ -35,15 +37,21 @@
 <section class="side-card group-navigator" aria-label="Group navigation">
   <div class="side-card-heading">
     <span>Browse</span>
-    <strong>{selected ? `${selected.id} · ${selected.label}` : 'All groups'}</strong>
+    <strong>{selected ? `${selected.id} · ${selected.label}` : 'Choose a group'}</strong>
   </div>
   <label>
     String group
     <select value={group} onchange={(event) => select((event.currentTarget as HTMLSelectElement).value)}>
-      <option value="all">All groups</option>
-      {#each groups as item (item.id)}
-        <option value={item.id}>{item.id} — {item.label}</option>
-      {/each}
+      <optgroup label="Game text">
+        {#each gameGroups as item (item.id)}
+          <option value={item.id}>{item.id} · {item.label}</option>
+        {/each}
+      </optgroup>
+      <optgroup label="Character dialogue">
+        {#each dialogueGroups as item (item.id)}
+          <option value={item.id}>{item.id} · {item.label}</option>
+        {/each}
+      </optgroup>
     </select>
   </label>
   {#if selected}<p>{selected.detail}</p>{/if}

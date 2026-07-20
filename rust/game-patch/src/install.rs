@@ -8,7 +8,7 @@ use std::{
 use crate::{
     cue, hash, music,
     payload::{FilePatch, Language, PatchProfile, Payload},
-    pe, strings, Result,
+    pe, strings, voice, Result,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -232,7 +232,8 @@ fn prepare_local_audio(
         );
         return Ok(LocalAudioPreparation {
             enabled: false,
-            summary:             "No local music source was available, so music playback was left unchanged.".into(),
+            summary: "No local music source was available, so music playback was left unchanged."
+                .into(),
             created: Vec::new(),
         });
     };
@@ -627,6 +628,28 @@ pub fn apply_with_progress(
                 }
             }
         }
+        if let Some(voice_patch) = &payload.voice {
+            match find_file(folder, "voice.dat")
+                .and_then(|path| fs::read(&path).map_err(|e| format!("{}: {e}", path.display())))
+            {
+                Ok(bytes) => {
+                    let digest = hash::bytes(&bytes);
+                    if !((digest == voice_patch.base_hash
+                        && bytes.len() as u64 == voice_patch.base_len)
+                        || (digest == voice_patch.target_hash
+                            && bytes.len() as u64 == voice_patch.target_len))
+                    {
+                        base_ok = false;
+                        mismatches
+                            .push("voice.dat does not match this localization payload".into());
+                    }
+                }
+                Err(_) => {
+                    base_ok = false;
+                    mismatches.push("voice.dat is missing".into());
+                }
+            }
+        }
         for required in &profile.required {
             let path = match find_file(folder, &required.name) {
                 Ok(path) => path,
@@ -647,6 +670,18 @@ pub fn apply_with_progress(
                 if (digest != required.hash || length != required.len)
                     && digest != patch.target_hash
                 {
+                    base_ok = false;
+                    mismatches.push(format!("{} does not match", required.name));
+                }
+            } else if required.name.eq_ignore_ascii_case("voice.dat") {
+                if let Some(voice_patch) = &payload.voice {
+                    if (digest != required.hash || length != required.len)
+                        && (digest != voice_patch.target_hash || length != voice_patch.target_len)
+                    {
+                        base_ok = false;
+                        mismatches.push(format!("{} does not match", required.name));
+                    }
+                } else if digest != required.hash || length != required.len {
                     base_ok = false;
                     mismatches.push(format!("{} does not match", required.name));
                 }
@@ -726,6 +761,53 @@ pub fn apply_with_progress(
                 TaskState::Done,
                 "strings.dat records and archive offsets verified.",
                 Some(30),
+            );
+        }
+    }
+    if let Some(voice_patch) = &payload.voice {
+        let source_path = find_file(folder, "voice.dat")?;
+        let source = fs::read(&source_path)
+            .map_err(|error| format!("{}: {error}", source_path.display()))?;
+        progress(
+            sink,
+            TaskState::Working,
+            "Checking voice.dat records…",
+            Some(31),
+        );
+        if voice::matches(&source, voice_patch) {
+            progress(
+                sink,
+                TaskState::Skipped,
+                format!(
+                    "voice.dat already contains all {} changed voice records.",
+                    voice::replacement_count(voice_patch)
+                ),
+                Some(33),
+            );
+        } else {
+            progress(
+                sink,
+                TaskState::Working,
+                format!(
+                    "Updating {} voice records and rebuilding voice.dat…",
+                    voice::replacement_count(voice_patch)
+                ),
+                Some(32),
+            );
+            let output = voice::apply_patch(&source, voice_patch)?;
+            let temporary = staging.join("voice.dat");
+            write_synced(&temporary, &output)?;
+            generated.push((
+                "voice.dat".to_string(),
+                source_path,
+                temporary,
+                voice_patch.target_hash,
+            ));
+            progress(
+                sink,
+                TaskState::Done,
+                "voice.dat records and archive offsets verified.",
+                Some(34),
             );
         }
     }
@@ -989,6 +1071,7 @@ mod tests {
                 executable_portable: empty,
             }],
             strings: None,
+            voice: None,
             bundled: vec![BundledFile {
                 name: "Shaders/test.glsl".into(),
                 hash: hash::bytes(&bytes),
@@ -1019,6 +1102,7 @@ mod tests {
             language: Language::Custom,
             profiles: Vec::new(),
             strings: None,
+            voice: None,
             bundled: vec![BundledFile {
                 name: "doraudio.dll".into(),
                 hash: hash::bytes(&helper),

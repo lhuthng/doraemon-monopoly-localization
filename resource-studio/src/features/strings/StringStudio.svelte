@@ -1,12 +1,36 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
+  import StudioHeader from '../../lib/components/StudioHeader.svelte';
   import { parseStrings, parseSysFont, rebuildStrings, type StringRecord } from '../../lib/formats';
+  import {
+    assertCompatibleVoiceArchives,
+    normalizeAudioFile,
+    decodeVoiceRecord,
+    parseVoiceArchive,
+    parseWav,
+    rebuildVoiceArchive
+  } from '../../lib/voice-formats';
   import { CHIFONT_MAP } from './chifont-map';
   import FindReplace from './components/FindReplace.svelte';
+  import CharacterVoiceLibrary from './components/CharacterVoiceLibrary.svelte';
   import GroupNavigator from './components/GroupNavigator.svelte';
+  import NonDialogueVoiceLibrary from './components/NonDialogueVoiceLibrary.svelte';
+  import SharedVoiceLine from './components/SharedVoiceLine.svelte';
+  import TranslationResourceMenu from './components/TranslationResourceMenu.svelte';
+  import TranslationRecord from './components/TranslationRecord.svelte';
+  import TranslationControls from './components/TranslationControls.svelte';
+  import VoiceEditor from './components/VoiceEditor.svelte';
   import { STRING_GROUPS } from './groups';
-  import { DIALOG_LAYOUT, GADGETS_LAYOUT, reflowGameText } from './text-layout';
+  import { reflowGameText } from './text-layout';
+  import { prepareModel, translateLine } from './translation-server-client';
+  import {
+    dialogueVoicePath,
+    globalActionVoiceSlot,
+    manifestFromArchives,
+    type PreparedVoiceRecord,
+    type VoiceManifest
+  } from './voice';
 
   type TranslationFile = {
     game: string;
@@ -44,6 +68,8 @@
   let translationStage = $state('');
   let targetLanguage = $state<TargetLanguage>('en');
   let selectedModel = $state<ModelId>('nllb');
+  let translationSettingsOpen = $state(false);
+  let replaceDrawerOpen = $state(false);
   let queuedRecordIds = $state<string[]>([]);
   let activeRecordId = $state('');
   let generateFrom = $state('');
@@ -54,13 +80,19 @@
   let queueDone = $state(0);
   let replaceFind = $state('');
   let replaceWith = $state('');
-  let layoutWidth = $state<number>(GADGETS_LAYOUT.maxWidth);
-  let layoutPreset = $state<'gadgets' | 'dialog'>('gadgets');
   let sysfontWidths = $state<number[] | undefined>();
+  let voiceManifest = $state<VoiceManifest | null>(null);
+  let originalVoiceBytes = $state<Uint8Array | null>(null);
+  let workingVoiceBytes = $state<Uint8Array | null>(null);
+  let voiceReplacements = $state<Record<string, Uint8Array | null>>({});
+  let voiceReplacementUrls = $state<Record<string, string>>({});
+  let voiceReplacementDurations = $state<Record<string, number>>({});
+  let voiceStatus = $state('');
 
   onMount(() => {
     void loadOptionalOriginal();
     void loadOptionalSysfont();
+    void loadOptionalVoice();
   });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
@@ -70,11 +102,17 @@
       (item) => item.id
     )
   );
+  let originalVoiceById = $derived(
+    new Map(voiceManifest?.original.records.map((record) => [record.id, record]) ?? [])
+  );
+  let workingVoiceById = $derived(
+    new Map(voiceManifest?.working.records.map((record) => [record.id, record]) ?? [])
+  );
 
   let visibleRecords = $derived.by(() => {
     const query = search.trim().toLocaleLowerCase();
     return records.filter((record) => {
-      if (group !== 'all' && record.path[0] !== Number(group)) return false;
+      if (record.path[0] !== Number(group)) return false;
       if (!query) return true;
       const text = sourceText(record).toLocaleLowerCase();
       return (
@@ -83,6 +121,35 @@
         (translations[record.id] || '').toLocaleLowerCase().includes(query)
       );
     });
+  });
+  let voiceOnlyRecords = $derived.by(() => {
+    if (!voiceManifest || group === 'all') return [] as PreparedVoiceRecord[];
+    const groupIndex = Number(group);
+    if (groupIndex < 3 || groupIndex > 8) return [] as PreparedVoiceRecord[];
+    return voiceManifest.working.records.filter(
+      (record) =>
+        record.path[0] === groupIndex - 3 &&
+        record.path[1] > 0 &&
+        record.path[1] !== 3 &&
+        originalVoiceById.get(record.id)?.storage !== 'empty'
+    );
+  });
+  let globalVoiceReferences = $derived.by(() => {
+    if (!voiceManifest || group !== '000') return [] as PreparedVoiceRecord[];
+    return voiceManifest.working.records.filter(
+      (record) =>
+        record.path[1] === 1 && record.path[2] < 28 && originalVoiceById.get(record.id)?.storage !== 'empty'
+    );
+  });
+  let globalVoiceLineGroups = $derived.by(() => {
+    const groups = new Map<string, PreparedVoiceRecord[]>();
+    for (const voice of globalVoiceReferences) {
+      const key = `${voice.path[1]}/${voice.path[2]}`;
+      const line = groups.get(key) ?? [];
+      line.push(voice);
+      groups.set(key, line);
+    }
+    return [...groups.values()].sort((left, right) => left[0].path[2] - right[0].path[2]);
   });
   let remainingVisibleCount = $derived(visibleRecords.filter((record) => shouldGenerate(record)).length);
 
@@ -128,9 +195,275 @@
     return text;
   }
 
+  function linkedVoice(record: StringRecord) {
+    if (!voiceManifest) return undefined;
+    const path = dialogueVoicePath(record.path[0], record.path[1], voiceManifest.original.bankCounts);
+    if (!path) return undefined;
+    const id = path.map((part) => String(part).padStart(3, '0')).join('/');
+    const original = originalVoiceById.get(id);
+    const working = workingVoiceById.get(id);
+    if (original?.storage === 'empty') return undefined;
+    return working;
+  }
+
+  function actionVoiceLine(record: StringRecord) {
+    const voiceSlot = globalActionVoiceSlot(record.path[0], record.path[1]);
+    if (voiceSlot === undefined) return undefined;
+    return globalVoiceLineGroups.find((line) => line[0].path[2] === voiceSlot);
+  }
+
+  /**
+   * Version 1.18 stores a fourth, 37-slot voice bank that looks like a late
+   * dialogue continuation. The retail executable's loader explicitly stops at
+   * bank 2, so these clips are archival content: editable and exportable, but
+   * never selected by the unmodified game. The dialogue text itself is not
+   * marked unused.
+   */
+  function isArchivedUnusedVoice(record: StringRecord) {
+    if (!voiceManifest || record.path[0] < 3 || record.path[0] > 8) return false;
+    const path = dialogueVoicePath(record.path[0], record.path[1], voiceManifest.original.bankCounts);
+    return path?.[1] === 3;
+  }
+
+  function isVoiceModified(id: string) {
+    if (Object.prototype.hasOwnProperty.call(voiceReplacements, id)) return true;
+    return originalVoiceById.get(id)?.hash !== workingVoiceById.get(id)?.hash;
+  }
+
+  function firstLine(text: string | undefined) {
+    return text?.split(/\r?\n/, 1)[0]?.trim() || undefined;
+  }
+
+  function voiceOnlyDetails(voice: PreparedVoiceRecord) {
+    const bank = voice.path[1];
+    const slot = voice.path[2];
+    const sharedId = `00*/001/${String(slot).padStart(3, '0')}`;
+    if (bank === 1 && slot <= 10) return { category: 'Menu', detail: sharedId };
+    if (bank === 1 && slot <= 15)
+      return {
+        category: 'Actions',
+        detail: `${sharedId} → 000/${String(slot + 20).padStart(3, '0')}`
+      };
+    if (bank === 1 && slot < 28) return { category: 'Misc', detail: sharedId };
+    if (bank === 1 && slot < 64) {
+      const symbol = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[slot - 28];
+      return { category: 'Alphabet', detail: `Spoken symbol ${symbol}`, symbol };
+    }
+    if (bank === 2) {
+      const gadget = records.find((record) => record.path[0] === 1 && record.path[1] === slot);
+      return {
+        category: 'Gadget',
+        detail: `Gadget voice ${slot}`,
+        originalName: gadget ? firstLine(sourceText(gadget)) : undefined,
+        translatedName: gadget ? firstLine(translations[gadget.id]) : undefined
+      };
+    }
+    return { category: 'Additional', detail: `Unclassified bank ${bank}, slot ${slot}` };
+  }
+
+  async function replaceVoice(id: string, file: File) {
+    loadError = '';
+    voiceStatus = `Converting ${file.name}…`;
+    try {
+      if (originalVoiceById.get(id)?.storage === 'empty')
+        throw new Error(`Voice slot ${id} is an empty structural placeholder and cannot be replaced.`);
+      const wav = await normalizeAudioFile(file);
+      const info = parseWav(wav);
+      const previous = voiceReplacementUrls[id];
+      if (previous) URL.revokeObjectURL(previous);
+      voiceReplacements = { ...voiceReplacements, [id]: wav };
+      voiceReplacementUrls = {
+        ...voiceReplacementUrls,
+        [id]: URL.createObjectURL(binaryBlob(wav, 'audio/wav'))
+      };
+      voiceReplacementDurations = { ...voiceReplacementDurations, [id]: info.duration };
+      voiceStatus = `Voice ${id} replaced with ${file.name}.`;
+    } catch (error) {
+      loadError = `${file.name}: ${error instanceof Error ? error.message : String(error)}`;
+      voiceStatus = '';
+    }
+  }
+
+  async function loadVoicePlayback(id: string, source: 'original' | 'working') {
+    try {
+      let bytes = source === 'original' ? originalVoiceBytes : workingVoiceBytes;
+      if (!bytes) {
+        const filename = source === 'original' ? 'voice-origin.dat' : 'voice.dat';
+        const response = await fetch(`/game/${filename}`);
+        if (!response.ok) throw new Error(`Cannot load ${filename}.`);
+        bytes = new Uint8Array(await response.arrayBuffer());
+        if (source === 'original') originalVoiceBytes = bytes;
+        else workingVoiceBytes = bytes;
+      }
+      const archive = parseVoiceArchive(bytes);
+      const record = archive.records.find((candidate) => candidate.id === id);
+      if (!record) throw new Error(`voice.dat has no slot ${id}.`);
+      const wav = decodeVoiceRecord(archive, record);
+      if (!wav) throw new Error(`Voice slot ${id} is empty.`);
+      const info = parseWav(wav);
+      const url = URL.createObjectURL(binaryBlob(wav, 'audio/wav'));
+      if (!voiceManifest) return;
+      const nextSource = voiceManifest[source];
+      voiceManifest = {
+        ...voiceManifest,
+        [source]: {
+          ...nextSource,
+          records: nextSource.records.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  url,
+                  duration: info.duration,
+                  sampleRate: info.sampleRate,
+                  bitsPerSample: info.bitsPerSample
+                }
+              : item
+          )
+        }
+      };
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function restoreOriginalVoice(id: string) {
+    try {
+      const original = originalVoiceById.get(id);
+      const working = workingVoiceById.get(id);
+      const previous = voiceReplacementUrls[id];
+      if (previous) URL.revokeObjectURL(previous);
+      const nextUrls = { ...voiceReplacementUrls };
+      delete nextUrls[id];
+      voiceReplacementUrls = nextUrls;
+      const nextDurations = { ...voiceReplacementDurations };
+      delete nextDurations[id];
+      voiceReplacementDurations = nextDurations;
+      if (original?.hash === working?.hash && original?.storage === working?.storage) {
+        const next = { ...voiceReplacements };
+        delete next[id];
+        voiceReplacements = next;
+      } else if (!original?.url) {
+        voiceReplacements = { ...voiceReplacements, [id]: null };
+      } else {
+        const response = await fetch(original.url);
+        if (!response.ok) throw new Error(`Cannot load original voice ${id}.`);
+        const wav = new Uint8Array(await response.arrayBuffer());
+        voiceReplacements = { ...voiceReplacements, [id]: wav };
+        voiceReplacementUrls = {
+          ...voiceReplacementUrls,
+          [id]: URL.createObjectURL(binaryBlob(wav, 'audio/wav'))
+        };
+      }
+      voiceStatus = `Voice ${id} restored to the original recording.`;
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function loadOptionalVoice() {
+    try {
+      const response = await fetch('/game/prepared/voice/manifest.json');
+      if (response.ok) voiceManifest = await response.json();
+    } catch {
+      /* Voice files are optional outside a staged private workspace. */
+    }
+  }
+
+  async function loadOriginalVoice(file: Blob, name: string) {
+    loadError = '';
+    voiceStatus = `Reading ${name}…`;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      parseVoiceArchive(bytes);
+      originalVoiceBytes = bytes;
+      workingVoiceBytes = bytes;
+      voiceManifest = await manifestFromArchives(bytes, name);
+      voiceReplacements = {};
+      voiceReplacementUrls = {};
+      voiceReplacementDurations = {};
+      voiceStatus = `Loaded ${voiceManifest.working.records.length} voice slots from ${name}.`;
+    } catch (error) {
+      loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  async function loadModifiedVoice(file: Blob, name: string) {
+    loadError = '';
+    voiceStatus = `Comparing ${name} with the original voice archive…`;
+    try {
+      let original = originalVoiceBytes;
+      if (!original) {
+        const response = await fetch('/game/voice-origin.dat');
+        if (!response.ok) throw new Error('Load the original voice.dat first.');
+        original = new Uint8Array(await response.arrayBuffer());
+        originalVoiceBytes = original;
+      }
+      const working = new Uint8Array(await file.arrayBuffer());
+      assertCompatibleVoiceArchives(parseVoiceArchive(original), parseVoiceArchive(working));
+      workingVoiceBytes = working;
+      const nextManifest = await manifestFromArchives(original, 'voice-origin.dat', working, name);
+      voiceManifest = nextManifest;
+      voiceReplacements = {};
+      voiceReplacementUrls = {};
+      voiceReplacementDurations = {};
+      const originalById = new Map(nextManifest.original.records.map((record) => [record.id, record]));
+      const changed = nextManifest.working.records.filter(
+        (record) =>
+          record.hash !== originalById.get(record.id)?.hash ||
+          record.storage !== originalById.get(record.id)?.storage
+      ).length;
+      voiceStatus = `Loaded ${name}; ${changed} slots differ from the original.`;
+    } catch (error) {
+      loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  async function originalVoiceInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await loadOriginalVoice(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
+  async function modifiedVoiceInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await loadModifiedVoice(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
+  async function exportVoiceDat() {
+    loadError = '';
+    voiceStatus = 'Rebuilding and verifying voice.dat…';
+    try {
+      let bytes = workingVoiceBytes;
+      if (!bytes) {
+        const response = await fetch('/game/voice.dat');
+        if (!response.ok) throw new Error('Load a working voice.dat before exporting.');
+        bytes = new Uint8Array(await response.arrayBuffer());
+      }
+      const replacements = new Map(Object.entries(voiceReplacements));
+      const rebuilt = rebuildVoiceArchive(parseVoiceArchive(bytes), replacements);
+      downloadBlob(binaryBlob(rebuilt), 'voice.dat');
+      voiceStatus = `Exported voice.dat with ${replacements.size} session changes.`;
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
+      voiceStatus = '';
+    }
+  }
+
   function selectGroup(id: string) {
     group = id;
     search = '';
+  }
+
+  function scrollToElement(id: string) {
+    window.requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    );
+  }
+
+  function openCharacterVoice(voice: PreparedVoiceRecord) {
+    selectGroup(String(voice.path[0] + 3).padStart(3, '0'));
+    scrollToElement(`voice-${voice.id}`);
   }
 
   function replacementRecordId(record: StringRecord) {
@@ -176,18 +509,18 @@
     }
   }
 
-  function reflowTranslation(record: StringRecord) {
+  function reflowTranslation(record: StringRecord, width: number, preset: 'gadgets' | 'dialog') {
     const original = translations[record.id];
     if (!original?.trim() || isLockedForQueue(record.id)) return;
     if (!sysfontWidths) {
       loadError = 'sysfont.dat is still loading; try reflow again in a moment.';
       return;
     }
-    const result = reflowGameText(original, layoutWidth, sysfontWidths, false);
+    const result = reflowGameText(original, width, sysfontWidths, false);
     saveTranslation(record.id, result.text);
     exportStatus = result.oversizedWords.length
-      ? `Reflowed ${record.id} to ${layoutWidth}px. These words are wider than the box: ${[...new Set(result.oversizedWords)].join(', ')}.`
-      : `Reflowed ${record.id} to ${layoutWidth}px using ${layoutPreset === 'dialog' ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
+      ? `Reflowed ${record.id} to ${width}px. These words are wider than the box: ${[...new Set(result.oversizedWords)].join(', ')}.`
+      : `Reflowed ${record.id} to ${width}px using ${preset === 'dialog' ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
   }
 
   function flattenTranslation(record: StringRecord) {
@@ -207,7 +540,7 @@
       records = parsed;
       sourceName = name;
       search = '';
-      group = 'all';
+      group = '000';
       const saved = localStorage.getItem('doraemon-translations');
       if (saved) translations = JSON.parse(saved);
       const savedMeta = localStorage.getItem('doraemon-translation-meta');
@@ -383,64 +716,13 @@
   }
 
   async function translateLineOnServer(text: string) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 120_000);
-    let response: Response;
-    try {
-      response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel, target: targetLanguage, texts: [text] }),
-        signal: controller.signal
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError')
-        throw new Error(
-          'Translation server timed out after 120 seconds. Is the Bun translation server running and downloading its model?',
-          { cause: error }
-        );
-      throw new Error(
-        `Cannot reach translation server: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error }
-      );
-    } finally {
-      window.clearTimeout(timeout);
-    }
-    const payload = await response.json();
-    if (!response.ok)
-      throw new Error(payload?.error || `Translation server returned HTTP ${response.status}.`);
-    const translated = payload?.translations?.[0];
-    if (typeof translated !== 'string') throw new Error('Translation server returned no translation text.');
-    return translated;
+    return translateLine(selectedModel, targetLanguage, text);
   }
 
   async function prepareTranslationServer() {
     translationStage = `Preparing ${MODELS.find((model) => model.id === selectedModel)?.label}… queued records will wait until the server is ready.`;
-    const warmup = await fetch('/api/warmup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel })
-    });
-    if (!warmup.ok && warmup.status !== 202) {
-      const payload = await warmup.json().catch(() => ({}));
-      throw new Error(payload?.error || `Translation server warmup returned HTTP ${warmup.status}.`);
-    }
-    const started = Date.now();
-    while (Date.now() - started < 15 * 60_000) {
-      const response = await fetch('/api/status');
-      if (!response.ok) throw new Error(`Translation server status returned HTTP ${response.status}.`);
-      const payload = await response.json();
-      const state = payload?.models?.[selectedModel];
-      if (state?.state === 'ready') {
-        translationStage = 'Translation server ready. Starting queued records…';
-        return;
-      }
-      if (state?.state === 'error')
-        throw new Error(state.message || 'Translation server failed to load the model.');
-      translationStage = state?.message || 'Waiting for the translation server…';
-      await new Promise((resolve) => window.setTimeout(resolve, 750));
-    }
-    throw new Error('Translation server did not become ready within 15 minutes.');
+    await prepareModel(selectedModel, (message) => (translationStage = message));
+    translationStage = 'Translation server ready. Starting queued records…';
   }
 
   function recordById(id: string) {
@@ -581,8 +863,8 @@
     }
   }
 
-  function updateTranslation(id: string, event: Event) {
-    saveTranslation(id, (event.currentTarget as HTMLTextAreaElement).value);
+  function updateTranslation(id: string, value: string) {
+    saveTranslation(id, value);
   }
 
   function saveTranslation(id: string, value: string) {
@@ -678,41 +960,27 @@
   }
 </script>
 
-<main>
-  <header class="app-header">
-    <div>
-      <p class="eyebrow">Doraemon Monopoly</p>
-      <h1>String studio</h1>
-      <p class="subtle">
-        Decode the original text into selectable Traditional Chinese. Font files remain unchanged.
-      </p>
-    </div>
-    <div class="header-actions">
-      <a class="load-button" href="/assets" data-route>Graphics studio</a>
-      <a class="load-button" href="/fonts" data-route>Font studio</a>
-      <label class="load-button"
-        >Load original .dat<input
-          type="file"
-          accept=".dat,application/octet-stream"
-          onchange={originalInput}
-        /></label
-      >
-      <label class="load-button"
-        >Load sysfont.dat<input
-          type="file"
-          accept=".dat,application/octet-stream"
-          onchange={sysfontInput}
-        /></label
-      >
-      <label class="load-button"
-        >Load modified strings.dat<input
-          type="file"
-          accept=".dat,application/octet-stream"
-          onchange={translatedArchiveInput}
-        /></label
-      >
-    </div>
-  </header>
+<main class="translation-studio">
+  <StudioHeader
+    title="Translation studio"
+    description="Text, voices, and game-ready exports in one workspace."
+    active="translation"
+    className="app-header"
+  />
+  <TranslationResourceMenu
+    hasRecords={!!records.length}
+    hasArchive={!!archiveBytes}
+    hasVoice={!!voiceManifest}
+    onOriginalStrings={originalInput}
+    onModifiedStrings={translatedArchiveInput}
+    onSysfont={sysfontInput}
+    onOriginalVoice={originalVoiceInput}
+    onModifiedVoice={modifiedVoiceInput}
+    onExportSource={exportChineseRecords}
+    onExportProject={exportTranslations}
+    onExportStrings={exportStringsDat}
+    onExportVoice={exportVoiceDat}
+  />
 
   {#if !records.length}
     <section
@@ -722,10 +990,10 @@
       ondragover={(event) => event.preventDefault()}
       ondrop={dropOriginal}
     >
-      <strong>Load your own game files</strong>
+      <strong>Bring your own game files</strong>
       <span
-        >Drop <code>strings-origin.dat</code> (original) or <code>strings.dat</code> (modified) here. You may
-        include <code>sysfont.dat</code> to enable exact-width reflow.</span
+        >Drop the original <code>strings.dat</code>, then optionally a modified copy,
+        <code>sysfont.dat</code>, and <code>voice.dat</code>.</span
       >
     </section>
   {/if}
@@ -748,85 +1016,36 @@
 
     {#if missingGlyphs.length}<p class="error">Unmapped glyph IDs: {missingGlyphs.join(', ')}</p>{/if}
     {#if exportStatus}<p class="success" role="status">{exportStatus}</p>{/if}
+    {#if voiceStatus}<p class="success" role="status">{voiceStatus}</p>{/if}
 
-    <section class="toolbar">
-      <div class="fields">
-        <label
-          >Search<input type="search" placeholder="ID, Chinese, or translation" bind:value={search} /></label
-        >
-        <label
-          >Translate to<select bind:value={targetLanguage}
-            >{#each TARGET_LANGUAGES as language (language.code)}<option value={language.code}
-                >{language.label}</option
-              >{/each}</select
-          ></label
-        >
-        <label
-          >Model<select bind:value={selectedModel}
-            >{#each MODELS as model (model.id)}<option value={model.id}>{model.label}</option>{/each}</select
-          ></label
-        >
-        <label>From<input class="record-range" placeholder="000/000" bind:value={generateFrom} /></label>
-        <label>To<input class="record-range" placeholder="008/000" bind:value={generateTo} /></label>
-      </div>
-      <div class="actions">
-        <button
-          type="button"
-          data-testid="translate-all"
-          disabled={translationRunning || !records.length}
-          onclick={startGenerating}
-          >{translationRunning
-            ? `${translationProgress}% generated`
-            : `Start generating ${selectedTarget.label}`}</button
-        >
-        {#if generationPaused && queuedRecordIds.length && !translationRunning}
-          <button type="button" data-testid="resume-generation" onclick={resumeGeneration}>Resume</button>
-        {/if}
-        {#if translationRunning}
-          <button
-            type="button"
-            class="quiet"
-            data-testid="pause-generation"
-            disabled={generationPaused || stopRequested}
-            onclick={requestPause}>Pause</button
-          >
-        {/if}
-        {#if translationRunning || generationPaused}
-          <button
-            type="button"
-            class="quiet danger"
-            data-testid="stop-generation"
-            disabled={stopRequested}
-            onclick={requestStop}>Stop</button
-          >
-        {/if}
-        <button type="button" onclick={copyAll}>{copied === 'all' ? 'Copied' : 'Copy visible TSV'}</button>
-        <button type="button" data-testid="export-chinese" onclick={exportChineseRecords}
-          >Export Chinese records</button
-        >
-        <button type="button" onclick={exportTranslations}>Export project JSON</button>
-        <button type="button" data-testid="export-dat" class="primary" onclick={exportStringsDat}
-          >Export strings.dat</button
-        >
-        <button type="button" class="quiet" disabled={!translatedCount} onclick={clearTranslations}
-          >Clear</button
-        >
-      </div>
-    </section>
+    <TranslationControls
+      bind:search
+      bind:targetLanguage
+      bind:model={selectedModel}
+      bind:from={generateFrom}
+      bind:to={generateTo}
+      bind:settingsOpen={translationSettingsOpen}
+      bind:replaceOpen={replaceDrawerOpen}
+      languages={TARGET_LANGUAGES}
+      models={MODELS}
+      visibleCount={visibleRecords.length}
+      {translatedCount}
+      targetLabel={selectedTarget.label}
+      running={translationRunning}
+      paused={generationPaused}
+      stopping={stopRequested}
+      queuedCount={queuedRecordIds.length}
+      progress={translationProgress}
+      copiedAll={copied === 'all'}
+      onStart={startGenerating}
+      onResume={resumeGeneration}
+      onPause={requestPause}
+      onStop={requestStop}
+      onCopy={copyAll}
+      onClear={clearTranslations}
+    />
 
-    <div class="workspace">
-      <aside class="workspace-sidebar">
-        <GroupNavigator bind:group {availableGroupIds} onNavigate={selectGroup} />
-        <FindReplace
-          bind:find={replaceFind}
-          bind:replacement={replaceWith}
-          matches={replacementMatches}
-          onShow={showReplacement}
-          onReplaceOne={replaceOne}
-          onReplaceAll={replaceAll}
-        />
-      </aside>
-
+    <div class="workspace translation-workspace">
       <div class="workspace-content">
         {#if translationRunning || translationStage}
           <section class="translation-progress" aria-live="polite">
@@ -841,87 +1060,113 @@
         </div>
         <section class="translation-list" aria-label="Decoded strings">
           {#each visibleRecords as record (record.id)}
-            <article
-              id={replacementRecordId(record)}
-              class:queued={queuedRecordSet.has(record.id)}
-              class:translating={activeRecordId === record.id}
-              class:done={!!translations[record.id]?.trim()}
-              class:manual={translationOrigin(record.id) === 'manual'}
-              class:generated={translationOrigin(record.id) === 'generated'}
-              class:imported={translationOrigin(record.id) === 'imported'}
+            <TranslationRecord
+              {record}
+              source={sourceText(record)}
+              translation={translations[record.id] || ''}
+              generationState={generationState(record)}
+              archived={isArchivedUnusedVoice(record)}
+              queued={queuedRecordSet.has(record.id)}
+              translating={activeRecordId === record.id}
+              origin={translationOrigin(record.id)}
+              locked={isLockedForQueue(record.id)}
+              copied={copied === record.id}
+              onRegenerate={() => regenerateRecord(record)}
+              onReflow={(width, preset) => reflowTranslation(record, width, preset)}
+              onFlatten={() => flattenTranslation(record)}
+              onCopy={() => copyText(sourceText(record), record.id)}
+              onTranslation={(value) => updateTranslation(record.id, value)}
             >
-              <div class="record-heading">
-                <code>{record.id}</code>
-                <div class="record-actions">
-                  {#if generationState(record)}<span class="record-state">{generationState(record)}</span
-                    >{/if}
-                  {#if translations[record.id]?.trim()}<button
-                      type="button"
-                      class="copy"
-                      onclick={() => regenerateRecord(record)}>Regenerate</button
-                    >{/if}
-                  <button
-                    type="button"
-                    class="copy"
-                    disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)}
-                    popovertarget={`reflow-${record.id.replace('/', '-')}`}>Reflow…</button
-                  >
-                  <button
-                    type="button"
-                    class="copy"
-                    disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)}
-                    onclick={() => flattenTranslation(record)}>Flatten lines</button
-                  >
-                  <button type="button" class="copy" onclick={() => copyText(sourceText(record), record.id)}
-                    >{copied === record.id ? 'Copied' : 'Copy source'}</button
-                  >
-                </div>
-              </div>
-              <div id={`reflow-${record.id.replace('/', '-')}`} class="reflow-popover" popover>
-                <strong>Reflow {record.id}</strong>
-                <p>
-                  Sysfont advances are measured from the text’s actual byte characters; capitalization is
-                  preserved.
-                </p>
-                <label
-                  >Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label
-                >
-                <div class="reflow-popover-actions">
-                  <button
-                    type="button"
-                    class="quiet"
-                    onclick={() => {
-                      layoutPreset = 'gadgets';
-                      layoutWidth = GADGETS_LAYOUT.maxWidth;
-                    }}>Gadgets preset · 87px</button
-                  >
-                  <button
-                    type="button"
-                    class="quiet"
-                    onclick={() => {
-                      layoutPreset = 'dialog';
-                      layoutWidth = DIALOG_LAYOUT.maxWidth;
-                    }}>Dialog preset · 264px</button
-                  >
-                  <button type="button" class="primary" onclick={() => reflowTranslation(record)}
-                    >Reflow text</button
-                  >
-                </div>
-              </div>
-              <pre class="source-text" lang="zh-Hant">{sourceText(record)}</pre>
-              <label>
-                Translation
-                <textarea
-                  rows={Math.max(2, sourceText(record).split('\n').length)}
-                  disabled={isLockedForQueue(record.id)}
-                  placeholder="Enter translation…"
-                  value={translations[record.id] || ''}
-                  oninput={(event) => updateTranslation(record.id, event)}></textarea>
-              </label>
-            </article>
+              {#if record.path[0] >= 3 && record.path[0] <= 8}
+                {@const voice = linkedVoice(record)}
+                {#if voice}
+                  <VoiceEditor
+                    original={originalVoiceById.get(voice.id)}
+                    working={voice}
+                    replacementUrl={voiceReplacementUrls[voice.id]}
+                    replacementDuration={voiceReplacementDurations[voice.id]}
+                    cleared={Object.prototype.hasOwnProperty.call(voiceReplacements, voice.id) &&
+                      voiceReplacements[voice.id] === null}
+                    modified={isVoiceModified(voice.id)}
+                    onReplace={(file) => void replaceVoice(voice.id, file)}
+                    onReset={() => void restoreOriginalVoice(voice.id)}
+                    onLoadOriginal={() => void loadVoicePlayback(voice.id, 'original')}
+                    onLoadWorking={() => void loadVoicePlayback(voice.id, 'working')}
+                  />
+                {/if}
+              {/if}
+              {#if actionVoiceLine(record)}
+                <SharedVoiceLine
+                  title={`${record.id} · 00*/001/${String(record.path[1] - 20).padStart(3, '0')}`}
+                  voices={actionVoiceLine(record) ?? []}
+                  characters={voiceManifest?.characters ?? []}
+                  originalById={originalVoiceById}
+                  replacementUrls={voiceReplacementUrls}
+                  replacementDurations={voiceReplacementDurations}
+                  replacements={voiceReplacements}
+                  isModified={isVoiceModified}
+                  detailsFor={voiceOnlyDetails}
+                  onJump={openCharacterVoice}
+                  onLoadOriginal={(id) => void loadVoicePlayback(id, 'original')}
+                  onLoadWorking={(id) => void loadVoicePlayback(id, 'working')}
+                />
+              {/if}
+            </TranslationRecord>
           {/each}
         </section>
+        {#if globalVoiceReferences.length}
+          <NonDialogueVoiceLibrary
+            lines={globalVoiceLineGroups}
+            characters={voiceManifest?.characters ?? []}
+            originalById={originalVoiceById}
+            replacementUrls={voiceReplacementUrls}
+            replacementDurations={voiceReplacementDurations}
+            replacements={voiceReplacements}
+            isModified={isVoiceModified}
+            detailsFor={voiceOnlyDetails}
+            onJump={openCharacterVoice}
+            onLoadOriginal={(id) => void loadVoicePlayback(id, 'original')}
+            onLoadWorking={(id) => void loadVoicePlayback(id, 'working')}
+          />
+        {/if}
+        {#if voiceOnlyRecords.length}
+          <CharacterVoiceLibrary
+            voices={voiceOnlyRecords}
+            originalById={originalVoiceById}
+            replacementUrls={voiceReplacementUrls}
+            replacementDurations={voiceReplacementDurations}
+            replacements={voiceReplacements}
+            isModified={isVoiceModified}
+            detailsFor={voiceOnlyDetails}
+            onReplace={(id, file) => void replaceVoice(id, file)}
+            onReset={(id) => void restoreOriginalVoice(id)}
+            onLoadOriginal={(id) => void loadVoicePlayback(id, 'original')}
+            onLoadWorking={(id) => void loadVoicePlayback(id, 'working')}
+          />
+        {/if}
       </div>
+      <aside class="workspace-sidebar bottom-workspace-bar">
+        <GroupNavigator bind:group {availableGroupIds} onNavigate={selectGroup} />
+      </aside>
+      <aside class:open={replaceDrawerOpen} class="replace-drawer" aria-label="Find and replace drawer">
+        <div class="replace-drawer-header">
+          <strong>Find &amp; replace</strong>
+          <button
+            type="button"
+            class="quiet"
+            aria-label="Close find and replace"
+            onclick={() => (replaceDrawerOpen = false)}>×</button
+          >
+        </div>
+        <FindReplace
+          bind:find={replaceFind}
+          bind:replacement={replaceWith}
+          matches={replacementMatches}
+          onShow={showReplacement}
+          onReplaceOne={replaceOne}
+          onReplaceAll={replaceAll}
+        />
+      </aside>
     </div>
   {/if}
 </main>

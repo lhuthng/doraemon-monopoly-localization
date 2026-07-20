@@ -20,11 +20,11 @@ translation is needed.
 
 ## Workspaces
 
-| Route     | Workspace       | Inputs                                                       |
-| --------- | --------------- | ------------------------------------------------------------ |
-| `/`       | String studio   | `strings.dat`; optional `sysfont.dat` for width-aware reflow |
-| `/assets` | Graphics studio | `bitmaps.dat`, `Sprite1.dat`, and `sprite2.dat`              |
-| `/fonts`  | Font studio     | `sysfont.dat` and optional numbered PNG replacements         |
+| Route     | Workspace          | Inputs                                                                    |
+| --------- | ------------------ | ------------------------------------------------------------------------- |
+| `/`       | Translation studio | `strings.dat`, `voice.dat`; optional `sysfont.dat` for width-aware reflow |
+| `/assets` | Graphics studio    | `bitmaps.dat`, `Sprite1.dat`, and `sprite2.dat`                           |
+| `/fonts`  | Font studio        | `sysfont.dat` and optional numbered PNG replacements                      |
 
 Use the file controls or route-specific drop zones. Optional ignored local
 copies may be placed under `public/game/` with the exact canonical filenames.
@@ -35,6 +35,7 @@ A missing optional file is an empty state, not an application error.
 - Untranslated string records preserve their original decoded bytes.
 - String group and child offsets rebuild dynamically.
 - Leading and trailing spaces remain intact; line breaks encode as `\N`.
+- Voice replacements normalize to mono 22.05 kHz 16-bit PCM WAV and preserve untouched packed records.
 - Indexed sprite imports preserve palette indices rather than canvas RGB.
 - Sprite1 preserves its hotspot when resized; Sprite2 has no hotspot fields.
 - Untouched archive records remain byte-for-byte unchanged.

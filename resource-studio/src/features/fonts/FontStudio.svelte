@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
+  import StudioHeader from '../../lib/components/StudioHeader.svelte';
   import { parseSysFont, rebuildSysFont, type SysFont, type SysGlyph } from '../../lib/formats';
   import {
     extendSysFont,
@@ -186,30 +187,20 @@
 
 <svelte:window ondragover={(event) => event.preventDefault()} ondrop={drop} />
 <main class="font-page">
-  <header class="font-header">
-    <div>
-      <p class="eyebrow">DORAEMON MONOPOLY</p>
-      <h1>Font studio</h1>
-      <p class="subtle">
-        Edit the original sysfont.{#if hasVietnamese}
-          Five proportional Vietnamese CC/CD banks are available.{/if}
-      </p>
-    </div>
-    <div class="header-actions">
-      <a class="load-button" href="/" data-route>String studio</a><a
-        class="load-button"
-        href="/assets"
-        data-route>Graphics studio</a
-      >
-      <label class="load-button"
-        >Load sysfont.dat<input
-          type="file"
-          accept=".dat,application/octet-stream"
-          onchange={fontInput}
-        /></label
-      >
-    </div>
-  </header>
+  <StudioHeader
+    title="Font studio"
+    description={`Edit sysfont.dat.${hasVietnamese ? ' Five proportional Vietnamese CC/CD banks are available.' : ''}`}
+    active="fonts"
+  />
+  <section class="resource-actions font-resource-actions" aria-label="Font file">
+    <label class="load-button"
+      >Load sysfont.dat<input
+        type="file"
+        accept=".dat,application/octet-stream"
+        onchange={fontInput}
+      /></label
+    >
+  </section>
   <p class="status">{status}</p>
   {#if error}<p class="error">{error}</p>{/if}
   {#if !font}
