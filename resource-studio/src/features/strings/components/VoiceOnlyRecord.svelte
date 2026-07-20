@@ -14,6 +14,9 @@
     replacementDuration,
     cleared = false,
     modified = false,
+    readOnly = false,
+    jumpLabel,
+    onJump,
     onReplace,
     onReset,
     onLoadOriginal,
@@ -30,6 +33,9 @@
     replacementDuration?: number;
     cleared?: boolean;
     modified?: boolean;
+    readOnly?: boolean;
+    jumpLabel?: string;
+    onJump?: () => void;
     onReplace: (file: File) => void;
     onReset: () => void;
     onLoadOriginal: () => void;
@@ -37,7 +43,7 @@
   } = $props();
 </script>
 
-<article class:done={modified} class="voice-record-card">
+<article id={`voice-${voice.id}`} class:done={modified} class="voice-record-card">
   <div class="record-heading">
     <code>{voice.id}</code>
     <span class="voice-category">{category}</span>
@@ -58,9 +64,13 @@
     {replacementDuration}
     {cleared}
     {modified}
+    {readOnly}
     {onReplace}
     {onReset}
     {onLoadOriginal}
     {onLoadWorking}
   />
+  {#if jumpLabel && onJump}
+    <button type="button" class="voice-jump" onclick={onJump}>{jumpLabel}</button>
+  {/if}
 </article>

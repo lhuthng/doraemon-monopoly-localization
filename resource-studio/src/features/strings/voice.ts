@@ -25,6 +25,12 @@ export type VoiceManifest = {
   working: PreparedVoiceSource;
 };
 
+/** Global action text 000/031–035 selects bank-1 slots 011–015 for every character. */
+export function globalActionVoiceSlot(stringGroup: number, stringSlot: number) {
+  if (stringGroup !== 0 || stringSlot < 31 || stringSlot > 35) return undefined;
+  return stringSlot - 20;
+}
+
 /**
  * Resolves a character string record to its physical Voice.dat coordinate.
  *

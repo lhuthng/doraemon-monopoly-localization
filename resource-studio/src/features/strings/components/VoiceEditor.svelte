@@ -9,6 +9,7 @@
     cleared = false,
     modified = false,
     compact = false,
+    readOnly = false,
     onReplace,
     onReset,
     onLoadOriginal,
@@ -21,6 +22,7 @@
     cleared?: boolean;
     modified?: boolean;
     compact?: boolean;
+    readOnly?: boolean;
     onReplace: (file: File) => void;
     onReset: () => void;
     onLoadOriginal: () => void;
@@ -48,6 +50,7 @@
   function drop(event: DragEvent) {
     event.preventDefault();
     dragging = false;
+    if (readOnly) return;
     const file = event.dataTransfer?.files[0];
     if (file) onReplace(file);
   }
@@ -58,8 +61,8 @@
   class:compact
   class:dragging
   class="voice-editor"
-  ondragenter={() => (dragging = true)}
-  ondragleave={() => (dragging = false)}
+  ondragenter={() => !readOnly && (dragging = true)}
+  ondragleave={() => !readOnly && (dragging = false)}
   ondragover={(event) => event.preventDefault()}
   ondrop={drop}
 >
@@ -96,16 +99,18 @@
       </div>
     {/if}
   </div>
-  <div class="voice-editor-actions">
-    <label class="small-button"
-      >Replace audio<input
-        type="file"
-        accept="audio/*,.wav,.mp3,.flac,.ogg,.opus,.m4a,.aac"
-        onchange={choose}
-      /></label
-    >
-    {#if modified || replacementUrl}<button type="button" class="copy" onclick={onReset}
-        >Restore original</button
-      >{/if}
-  </div>
+  {#if !readOnly}
+    <div class="voice-editor-actions">
+      <label class="small-button"
+        >Replace audio<input
+          type="file"
+          accept="audio/*,.wav,.mp3,.flac,.ogg,.opus,.m4a,.aac"
+          onchange={choose}
+        /></label
+      >
+      {#if modified || replacementUrl}<button type="button" class="copy" onclick={onReset}
+          >Restore original</button
+        >{/if}
+    </div>
+  {/if}
 </section>

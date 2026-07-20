@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
+  import StudioHeader from '../../lib/components/StudioHeader.svelte';
   import { parseStrings, parseSysFont, rebuildStrings, type StringRecord } from '../../lib/formats';
   import {
     assertCompatibleVoiceArchives,
@@ -12,13 +13,20 @@
   } from '../../lib/voice-formats';
   import { CHIFONT_MAP } from './chifont-map';
   import FindReplace from './components/FindReplace.svelte';
+  import CharacterVoiceLibrary from './components/CharacterVoiceLibrary.svelte';
   import GroupNavigator from './components/GroupNavigator.svelte';
+  import NonDialogueVoiceLibrary from './components/NonDialogueVoiceLibrary.svelte';
+  import SharedVoiceLine from './components/SharedVoiceLine.svelte';
+  import TranslationResourceMenu from './components/TranslationResourceMenu.svelte';
+  import TranslationRecord from './components/TranslationRecord.svelte';
+  import TranslationControls from './components/TranslationControls.svelte';
   import VoiceEditor from './components/VoiceEditor.svelte';
-  import VoiceOnlyRecord from './components/VoiceOnlyRecord.svelte';
   import { STRING_GROUPS } from './groups';
-  import { DIALOG_LAYOUT, GADGETS_LAYOUT, reflowGameText } from './text-layout';
+  import { reflowGameText } from './text-layout';
+  import { prepareModel, translateLine } from './translation-server-client';
   import {
     dialogueVoicePath,
+    globalActionVoiceSlot,
     manifestFromArchives,
     type PreparedVoiceRecord,
     type VoiceManifest
@@ -61,6 +69,7 @@
   let targetLanguage = $state<TargetLanguage>('en');
   let selectedModel = $state<ModelId>('nllb');
   let translationSettingsOpen = $state(false);
+  let replaceDrawerOpen = $state(false);
   let queuedRecordIds = $state<string[]>([]);
   let activeRecordId = $state('');
   let generateFrom = $state('');
@@ -71,8 +80,6 @@
   let queueDone = $state(0);
   let replaceFind = $state('');
   let replaceWith = $state('');
-  let layoutWidth = $state<number>(GADGETS_LAYOUT.maxWidth);
-  let layoutPreset = $state<'gadgets' | 'dialog'>('gadgets');
   let sysfontWidths = $state<number[] | undefined>();
   let voiceManifest = $state<VoiceManifest | null>(null);
   let originalVoiceBytes = $state<Uint8Array | null>(null);
@@ -122,9 +129,27 @@
     return voiceManifest.working.records.filter(
       (record) =>
         record.path[0] === groupIndex - 3 &&
-        (record.path[1] === 2 || (record.path[1] === 1 && record.path[2] >= 28)) &&
+        record.path[1] > 0 &&
+        record.path[1] !== 3 &&
         originalVoiceById.get(record.id)?.storage !== 'empty'
     );
+  });
+  let globalVoiceReferences = $derived.by(() => {
+    if (!voiceManifest || group !== '000') return [] as PreparedVoiceRecord[];
+    return voiceManifest.working.records.filter(
+      (record) =>
+        record.path[1] === 1 && record.path[2] < 28 && originalVoiceById.get(record.id)?.storage !== 'empty'
+    );
+  });
+  let globalVoiceLineGroups = $derived.by(() => {
+    const groups = new Map<string, PreparedVoiceRecord[]>();
+    for (const voice of globalVoiceReferences) {
+      const key = `${voice.path[1]}/${voice.path[2]}`;
+      const line = groups.get(key) ?? [];
+      line.push(voice);
+      groups.set(key, line);
+    }
+    return [...groups.values()].sort((left, right) => left[0].path[2] - right[0].path[2]);
   });
   let remainingVisibleCount = $derived(visibleRecords.filter((record) => shouldGenerate(record)).length);
 
@@ -181,18 +206,10 @@
     return working;
   }
 
-  /** Global records 000/008–035 select bank-1 slot N - 8 for the active character. */
-  function linkedGlobalVoices(record: StringRecord) {
-    if (!voiceManifest || record.path[0] !== 0 || record.path[1] < 8 || record.path[1] > 35) return [];
-    const slot = record.path[1] - 8;
-    return voiceManifest.working.records
-      .filter(
-        (voice) =>
-          voice.path[1] === 1 &&
-          voice.path[2] === slot &&
-          originalVoiceById.get(voice.id)?.storage !== 'empty'
-      )
-      .map((voice) => ({ voice, character: voiceManifest!.characters[voice.path[0]] }));
+  function actionVoiceLine(record: StringRecord) {
+    const voiceSlot = globalActionVoiceSlot(record.path[0], record.path[1]);
+    if (voiceSlot === undefined) return undefined;
+    return globalVoiceLineGroups.find((line) => line[0].path[2] === voiceSlot);
   }
 
   /**
@@ -220,8 +237,14 @@
   function voiceOnlyDetails(voice: PreparedVoiceRecord) {
     const bank = voice.path[1];
     const slot = voice.path[2];
-    if (bank === 1 && slot < 28)
-      return { category: 'Global', detail: `Global text voice ${String(slot + 8).padStart(3, '0')}` };
+    const sharedId = `00*/001/${String(slot).padStart(3, '0')}`;
+    if (bank === 1 && slot <= 10) return { category: 'Menu', detail: sharedId };
+    if (bank === 1 && slot <= 15)
+      return {
+        category: 'Actions',
+        detail: `${sharedId} → 000/${String(slot + 20).padStart(3, '0')}`
+      };
+    if (bank === 1 && slot < 28) return { category: 'Misc', detail: sharedId };
     if (bank === 1 && slot < 64) {
       const symbol = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[slot - 28];
       return { category: 'Alphabet', detail: `Spoken symbol ${symbol}`, symbol };
@@ -432,6 +455,17 @@
     search = '';
   }
 
+  function scrollToElement(id: string) {
+    window.requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    );
+  }
+
+  function openCharacterVoice(voice: PreparedVoiceRecord) {
+    selectGroup(String(voice.path[0] + 3).padStart(3, '0'));
+    scrollToElement(`voice-${voice.id}`);
+  }
+
   function replacementRecordId(record: StringRecord) {
     return `record-${record.id.replace('/', '-')}`;
   }
@@ -475,18 +509,18 @@
     }
   }
 
-  function reflowTranslation(record: StringRecord) {
+  function reflowTranslation(record: StringRecord, width: number, preset: 'gadgets' | 'dialog') {
     const original = translations[record.id];
     if (!original?.trim() || isLockedForQueue(record.id)) return;
     if (!sysfontWidths) {
       loadError = 'sysfont.dat is still loading; try reflow again in a moment.';
       return;
     }
-    const result = reflowGameText(original, layoutWidth, sysfontWidths, false);
+    const result = reflowGameText(original, width, sysfontWidths, false);
     saveTranslation(record.id, result.text);
     exportStatus = result.oversizedWords.length
-      ? `Reflowed ${record.id} to ${layoutWidth}px. These words are wider than the box: ${[...new Set(result.oversizedWords)].join(', ')}.`
-      : `Reflowed ${record.id} to ${layoutWidth}px using ${layoutPreset === 'dialog' ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
+      ? `Reflowed ${record.id} to ${width}px. These words are wider than the box: ${[...new Set(result.oversizedWords)].join(', ')}.`
+      : `Reflowed ${record.id} to ${width}px using ${preset === 'dialog' ? 'Dialog' : 'Gadgets'} sysfont measurements. Capitalization was left unchanged.`;
   }
 
   function flattenTranslation(record: StringRecord) {
@@ -682,64 +716,13 @@
   }
 
   async function translateLineOnServer(text: string) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 120_000);
-    let response: Response;
-    try {
-      response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel, target: targetLanguage, texts: [text] }),
-        signal: controller.signal
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError')
-        throw new Error(
-          'Translation server timed out after 120 seconds. Is the Bun translation server running and downloading its model?',
-          { cause: error }
-        );
-      throw new Error(
-        `Cannot reach translation server: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error }
-      );
-    } finally {
-      window.clearTimeout(timeout);
-    }
-    const payload = await response.json();
-    if (!response.ok)
-      throw new Error(payload?.error || `Translation server returned HTTP ${response.status}.`);
-    const translated = payload?.translations?.[0];
-    if (typeof translated !== 'string') throw new Error('Translation server returned no translation text.');
-    return translated;
+    return translateLine(selectedModel, targetLanguage, text);
   }
 
   async function prepareTranslationServer() {
     translationStage = `Preparing ${MODELS.find((model) => model.id === selectedModel)?.label}… queued records will wait until the server is ready.`;
-    const warmup = await fetch('/api/warmup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel })
-    });
-    if (!warmup.ok && warmup.status !== 202) {
-      const payload = await warmup.json().catch(() => ({}));
-      throw new Error(payload?.error || `Translation server warmup returned HTTP ${warmup.status}.`);
-    }
-    const started = Date.now();
-    while (Date.now() - started < 15 * 60_000) {
-      const response = await fetch('/api/status');
-      if (!response.ok) throw new Error(`Translation server status returned HTTP ${response.status}.`);
-      const payload = await response.json();
-      const state = payload?.models?.[selectedModel];
-      if (state?.state === 'ready') {
-        translationStage = 'Translation server ready. Starting queued records…';
-        return;
-      }
-      if (state?.state === 'error')
-        throw new Error(state.message || 'Translation server failed to load the model.');
-      translationStage = state?.message || 'Waiting for the translation server…';
-      await new Promise((resolve) => window.setTimeout(resolve, 750));
-    }
-    throw new Error('Translation server did not become ready within 15 minutes.');
+    await prepareModel(selectedModel, (message) => (translationStage = message));
+    translationStage = 'Translation server ready. Starting queued records…';
   }
 
   function recordById(id: string) {
@@ -880,8 +863,8 @@
     }
   }
 
-  function updateTranslation(id: string, event: Event) {
-    saveTranslation(id, (event.currentTarget as HTMLTextAreaElement).value);
+  function updateTranslation(id: string, value: string) {
+    saveTranslation(id, value);
   }
 
   function saveTranslation(id: string, value: string) {
@@ -978,68 +961,26 @@
 </script>
 
 <main class="translation-studio">
-  <header class="app-header studio-hero">
-    <div class="hero-copy">
-      <p class="eyebrow">Doraemon Monopoly · resource studio</p>
-      <h1>Translation studio</h1>
-      <p class="subtle">Text, voices, and game-ready exports in one workspace.</p>
-    </div>
-    <nav class="studio-switcher" aria-label="Resource studios">
-      <a href="/assets" data-route>Graphics</a>
-      <a href="/fonts" data-route>Fonts</a>
-      <a class="active" href="/" data-route>Translation</a>
-    </nav>
-    <details class="resource-menu">
-      <summary>Files &amp; exports</summary>
-      <div class="resource-menu-panel">
-        <label class="load-button"
-          >Original strings.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={originalInput}
-          /></label
-        >
-        <label class="load-button"
-          >Modified strings.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={translatedArchiveInput}
-          /></label
-        >
-        <label class="load-button"
-          >sysfont.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={sysfontInput}
-          /></label
-        >
-        <label class="load-button"
-          >Original voice.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={originalVoiceInput}
-          /></label
-        >
-        <label class="load-button"
-          >Modified voice.dat<input
-            type="file"
-            accept=".dat,application/octet-stream"
-            onchange={modifiedVoiceInput}
-          /></label
-        >
-        <button type="button" data-testid="export-chinese" onclick={exportChineseRecords}
-          >Export source JSON</button
-        >
-        <button type="button" onclick={exportTranslations}>Export project JSON</button>
-        <button type="button" data-testid="export-dat" class="primary" onclick={exportStringsDat}
-          >Export strings.dat</button
-        >
-        <button type="button" class="primary" disabled={!voiceManifest} onclick={exportVoiceDat}
-          >Export voice.dat</button
-        >
-      </div>
-    </details>
-  </header>
+  <StudioHeader
+    title="Translation studio"
+    description="Text, voices, and game-ready exports in one workspace."
+    active="translation"
+    className="app-header"
+  />
+  <TranslationResourceMenu
+    hasRecords={!!records.length}
+    hasArchive={!!archiveBytes}
+    hasVoice={!!voiceManifest}
+    onOriginalStrings={originalInput}
+    onModifiedStrings={translatedArchiveInput}
+    onSysfont={sysfontInput}
+    onOriginalVoice={originalVoiceInput}
+    onModifiedVoice={modifiedVoiceInput}
+    onExportSource={exportChineseRecords}
+    onExportProject={exportTranslations}
+    onExportStrings={exportStringsDat}
+    onExportVoice={exportVoiceDat}
+  />
 
   {#if !records.length}
     <section
@@ -1077,80 +1018,32 @@
     {#if exportStatus}<p class="success" role="status">{exportStatus}</p>{/if}
     {#if voiceStatus}<p class="success" role="status">{voiceStatus}</p>{/if}
 
-    <section class="translation-command-bar">
-      <div class="command-search">
-        <label
-          >Find in this group<input
-            type="search"
-            placeholder="ID, source, or translation"
-            bind:value={search}
-          /></label
-        >
-        <span>{visibleRecords.length} records · {translatedCount} translated</span>
-      </div>
-      <div class="command-actions">
-        <button
-          type="button"
-          data-testid="translate-all"
-          disabled={translationRunning || !records.length}
-          onclick={startGenerating}
-          >{translationRunning
-            ? `${translationProgress}% generated`
-            : `Start generating ${selectedTarget.label}`}</button
-        >
-        {#if generationPaused && queuedRecordIds.length && !translationRunning}
-          <button type="button" data-testid="resume-generation" onclick={resumeGeneration}>Resume</button>
-        {/if}
-        {#if translationRunning}
-          <button
-            type="button"
-            class="quiet"
-            data-testid="pause-generation"
-            disabled={generationPaused || stopRequested}
-            onclick={requestPause}>Pause</button
-          >
-        {/if}
-        {#if translationRunning || generationPaused}
-          <button
-            type="button"
-            class="quiet danger"
-            data-testid="stop-generation"
-            disabled={stopRequested}
-            onclick={requestStop}>Stop</button
-          >
-        {/if}
-        <button type="button" onclick={copyAll}>{copied === 'all' ? 'Copied' : 'Copy visible TSV'}</button>
-        <button
-          type="button"
-          class:active={translationSettingsOpen}
-          onclick={() => (translationSettingsOpen = !translationSettingsOpen)}>Translation settings</button
-        >
-        <button type="button" class="quiet" disabled={!translatedCount} onclick={clearTranslations}
-          >Clear</button
-        >
-      </div>
-    </section>
-
-    {#if translationSettingsOpen}
-      <section class="translation-settings" aria-label="Translation settings">
-        <label
-          >Translate to<select bind:value={targetLanguage}
-            >{#each TARGET_LANGUAGES as language (language.code)}<option value={language.code}
-                >{language.label}</option
-              >{/each}</select
-          ></label
-        >
-        <label
-          >Model<select bind:value={selectedModel}
-            >{#each MODELS as model (model.id)}<option value={model.id}>{model.label}</option>{/each}</select
-          ></label
-        >
-        <label
-          >From record<input class="record-range" placeholder="000/000" bind:value={generateFrom} /></label
-        >
-        <label>To record<input class="record-range" placeholder="008/000" bind:value={generateTo} /></label>
-      </section>
-    {/if}
+    <TranslationControls
+      bind:search
+      bind:targetLanguage
+      bind:model={selectedModel}
+      bind:from={generateFrom}
+      bind:to={generateTo}
+      bind:settingsOpen={translationSettingsOpen}
+      bind:replaceOpen={replaceDrawerOpen}
+      languages={TARGET_LANGUAGES}
+      models={MODELS}
+      visibleCount={visibleRecords.length}
+      {translatedCount}
+      targetLabel={selectedTarget.label}
+      running={translationRunning}
+      paused={generationPaused}
+      stopping={stopRequested}
+      queuedCount={queuedRecordIds.length}
+      progress={translationProgress}
+      copiedAll={copied === 'all'}
+      onStart={startGenerating}
+      onResume={resumeGeneration}
+      onPause={requestPause}
+      onStop={requestStop}
+      onCopy={copyAll}
+      onClear={clearTranslations}
+    />
 
     <div class="workspace translation-workspace">
       <div class="workspace-content">
@@ -1167,105 +1060,23 @@
         </div>
         <section class="translation-list" aria-label="Decoded strings">
           {#each visibleRecords as record (record.id)}
-            <article
-              id={replacementRecordId(record)}
-              class:queued={queuedRecordSet.has(record.id)}
-              class:translating={activeRecordId === record.id}
-              class:done={!!translations[record.id]?.trim()}
-              class:manual={translationOrigin(record.id) === 'manual'}
-              class:generated={translationOrigin(record.id) === 'generated'}
-              class:imported={translationOrigin(record.id) === 'imported'}
+            <TranslationRecord
+              {record}
+              source={sourceText(record)}
+              translation={translations[record.id] || ''}
+              generationState={generationState(record)}
+              archived={isArchivedUnusedVoice(record)}
+              queued={queuedRecordSet.has(record.id)}
+              translating={activeRecordId === record.id}
+              origin={translationOrigin(record.id)}
+              locked={isLockedForQueue(record.id)}
+              copied={copied === record.id}
+              onRegenerate={() => regenerateRecord(record)}
+              onReflow={(width, preset) => reflowTranslation(record, width, preset)}
+              onFlatten={() => flattenTranslation(record)}
+              onCopy={() => copyText(sourceText(record), record.id)}
+              onTranslation={(value) => updateTranslation(record.id, value)}
             >
-              <div class="record-heading">
-                <code>{record.id}</code>
-                <div class="record-actions">
-                  {#if generationState(record)}<span class="record-state">{generationState(record)}</span
-                    >{/if}
-                  {#if isArchivedUnusedVoice(record)}
-                    <span class="record-state archived-voice-state"
-                      >Archived voice · not played by stock game</span
-                    >
-                  {/if}
-                  {#if translations[record.id]?.trim()}<button
-                      type="button"
-                      class="copy"
-                      onclick={() => regenerateRecord(record)}>Regenerate</button
-                    >{/if}
-                  <button
-                    type="button"
-                    class="copy"
-                    disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)}
-                    popovertarget={`reflow-${record.id.replace('/', '-')}`}>Reflow…</button
-                  >
-                  <button
-                    type="button"
-                    class="copy"
-                    disabled={!translations[record.id]?.trim() || isLockedForQueue(record.id)}
-                    onclick={() => flattenTranslation(record)}>Flatten lines</button
-                  >
-                  <button type="button" class="copy" onclick={() => copyText(sourceText(record), record.id)}
-                    >{copied === record.id ? 'Copied' : 'Copy source'}</button
-                  >
-                </div>
-              </div>
-              <div id={`reflow-${record.id.replace('/', '-')}`} class="reflow-popover" popover>
-                <strong>Reflow {record.id}</strong>
-                <p>
-                  Sysfont advances are measured from the text’s actual byte characters; capitalization is
-                  preserved.
-                </p>
-                <label
-                  >Maximum width (px)<input min="1" max="999" type="number" bind:value={layoutWidth} /></label
-                >
-                <div class="reflow-popover-actions">
-                  <button
-                    type="button"
-                    class="quiet"
-                    onclick={() => {
-                      layoutPreset = 'gadgets';
-                      layoutWidth = GADGETS_LAYOUT.maxWidth;
-                    }}>Gadgets preset · 87px</button
-                  >
-                  <button
-                    type="button"
-                    class="quiet"
-                    onclick={() => {
-                      layoutPreset = 'dialog';
-                      layoutWidth = DIALOG_LAYOUT.maxWidth;
-                    }}>Dialog preset · 264px</button
-                  >
-                  <button type="button" class="primary" onclick={() => reflowTranslation(record)}
-                    >Reflow text</button
-                  >
-                </div>
-              </div>
-              <pre class="source-text" lang="zh-Hant">{sourceText(record)}</pre>
-              {#if record.path[0] === 0}
-                {@const globalVoices = linkedGlobalVoices(record)}
-                {#if globalVoices.length}
-                  <section class="global-voice-strip" aria-label={`Character voices for ${record.id}`}>
-                    {#each globalVoices as linked (linked.voice.id)}
-                      <div class="global-voice-card">
-                        <strong>{linked.character}</strong>
-                        <VoiceEditor
-                          compact
-                          original={originalVoiceById.get(linked.voice.id)}
-                          working={linked.voice}
-                          replacementUrl={voiceReplacementUrls[linked.voice.id]}
-                          replacementDuration={voiceReplacementDurations[linked.voice.id]}
-                          cleared={Object.prototype.hasOwnProperty.call(voiceReplacements, linked.voice.id) &&
-                            voiceReplacements[linked.voice.id] === null}
-                          modified={isVoiceModified(linked.voice.id)}
-                          onReplace={(file) => void replaceVoice(linked.voice.id, file)}
-                          onReset={() => void restoreOriginalVoice(linked.voice.id)}
-                          onLoadOriginal={() => void loadVoicePlayback(linked.voice.id, 'original')}
-                          onLoadWorking={() => void loadVoicePlayback(linked.voice.id, 'working')}
-                        />
-                      </div>
-                    {/each}
-                  </section>
-                {/if}
-              {/if}
               {#if record.path[0] >= 3 && record.path[0] <= 8}
                 {@const voice = linkedVoice(record)}
                 {#if voice}
@@ -1284,51 +1095,69 @@
                   />
                 {/if}
               {/if}
-              <label>
-                Translation
-                <textarea
-                  rows={Math.max(2, sourceText(record).split('\n').length)}
-                  disabled={isLockedForQueue(record.id)}
-                  placeholder="Enter translation…"
-                  value={translations[record.id] || ''}
-                  oninput={(event) => updateTranslation(record.id, event)}></textarea>
-              </label>
-            </article>
+              {#if actionVoiceLine(record)}
+                <SharedVoiceLine
+                  title={`${record.id} · 00*/001/${String(record.path[1] - 20).padStart(3, '0')}`}
+                  voices={actionVoiceLine(record) ?? []}
+                  characters={voiceManifest?.characters ?? []}
+                  originalById={originalVoiceById}
+                  replacementUrls={voiceReplacementUrls}
+                  replacementDurations={voiceReplacementDurations}
+                  replacements={voiceReplacements}
+                  isModified={isVoiceModified}
+                  detailsFor={voiceOnlyDetails}
+                  onJump={openCharacterVoice}
+                  onLoadOriginal={(id) => void loadVoicePlayback(id, 'original')}
+                  onLoadWorking={(id) => void loadVoicePlayback(id, 'working')}
+                />
+              {/if}
+            </TranslationRecord>
           {/each}
         </section>
+        {#if globalVoiceReferences.length}
+          <NonDialogueVoiceLibrary
+            lines={globalVoiceLineGroups}
+            characters={voiceManifest?.characters ?? []}
+            originalById={originalVoiceById}
+            replacementUrls={voiceReplacementUrls}
+            replacementDurations={voiceReplacementDurations}
+            replacements={voiceReplacements}
+            isModified={isVoiceModified}
+            detailsFor={voiceOnlyDetails}
+            onJump={openCharacterVoice}
+            onLoadOriginal={(id) => void loadVoicePlayback(id, 'original')}
+            onLoadWorking={(id) => void loadVoicePlayback(id, 'working')}
+          />
+        {/if}
         {#if voiceOnlyRecords.length}
-          <section class="voice-only-section" aria-label="Additional character audio">
-            <div class="voice-only-heading">
-              <div>
-                <p class="eyebrow">Miscellaneous UI, gadgets, symbols, and additional voices</p>
-                <h2>Additional character audio</h2>
-              </div>
-              <span>{voiceOnlyRecords.length} slots</span>
-            </div>
-            <div class="voice-only-grid">
-              {#each voiceOnlyRecords as voice (voice.id)}
-                {@const details = voiceOnlyDetails(voice)}
-                <VoiceOnlyRecord
-                  {voice}
-                  original={originalVoiceById.get(voice.id)}
-                  {...details}
-                  replacementUrl={voiceReplacementUrls[voice.id]}
-                  replacementDuration={voiceReplacementDurations[voice.id]}
-                  cleared={Object.prototype.hasOwnProperty.call(voiceReplacements, voice.id) &&
-                    voiceReplacements[voice.id] === null}
-                  modified={isVoiceModified(voice.id)}
-                  onReplace={(file) => void replaceVoice(voice.id, file)}
-                  onReset={() => void restoreOriginalVoice(voice.id)}
-                  onLoadOriginal={() => void loadVoicePlayback(voice.id, 'original')}
-                  onLoadWorking={() => void loadVoicePlayback(voice.id, 'working')}
-                />
-              {/each}
-            </div>
-          </section>
+          <CharacterVoiceLibrary
+            voices={voiceOnlyRecords}
+            originalById={originalVoiceById}
+            replacementUrls={voiceReplacementUrls}
+            replacementDurations={voiceReplacementDurations}
+            replacements={voiceReplacements}
+            isModified={isVoiceModified}
+            detailsFor={voiceOnlyDetails}
+            onReplace={(id, file) => void replaceVoice(id, file)}
+            onReset={(id) => void restoreOriginalVoice(id)}
+            onLoadOriginal={(id) => void loadVoicePlayback(id, 'original')}
+            onLoadWorking={(id) => void loadVoicePlayback(id, 'working')}
+          />
         {/if}
       </div>
       <aside class="workspace-sidebar bottom-workspace-bar">
         <GroupNavigator bind:group {availableGroupIds} onNavigate={selectGroup} />
+      </aside>
+      <aside class:open={replaceDrawerOpen} class="replace-drawer" aria-label="Find and replace drawer">
+        <div class="replace-drawer-header">
+          <strong>Find &amp; replace</strong>
+          <button
+            type="button"
+            class="quiet"
+            aria-label="Close find and replace"
+            onclick={() => (replaceDrawerOpen = false)}>×</button
+          >
+        </div>
         <FindReplace
           bind:find={replaceFind}
           bind:replacement={replaceWith}

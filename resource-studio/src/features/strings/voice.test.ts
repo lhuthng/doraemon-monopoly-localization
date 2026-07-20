@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { dialogueVoicePath } from './voice';
+import { dialogueVoicePath, globalActionVoiceSlot } from './voice';
 
 describe('dialogue voice mapping', () => {
   test('maps version 1.26 Cantonese bank 0 without inventing later voices', () => {
@@ -25,5 +25,15 @@ describe('dialogue voice mapping', () => {
     expect(dialogueVoicePath(3, 128, banks)).toEqual([0, 3, 35]);
     expect(dialogueVoicePath(3, 129, banks)).toBeUndefined();
     expect(dialogueVoicePath(8, 130, banks)).toEqual([5, 3, 36]);
+  });
+});
+
+describe('global action voice mapping', () => {
+  test('maps only 000/031–035 to all-character bank-1 slots 011–015', () => {
+    expect([31, 32, 33, 34, 35].map((slot) => globalActionVoiceSlot(0, slot))).toEqual([11, 12, 13, 14, 15]);
+    expect(globalActionVoiceSlot(0, 8)).toBeUndefined();
+    expect(globalActionVoiceSlot(0, 30)).toBeUndefined();
+    expect(globalActionVoiceSlot(0, 36)).toBeUndefined();
+    expect(globalActionVoiceSlot(1, 31)).toBeUndefined();
   });
 });
