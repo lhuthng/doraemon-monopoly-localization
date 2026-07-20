@@ -787,11 +787,13 @@ mod windows_app {
                                 language: payload::Language::Custom,
                                 profiles: Vec::new(),
                                 strings: None,
+                                voice: None,
                                 bundled: Vec::new(),
                             });
                         payload.language = payload::Language::Custom;
                         payload.profiles.clear();
                         payload.strings = None;
+                        payload.voice = None;
                         payload
                     };
                     let icon = if selection == events_english_index {
@@ -905,6 +907,7 @@ mod windows_app {
                             language: payload::Language::Custom,
                             profiles: Vec::new(),
                             strings: None,
+                            voice: None,
                             bundled: Vec::new(),
                         });
                     let tx = events_tx.clone();

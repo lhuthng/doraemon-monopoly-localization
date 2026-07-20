@@ -7,7 +7,7 @@ use std::{
 use doraemon_game_patch::{
     cue, hash,
     payload::{self, BundledFile, FilePatch, Language, PatchProfile, Payload, RequiredFile},
-    pe, strings, sysfont,
+    pe, strings, sysfont, voice,
 };
 
 const FILES: &[&str] = &[
@@ -17,6 +17,7 @@ const FILES: &[&str] = &[
     "Sprite1.dat",
     "sprite2.dat",
     "bitmaps.dat",
+    "voice.dat",
 ];
 
 const RESOURCE_FILES: &[&str] = &[
@@ -25,6 +26,7 @@ const RESOURCE_FILES: &[&str] = &[
     "Sprite1.dat",
     "sprite2.dat",
     "bitmaps.dat",
+    "voice.dat",
 ];
 
 const SUPPORTED: &[(&str, &[&str])] = &[
@@ -59,6 +61,13 @@ const SUPPORTED: &[(&str, &[&str])] = &[
     (
         "bitmaps.dat",
         &["9bba998ed68836a2db00316a2df51901533032025a7178a1f5ea560c8d5b63c0"],
+    ),
+    (
+        "voice.dat",
+        &[
+            "e1493bad6c543fc5888f4524c166df55fa8a095c9390d646b60e314fd8c89a85",
+            "4cf31414b732d523432c36d410523e5cac4fde2b3e7ad5f367e4d7216a00e9e2",
+        ],
     ),
 ];
 
@@ -109,7 +118,7 @@ fn materialize(arguments: &[String]) -> Result<(), String> {
     for name in RESOURCE_FILES
         .iter()
         .copied()
-        .filter(|name| *name != "strings.dat")
+        .filter(|name| *name != "strings.dat" && *name != "voice.dat")
     {
         let source = read(&base, name)?;
         let rebuilt = match profile.files.iter().find(|patch| patch.name == name) {
@@ -118,6 +127,13 @@ fn materialize(arguments: &[String]) -> Result<(), String> {
         };
         fs::write(output.join(name), rebuilt).map_err(|error| format!("write {name}: {error}"))?;
     }
+    let source_voice = read(&base, "voice.dat")?;
+    let rebuilt_voice = match &payload.voice {
+        Some(patch) => voice::apply_patch(&source_voice, patch)?,
+        None => source_voice,
+    };
+    fs::write(output.join("voice.dat"), rebuilt_voice)
+        .map_err(|error| format!("write voice.dat: {error}"))?;
     println!(
         "Materialized {} resource files in {} from {}.",
         RESOURCE_FILES.len(),
@@ -442,7 +458,7 @@ fn build_profile(name: &str, base: &Path, target: &Path) -> Result<PatchProfile,
             hash: hash::bytes(&original),
             len: original.len() as u64,
         });
-        if original != localized && *file_name != "Doraemon.exe" {
+        if original != localized && !matches!(*file_name, "Doraemon.exe" | "voice.dat") {
             let patch = FilePatch::create(*file_name, &original, &localized)?;
             println!(
                 "{name} / {file_name}: {} -> {} bytes (delta {})",
@@ -506,6 +522,13 @@ fn release(arguments: &[String]) -> Result<(), String> {
         strings_patch.expected_ids.len(),
         strings_patch.replacements.len()
     );
+    let voice_patch =
+        voice::create_patch(&read(&base, "voice.dat")?, &read(&target, "voice.dat")?)?;
+    println!(
+        "voice.dat: {} records, {} changed records",
+        voice_patch.expected_ids.len(),
+        voice_patch.replacements.len()
+    );
     // Validate the code structure, not the whole-file hash. Timestamps,
     // checksums, resources, overlays, and previously applied compatible hooks
     // do not change whether the runtime instructions are patchable.
@@ -523,6 +546,7 @@ fn release(arguments: &[String]) -> Result<(), String> {
         language,
         profiles,
         strings: Some(strings_patch),
+        voice: Some(voice_patch),
         bundled: if arguments
             .iter()
             .any(|argument| argument == "--payload-only")
@@ -609,6 +633,7 @@ fn portable(arguments: &[String]) -> Result<(), String> {
             executable_portable: patch,
         }],
         strings: None,
+        voice: None,
         bundled: runtime_files(arguments)?,
     };
     let payload_path = output.join("portable.dmpatch");

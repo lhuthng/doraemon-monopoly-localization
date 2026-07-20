@@ -40,8 +40,8 @@ the game executable:
 Resource Studio provides separate views for translation, graphics, fonts, and
 map inspection:
 
-| Dialogue editing | Sprite resources | Map inspection |
-| --- | --- | --- |
+| Dialogue editing                                                                        | Sprite resources                                                                     | Map inspection                                                                            |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | <img src="docs/assets/resource-studio-dialogues.png" alt="Dialogue editor" width="260"> | <img src="docs/assets/resource-studio-sprites.png" alt="Sprite browser" width="260"> | <img src="docs/assets/resource-studio-map-inspector.png" alt="Map inspector" width="260"> |
 
 ## Current state
@@ -70,16 +70,16 @@ may still need it for music or other CD-backed data.
 
 ### Patcher options
 
-| Option | Effect |
-| --- | --- |
-| Language | Applies the selected English or Vietnamese difference payload. |
-| Skip disc check | Does not require the original CD check during patching. It does not provide CD content. |
-| Skip registry check | Skips validation of the expected Windows registry setup. |
-| Use local music | Replaces CD/MCI music playback with `Music.dat` and the bundled DirectSound helper, using a supplied WAV or CUE/BIN source. |
-| Fix volume control | Patches the legacy volume path for Windows 7+ and CrossOver. |
+| Option               | Effect                                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Language             | Applies the selected English or Vietnamese difference payload.                                                                          |
+| Skip disc check      | Does not require the original CD check during patching. It does not provide CD content.                                                 |
+| Skip registry check  | Skips validation of the expected Windows registry setup.                                                                                |
+| Use local music      | Replaces CD/MCI music playback with `Music.dat` and the bundled DirectSound helper, using a supplied WAV or CUE/BIN source.             |
+| Fix volume control   | Patches the legacy volume path for Windows 7+ and CrossOver.                                                                            |
 | Add graphics wrapper | Installs the bundled cnc-ddraw files for improved compatibility with modern graphics systems. This is separate from the language patch. |
-| Play | Launches the patched `Doraemon.exe` from the patcher's folder. |
-| Restore backup | Restores the original files saved before the last patch operation. |
+| Play                 | Launches the patched `Doraemon.exe` from the patcher's folder.                                                                          |
+| Restore backup       | Restores the original files saved before the last patch operation.                                                                      |
 
 ### Playing without the original CD music
 
@@ -119,6 +119,7 @@ sysfont.dat
 Sprite1.dat
 sprite2.dat
 bitmaps.dat
+voice.dat
 ```
 
 Never commit original game files. The setup process creates ignored local
@@ -136,7 +137,7 @@ bun run dev-vi       # Vietnamese workspace
 
 The Studio includes:
 
-- string decoding, translation, reflow, and archive rebuilding;
+- text translation, linked voice playback/replacement, reflow, and archive rebuilding;
 - font inspection and Vietnamese glyph-bank support;
 - palette-aware bitmap and sprite import/export;
 - Sprite1 and Sprite2 inspection and editing;
@@ -184,17 +185,17 @@ private original game + private edited workspace
 
 Useful commands:
 
-| Command | Purpose |
-| --- | --- |
-| `make setup` | Prepare private English and Vietnamese Studio workspaces. |
-| `make build-patch LANGUAGE=english` | Build an ignored candidate payload in `tmp/patches/`. |
-| `make build-patch LANGUAGE=vietnamese` | Build the Vietnamese candidate payload. |
-| `make build-patch LANGUAGE=english PUBLISH=1` | Write the reviewed payload to `patches/`. |
-| `make build-patch LANGUAGE=english PATCHER=1` | Build a local Windows patcher in `tmp/release/`. |
-| `make build-patcher` | Build one configurable patcher from tracked payloads. |
-| `make help` | Show the current command summary. |
+| Command                                       | Purpose                                                   |
+| --------------------------------------------- | --------------------------------------------------------- |
+| `make setup`                                  | Prepare private English and Vietnamese Studio workspaces. |
+| `make build-patch LANGUAGE=english`           | Build an ignored candidate payload in `tmp/patches/`.     |
+| `make build-patch LANGUAGE=vietnamese`        | Build the Vietnamese candidate payload.                   |
+| `make build-patch LANGUAGE=english PUBLISH=1` | Write the reviewed payload to `patches/`.                 |
+| `make build-patch LANGUAGE=english PATCHER=1` | Build a local Windows patcher in `tmp/release/`.          |
+| `make build-patcher`                          | Build one configurable patcher from tracked payloads.     |
+| `make help`                                   | Show the current command summary.                         |
 
-The Rust workspace contains the archive formats, semantic string patches,
+The Rust workspace contains the archive formats, semantic string and voice patches,
 binary deltas, executable patches, backup/restore logic, font extension, and
 CD-audio conversion. The patch-build crate packages reviewed payloads and
 builds release artifacts; the patcher crate provides the native Windows UI.

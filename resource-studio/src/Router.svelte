@@ -1,7 +1,7 @@
 <script lang="ts">
   import FontStudio from './features/fonts/FontStudio.svelte';
   import GraphicsStudio from './features/graphics/GraphicsStudio.svelte';
-  import StringStudio from './features/strings/StringStudio.svelte';
+  import TranslationStudio from './features/strings/TranslationStudio.svelte';
 
   let pathname = $state(window.location.pathname.replace(/\/+$/, '') || '/');
 
@@ -36,5 +36,5 @@
 {:else if pathname === '/fonts'}
   <FontStudio />
 {:else}
-  <StringStudio />
+  <TranslationStudio />
 {/if}

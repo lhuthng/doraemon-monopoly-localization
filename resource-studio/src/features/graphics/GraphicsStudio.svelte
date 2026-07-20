@@ -703,7 +703,7 @@
 
 <div class="asset-viewer">
   <main>
-    <header>
+    <header class="studio-hero">
       <div>
         <p class="eyebrow">DORAEMON MONOPOLY</p>
         <h1>Graphics studio</h1>
@@ -711,9 +711,12 @@
           Inspect, export, replace, and rebuild the game's indexed bitmap and sprite resources.
         </p>
       </div>
-      <div class="header-actions">
-        <a href="/" data-route>String studio</a><a href="/fonts" data-route>Font studio</a>
-      </div>
+      <nav class="studio-switcher" aria-label="Resource studios">
+        <a href="/" data-route>Translation</a><a class="active" href="/assets" data-route>Graphics</a><a
+          href="/fonts"
+          data-route>Fonts</a
+        >
+      </nav>
     </header>
 
     <section class="explanation">

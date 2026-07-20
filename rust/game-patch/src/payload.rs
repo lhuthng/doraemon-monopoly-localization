@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::{delta, hash::Hash, Result};
 
-const MAGIC: &[u8; 8] = b"DMPATCH4";
+const MAGIC: &[u8; 8] = b"DMPATCH5";
+const LEGACY_MAGIC: &[u8; 8] = b"DMPATCH4";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Language {
@@ -51,6 +52,16 @@ pub struct StringsPatch {
     pub replacements: BTreeMap<String, Vec<u8>>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct VoicePatch {
+    pub expected_ids: Vec<String>,
+    pub replacements: BTreeMap<String, Vec<u8>>,
+    pub base_hash: Hash,
+    pub target_hash: Hash,
+    pub base_len: u64,
+    pub target_len: u64,
+}
+
 impl FilePatch {
     pub fn create(name: impl Into<String>, source: &[u8], target: &[u8]) -> Result<Self> {
         Ok(Self {
@@ -93,6 +104,7 @@ pub struct Payload {
     pub language: Language,
     pub profiles: Vec<PatchProfile>,
     pub strings: Option<StringsPatch>,
+    pub voice: Option<VoicePatch>,
     pub bundled: Vec<BundledFile>,
 }
 
@@ -165,6 +177,22 @@ pub fn encode(payload: &Payload) -> Result<Vec<u8>> {
         for (id, value) in &strings.replacements {
             put_bytes(&mut output, id.as_bytes())?;
             put_bytes(&mut output, value)?;
+        }
+    }
+    output.push(payload.voice.is_some() as u8);
+    if let Some(voice) = &payload.voice {
+        output.extend_from_slice(&voice.base_hash);
+        output.extend_from_slice(&voice.target_hash);
+        output.extend_from_slice(&voice.base_len.to_le_bytes());
+        output.extend_from_slice(&voice.target_len.to_le_bytes());
+        output.extend_from_slice(&(voice.expected_ids.len() as u32).to_le_bytes());
+        for id in &voice.expected_ids {
+            put_bytes(&mut output, id.as_bytes())?;
+        }
+        output.extend_from_slice(&(voice.replacements.len() as u32).to_le_bytes());
+        for (id, packed) in &voice.replacements {
+            put_bytes(&mut output, id.as_bytes())?;
+            put_bytes(&mut output, packed)?;
         }
     }
     output.extend_from_slice(&(payload.bundled.len() as u16).to_le_bytes());
@@ -277,7 +305,9 @@ fn decode_profile(reader: &mut Reader<'_>) -> Result<PatchProfile> {
 
 pub fn decode(data: &[u8]) -> Result<Payload> {
     let mut reader = Reader { data, cursor: 0 };
-    if reader.take(MAGIC.len())? != MAGIC {
+    let magic = reader.take(MAGIC.len())?;
+    let legacy = magic == LEGACY_MAGIC;
+    if magic != MAGIC && !legacy {
         return Err("invalid patch payload magic".into());
     }
     let language = match reader.u8()? {
@@ -320,6 +350,43 @@ pub fn decode(data: &[u8]) -> Result<Payload> {
     } else {
         None
     };
+    let voice = if !legacy && reader.u8()? == 1 {
+        let base_hash = reader.take(32)?.try_into().unwrap();
+        let target_hash = reader.take(32)?.try_into().unwrap();
+        let base_len = reader.u64()?;
+        let target_len = reader.u64()?;
+        let id_count = reader.u32()? as usize;
+        let mut expected_ids = Vec::with_capacity(id_count);
+        for _ in 0..id_count {
+            expected_ids.push(
+                String::from_utf8(reader.bytes()?.to_vec())
+                    .map_err(|_| "non-UTF-8 voice record ID".to_string())?,
+            );
+        }
+        let replacement_count = reader.u32()? as usize;
+        let mut replacements = BTreeMap::new();
+        for _ in 0..replacement_count {
+            let id = String::from_utf8(reader.bytes()?.to_vec())
+                .map_err(|_| "non-UTF-8 voice replacement ID".to_string())?;
+            let packed = reader.bytes()?.to_vec();
+            if packed.is_empty()
+                || !expected_ids.contains(&id)
+                || replacements.insert(id.clone(), packed).is_some()
+            {
+                return Err(format!("invalid or duplicate voice replacement {id}"));
+            }
+        }
+        Some(VoicePatch {
+            expected_ids,
+            replacements,
+            base_hash,
+            target_hash,
+            base_len,
+            target_len,
+        })
+    } else {
+        None
+    };
     let bundled_count = reader.u16()? as usize;
     let mut bundled = Vec::with_capacity(bundled_count);
     for _ in 0..bundled_count {
@@ -332,6 +399,7 @@ pub fn decode(data: &[u8]) -> Result<Payload> {
         language,
         profiles,
         strings,
+        voice,
         bundled,
     })
 }
@@ -363,6 +431,14 @@ mod tests {
                 expected_ids: vec!["001/041".into()],
                 replacements: BTreeMap::from([("001/041".into(), b"Test\0".to_vec())]),
             }),
+            voice: Some(VoicePatch {
+                expected_ids: vec!["000/000/000".into()],
+                replacements: BTreeMap::from([("000/000/000".into(), vec![0])]),
+                base_hash: crate::hash::bytes(b"base"),
+                target_hash: crate::hash::bytes(b"target"),
+                base_len: 4,
+                target_len: 6,
+            }),
             bundled: vec![BundledFile {
                 name: "ddraw.ini".into(),
                 hash: crate::hash::bytes(b"hello"),
@@ -374,5 +450,26 @@ mod tests {
         assert_eq!(decoded.profiles[0].files[0].apply(&source).unwrap(), target);
         assert_eq!(decoded.bundled[0].bytes, b"hello");
         assert_eq!(decoded.strings.unwrap().replacements["001/041"], b"Test\0");
+        assert_eq!(decoded.voice.unwrap().replacements["000/000/000"], vec![0]);
+    }
+
+    #[test]
+    fn decodes_voice_less_version_four_payloads() {
+        let payload = Payload {
+            language: Language::English,
+            profiles: Vec::new(),
+            strings: None,
+            voice: None,
+            bundled: Vec::new(),
+        };
+        let encoded = encode(&payload).unwrap();
+        // Version four has no voice-presence byte between strings and bundled files.
+        let mut legacy = Vec::from(&LEGACY_MAGIC[..]);
+        legacy.extend_from_slice(&encoded[8..12]);
+        legacy.extend_from_slice(&encoded[13..]);
+        let decoded = decode(&legacy).unwrap();
+        assert_eq!(decoded.language, Language::English);
+        assert!(decoded.voice.is_none());
+        assert!(decoded.bundled.is_empty());
     }
 }

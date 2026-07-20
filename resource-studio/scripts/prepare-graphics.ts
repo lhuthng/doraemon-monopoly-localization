@@ -1,4 +1,5 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -11,6 +12,7 @@ import {
 } from '../src/lib/asset-formats';
 import { extractGameOneArchive } from '../src/lib/formats';
 import { parseMapAnimations, parseMapLayout } from '../src/lib/map-formats';
+import { decodeVoiceRecord, parseVoiceArchive, parseWav } from '../src/lib/voice-formats';
 
 const pageSize = 96;
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -53,6 +55,17 @@ type PreparedMap = {
   preview?: PreparedImage;
   objectCount: number;
   animationCount: number;
+};
+
+type PreparedVoiceRecord = {
+  id: string;
+  path: [number, number, number];
+  storage: 'raw' | 'compressed' | 'empty';
+  url?: string;
+  duration?: number;
+  sampleRate?: number;
+  bitsPerSample?: number;
+  hash?: string;
 };
 
 const pack = (bytes: Uint8Array | undefined) => (bytes ? Buffer.from(bytes).toString('base64') : undefined);
@@ -161,6 +174,43 @@ async function prepareMap(id: number): Promise<PreparedMap> {
   };
 }
 
+async function exists(path: string) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function prepareVoice(name: string, audioDirectory: string) {
+  const archive = parseVoiceArchive(new Uint8Array(await readFile(resolve(game, name))));
+  const records: PreparedVoiceRecord[] = [];
+  for (const record of archive.records) {
+    const wav = decodeVoiceRecord(archive, record);
+    if (!wav) {
+      records.push({ id: record.id, path: record.path, storage: record.storage });
+      continue;
+    }
+    const hash = createHash('sha256').update(wav).digest('hex');
+    const filename = `${hash}.wav`;
+    const destination = resolve(audioDirectory, filename);
+    if (!(await exists(destination))) await writeFile(destination, wav);
+    const info = parseWav(wav);
+    records.push({
+      id: record.id,
+      path: record.path,
+      storage: record.storage,
+      url: `/game/prepared/voice/audio/${filename}`,
+      duration: info.duration,
+      sampleRate: info.sampleRate,
+      bitsPerSample: info.bitsPerSample,
+      hash
+    });
+  }
+  return { name, characters: archive.characters, bankCounts: archive.bankCounts, records };
+}
+
 await rm(prepared, { recursive: true, force: true });
 await mkdir(prepared, { recursive: true });
 const archives = await Promise.all([
@@ -171,3 +221,24 @@ const archives = await Promise.all([
 await writeFile(resolve(prepared, 'catalogue.json'), JSON.stringify({ version: 1, pageSize, archives }));
 const maps = await Promise.all(mapIds(new Set(await readdir(game))).map(prepareMap));
 await writeFile(resolve(prepared, 'maps.json'), JSON.stringify({ version: 1, pageSize, maps }));
+
+const originalVoice = resolve(game, 'voice-origin.dat');
+const workingVoice = resolve(game, 'voice.dat');
+if ((await exists(originalVoice)) && (await exists(workingVoice))) {
+  const audioDirectory = resolve(prepared, 'voice', 'audio');
+  await mkdir(audioDirectory, { recursive: true });
+  // Process these sequentially. Each archive is large, so retaining both source
+  // buffers during extraction unnecessarily doubles peak preparation memory.
+  const original = await prepareVoice('voice-origin.dat', audioDirectory);
+  const working = await prepareVoice('voice.dat', audioDirectory);
+  await writeFile(
+    resolve(prepared, 'voice', 'manifest.json'),
+    JSON.stringify({
+      version: 1,
+      characters: ['Doraemon', 'Nobita', 'Dorami', 'Shizuka', 'Suneo', 'Gian'],
+      original,
+      working
+    })
+  );
+  console.log(`Prepared ${working.records.length.toLocaleString()} voice slots for voice.dat.`);
+}

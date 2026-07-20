@@ -7,7 +7,7 @@ PUBLISH ?=
 PATCHER ?=
 CNC_DDRAW_DIR ?=
 PATCHER_CNC_DDRAW_DIR := $(if $(strip $(CNC_DDRAW_DIR)),$(CNC_DDRAW_DIR),third_party/cnc-ddraw)
-RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat
+RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
 GAME_FILES := Doraemon.exe $(RESOURCE_FILES)
 
 ifeq ($(PUBLISH),1)
@@ -24,7 +24,7 @@ help:
 	  'Doraemon Monopoly localization toolkit' \
 	  '' \
 	  'Put your own untouched Cantonese game files in tmp/base/:' \
-	  '  Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat' \
+	  '  Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat' \
 	  '' \
 	  'Commands:' \
 	  '  make setup' \

@@ -49,7 +49,7 @@ function hasSignature(data: Uint8Array, offset: number) {
   return signature.every((byte, index) => data[offset + index] === byte);
 }
 
-type ArchiveNode = { path: number[]; offset: number; container: boolean };
+export type GameOneArchiveNode = { path: number[]; offset: number; end: number; container: boolean };
 
 export type GameOneArchiveEntry = {
   id: string;
@@ -59,7 +59,7 @@ export type GameOneArchiveEntry = {
   error?: string;
 };
 
-function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): ArchiveNode[] {
+function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): Omit<GameOneArchiveNode, 'end'>[] {
   if (!hasSignature(data, offset))
     throw new Error(`Missing GameOne archive header at 0x${offset.toString(16)}.`);
   const count = u32(data, offset + 0x42);
@@ -67,7 +67,7 @@ function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): Archiv
   if (count > 100_000 || table + count * 4 > data.length) {
     throw new Error(`Invalid archive entry count ${count}.`);
   }
-  const result: ArchiveNode[] = [{ path, offset, container: true }];
+  const result: Omit<GameOneArchiveNode, 'end'>[] = [{ path, offset, container: true }];
   for (let index = 0; index < count; index += 1) {
     const child = offset + u32(data, table + index * 4);
     if (child >= data.length)
@@ -77,6 +77,16 @@ function archiveNodes(data: Uint8Array, offset = 0, path: number[] = []): Archiv
     else result.push({ path: childPath, offset: child, container: false });
   }
   return result;
+}
+
+export function listGameOneArchive(data: Uint8Array): GameOneArchiveNode[] {
+  validateArchiveStructure(data);
+  const nodes = archiveNodes(data);
+  const starts = [...new Set([...nodes.map((node) => node.offset), data.length])].sort((a, b) => a - b);
+  return nodes.map((node) => ({
+    ...node,
+    end: starts.find((start) => start > node.offset) ?? data.length
+  }));
 }
 
 function validateArchiveStructure(
@@ -139,7 +149,7 @@ class CodeReader {
   }
 }
 
-function decompress(payload: Uint8Array) {
+export function decompressGameOneRecord(payload: Uint8Array) {
   if (payload.length < 5) throw new Error('Compressed string payload is too small.');
   const expected = u32(payload, 0);
   const padded = new Uint8Array(payload.length);
@@ -202,7 +212,7 @@ export function extractGameOneArchive(data: Uint8Array): GameOneArchiveEntry[] {
         return { id, path: node.path, packed: new Uint8Array(), error: 'Cannot find entry end.' };
       const packed = data.slice(node.offset, end);
       try {
-        return { id, path: node.path, packed, data: decompress(packed) };
+        return { id, path: node.path, packed, data: decompressGameOneRecord(packed) };
       } catch (error) {
         return { id, path: node.path, packed, error: error instanceof Error ? error.message : String(error) };
       }
@@ -245,7 +255,7 @@ export function parseStrings(data: Uint8Array): StringRecord[] {
     .map((node) => {
       const end = starts.find((start) => start > node.offset);
       if (end === undefined) throw new Error(`Cannot find the end of string ${node.path.join('/')}.`);
-      const bytes = decompress(data.slice(node.offset, end));
+      const bytes = decompressGameOneRecord(data.slice(node.offset, end));
       const tokens = parseTokens(bytes);
       if (tokens.at(-1)?.type !== 'end')
         throw new Error(`String ${node.path.join('/')} is not NUL-terminated.`);
@@ -275,7 +285,7 @@ function packCodes(codes: number[]) {
   return Uint8Array.from(output);
 }
 
-function compress(bytes: Uint8Array) {
+export function compressGameOneRecord(bytes: Uint8Array) {
   if (!bytes.length) throw new Error('Cannot compress an empty string.');
   const dictionary = new Map<string, number>();
   for (let byte = 0; byte < 256; byte += 1) dictionary.set(String.fromCharCode(byte), byte);
@@ -298,7 +308,7 @@ function compress(bytes: Uint8Array) {
   const payload = new Uint8Array(4 + packed.length);
   putU32(payload, 0, bytes.length);
   payload.set(packed, 4);
-  if (!decompress(payload).every((byte, index) => byte === bytes[index]))
+  if (!decompressGameOneRecord(payload).every((byte, index) => byte === bytes[index]))
     throw new Error('Internal compression verification failed.');
   return payload;
 }
@@ -380,7 +390,7 @@ export function rebuildGameOneArchive(
 
   for (const [id, decoded] of decodedReplacements) {
     if (!leafIds.has(id)) throw new Error(`Archive has no record ${id}.`);
-    replacements.set(id, compress(decoded));
+    replacements.set(id, compressGameOneRecord(decoded));
   }
 
   const rebuilt = rebuildContainer(original, 0, [], replacements);
@@ -396,6 +406,31 @@ export function rebuildGameOneArchive(
       throw new Error(`Archive verification failed for replacement ${id}.`);
     }
   }
+  return rebuilt;
+}
+
+export function rebuildGameOneArchivePacked(
+  original: Uint8Array,
+  packedReplacements: ReadonlyMap<string, Uint8Array>
+) {
+  const nodes = archiveNodes(original);
+  const starts = [...new Set([...nodes.map((node) => node.offset), original.length])].sort((a, b) => a - b);
+  const replacements = new Map<string, Uint8Array>();
+  const leafIds = new Set<string>();
+  for (const node of nodes.filter((candidate) => !candidate.container)) {
+    const end = starts.find((start) => start > node.offset);
+    if (end === undefined) throw new Error(`Cannot find original payload end for ${node.path.join('/')}.`);
+    const id = node.path.map((part) => String(part).padStart(3, '0')).join('/');
+    leafIds.add(id);
+    replacements.set(id, original.slice(node.offset, end));
+  }
+  for (const [id, packed] of packedReplacements) {
+    if (!leafIds.has(id)) throw new Error(`Archive has no record ${id}.`);
+    if (!packed.length) throw new Error(`Packed replacement ${id} is empty.`);
+    replacements.set(id, packed);
+  }
+  const rebuilt = rebuildContainer(original, 0, [], replacements);
+  validateArchiveStructure(rebuilt);
   return rebuilt;
 }
 

@@ -815,4 +815,77 @@
       justify-content: center;
     }
   }
+
+  /* Shared studio character for the graphics route. */
+  :scope {
+    color: #17345e;
+    background:
+      radial-gradient(circle at 12% -10%, rgb(92 205 255 / 0.35), transparent 28rem),
+      linear-gradient(180deg, #e9f6ff 0, #f7fbff 32rem, #f5f8fc 100%);
+    font-family:
+      Nunito,
+      Avenir Next,
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+  }
+  main {
+    width: min(1540px, calc(100% - 56px));
+    padding-bottom: 150px;
+  }
+  header.studio-hero {
+    position: relative;
+    padding: 22px 24px;
+    border: 1px solid #bed9f0;
+    border-radius: 22px;
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.98), rgb(233 247 255 / 0.9));
+    box-shadow: 0 18px 48px rgb(28 84 136 / 0.11);
+  }
+  header.studio-hero::after {
+    position: absolute;
+    right: 24px;
+    bottom: 0;
+    width: 120px;
+    height: 8px;
+    border-radius: 8px 8px 0 0;
+    background: linear-gradient(90deg, #1776d2 0 70%, #ffd530 70%);
+    content: '';
+  }
+  .studio-switcher {
+    display: flex;
+    align-self: center;
+    overflow: hidden;
+    border: 1px solid #b4d2e8;
+    border-radius: 999px;
+    background: #fff;
+  }
+  .studio-switcher a {
+    border: 0;
+    border-radius: 0;
+    padding: 8px 13px;
+    color: #46708f;
+    background: transparent;
+    box-shadow: none;
+    font-size: 0.86rem;
+    font-weight: 800;
+  }
+  .studio-switcher a.active {
+    color: #fff;
+    background: #1479d0;
+  }
+  .explanation article,
+  .load-panel,
+  .sprite-editor,
+  .sprite-export,
+  .sprite-import {
+    border-color: #c5dcee;
+    border-radius: 14px;
+  }
+  @media (max-width: 700px) {
+    main {
+      width: calc(100% - 28px);
+      padding-bottom: 100px;
+    }
+  }
 }

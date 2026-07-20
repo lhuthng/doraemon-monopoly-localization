@@ -186,7 +186,7 @@
 
 <svelte:window ondragover={(event) => event.preventDefault()} ondrop={drop} />
 <main class="font-page">
-  <header class="font-header">
+  <header class="font-header studio-hero">
     <div>
       <p class="eyebrow">DORAEMON MONOPOLY</p>
       <h1>Font studio</h1>
@@ -195,12 +195,14 @@
           Five proportional Vietnamese CC/CD banks are available.{/if}
       </p>
     </div>
-    <div class="header-actions">
-      <a class="load-button" href="/" data-route>String studio</a><a
-        class="load-button"
-        href="/assets"
-        data-route>Graphics studio</a
+    <nav class="studio-switcher" aria-label="Resource studios">
+      <a href="/" data-route>Translation</a><a href="/assets" data-route>Graphics</a><a
+        class="active"
+        href="/fonts"
+        data-route>Fonts</a
       >
+    </nav>
+    <div class="header-actions">
       <label class="load-button"
         >Load sysfont.dat<input
           type="file"

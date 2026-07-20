@@ -6,8 +6,7 @@ import sharp from 'sharp';
 
 const execFileAsync = promisify(execFile);
 
-const [, , atlasImagePath, atlasJsonPath, textArgument, ...optionArguments] =
-  process.argv;
+const [, , atlasImagePath, atlasJsonPath, textArgument, ...optionArguments] = process.argv;
 
 // Accept shell-style options after the text as a convenience. For example:
 //   bun run bitmap-text font.png font.json "TEXT" OUTLINES=0,0,0,2,r
@@ -28,9 +27,7 @@ for (const argument of optionArguments) {
   const value = argument.slice(separator + 1);
 
   if (
-    ['GLYPH_SCALE', 'OUTLINES', 'OUTPUT_DIR', 'OUTPUT_NAME', 'CLIPBOARD', 'CLIPBOARD_ONLY'].includes(
-      name,
-    )
+    ['GLYPH_SCALE', 'OUTLINES', 'OUTPUT_DIR', 'OUTPUT_NAME', 'CLIPBOARD', 'CLIPBOARD_ONLY'].includes(name)
   ) {
     process.env[name] = value;
   }
@@ -62,9 +59,7 @@ Options may also be written after the text:
 const text = textArgument ?? process.env.TEXT;
 
 if (!text) {
-  console.error(
-    'Missing text. Pass it as the third argument or set the TEXT environment variable.',
-  );
+  console.error('Missing text. Pass it as the third argument or set the TEXT environment variable.');
   process.exit(1);
 }
 
@@ -101,9 +96,7 @@ function parseGlyphScale(value) {
   }
 
   if (!Number.isFinite(scale) || scale <= 0) {
-    throw new Error(
-      `Invalid GLYPH_SCALE "${value}". Examples: "90%", "90", or "0.9".`,
-    );
+    throw new Error(`Invalid GLYPH_SCALE "${value}". Examples: "90%", "90", or "0.9".`);
   }
 
   return scale;
@@ -119,8 +112,7 @@ function parseOutlines(value) {
 
     if (parts.length !== 5) {
       throw new Error(
-        `Invalid outline #${index + 1}: "${outlineText}". ` +
-          'Expected red,green,blue,width,style.',
+        `Invalid outline #${index + 1}: "${outlineText}". ` + 'Expected red,green,blue,width,style.'
       );
     }
 
@@ -135,29 +127,20 @@ function parseOutlines(value) {
     for (const [name, channelValue] of [
       ['red', red],
       ['green', green],
-      ['blue', blue],
+      ['blue', blue]
     ]) {
-      if (
-        !Number.isInteger(channelValue) ||
-        channelValue < 0 ||
-        channelValue > 255
-      ) {
-        throw new Error(
-          `Invalid ${name} value in outline #${index + 1}: ${channelValue}`,
-        );
+      if (!Number.isInteger(channelValue) || channelValue < 0 || channelValue > 255) {
+        throw new Error(`Invalid ${name} value in outline #${index + 1}: ${channelValue}`);
       }
     }
 
     if (!Number.isInteger(width) || width < 0) {
-      throw new Error(
-        `Invalid width in outline #${index + 1}: ${widthText}`,
-      );
+      throw new Error(`Invalid width in outline #${index + 1}: ${widthText}`);
     }
 
     if (style !== 'r' && style !== 's') {
       throw new Error(
-        `Invalid style in outline #${index + 1}: "${styleText}". ` +
-          'Use "r" for rounded or "s" for square.',
+        `Invalid style in outline #${index + 1}: "${styleText}". ` + 'Use "r" for rounded or "s" for square.'
       );
     }
 
@@ -166,7 +149,7 @@ function parseOutlines(value) {
       green,
       blue,
       width,
-      style,
+      style
     };
   });
 }
@@ -187,9 +170,7 @@ function validateAtlas(atlas) {
 
     for (const field of ['x', 'y', 'w', 'h']) {
       if (!Number.isFinite(glyph[field])) {
-        throw new Error(
-          `Glyph "${character}" is missing numeric field "${field}".`,
-        );
+        throw new Error(`Glyph "${character}" is missing numeric field "${field}".`);
       }
     }
 
@@ -197,13 +178,8 @@ function validateAtlas(atlas) {
       throw new Error(`Glyph "${character}" must have positive w and h.`);
     }
 
-    if (
-      glyph.advance !== undefined &&
-      (!Number.isFinite(glyph.advance) || glyph.advance <= 0)
-    ) {
-      throw new Error(
-        `Glyph "${character}" has an invalid "advance" value.`,
-      );
+    if (glyph.advance !== undefined && (!Number.isFinite(glyph.advance) || glyph.advance <= 0)) {
+      throw new Error(`Glyph "${character}" has an invalid "advance" value.`);
     }
   }
 }
@@ -212,38 +188,26 @@ function assertSupportedText(input, glyphs) {
   const allowedPattern = /^[A-Z0-9 \-\r\n]+$/;
 
   if (!allowedPattern.test(input)) {
-    const unsupported = [
-      ...new Set(
-        [...input].filter(
-          (character) => !/[A-Z0-9 \-\r\n]/.test(character),
-        ),
-      ),
-    ];
+    const unsupported = [...new Set([...input].filter((character) => !/[A-Z0-9 \-\r\n]/.test(character)))];
 
     throw new Error(
       `Unsupported character(s): ${unsupported
         .map((character) => JSON.stringify(character))
-        .join(', ')}. Only A-Z, 0-9, "-", spaces, and newlines are allowed.`,
+        .join(', ')}. Only A-Z, 0-9, "-", spaces, and newlines are allowed.`
     );
   }
 
   const missing = [
     ...new Set(
       [...input].filter(
-        (character) =>
-          character !== ' ' &&
-          character !== '\n' &&
-          character !== '\r' &&
-          !glyphs[character],
-      ),
-    ),
+        (character) => character !== ' ' && character !== '\n' && character !== '\r' && !glyphs[character]
+      )
+    )
   ];
 
   if (missing.length > 0) {
     throw new Error(
-      `The atlas JSON does not define: ${missing
-        .map((character) => JSON.stringify(character))
-        .join(', ')}`,
+      `The atlas JSON does not define: ${missing.map((character) => JSON.stringify(character)).join(', ')}`
     );
   }
 }
@@ -286,12 +250,7 @@ function dilateAlpha(sourceAlpha, width, height, radius, style) {
         const sourceX = x + offset.x;
         const sourceY = y + offset.y;
 
-        if (
-          sourceX < 0 ||
-          sourceX >= width ||
-          sourceY < 0 ||
-          sourceY >= height
-        ) {
+        if (sourceX < 0 || sourceX >= width || sourceY < 0 || sourceY >= height) {
           continue;
         }
 
@@ -330,7 +289,7 @@ function makeColoredMask(alpha, width, height, color) {
 
 async function writeResult(buffer, outputPath) {
   const clipboardOnly = /^(1|true|yes)$/i.test(
-    process.env.CLIPBOARD?.trim() || process.env.CLIPBOARD_ONLY?.trim() || '',
+    process.env.CLIPBOARD?.trim() || process.env.CLIPBOARD_ONLY?.trim() || ''
   );
 
   await fs.writeFile(outputPath, buffer);
@@ -343,15 +302,12 @@ async function writeResult(buffer, outputPath) {
     throw new Error('CLIPBOARD=1 currently requires macOS.');
   }
 
-  const appleScriptPath = path
-    .resolve(outputPath)
-    .replaceAll('\\', '\\\\')
-    .replaceAll('"', '\\"');
+  const appleScriptPath = path.resolve(outputPath).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 
   try {
     await execFileAsync('osascript', [
       '-e',
-      `set the clipboard to (read (POSIX file "${appleScriptPath}") as «class PNGf»)`,
+      `set the clipboard to (read (POSIX file "${appleScriptPath}") as «class PNGf»)`
     ]);
   } finally {
     await fs.rm(outputPath, { force: true });
@@ -383,9 +339,7 @@ async function main() {
   assertSupportedText(text, atlas.glyphs);
 
   const gapWidth = Number.isFinite(atlas.gapWidth) ? atlas.gapWidth : 0;
-  const spaceWidth = Number.isFinite(atlas.spaceWidth)
-    ? atlas.spaceWidth
-    : 20;
+  const spaceWidth = Number.isFinite(atlas.spaceWidth) ? atlas.spaceWidth : 20;
   const lineGap = Number.isFinite(atlas.lineGap) ? atlas.lineGap : 0;
 
   const glyphEntries = Object.values(atlas.glyphs);
@@ -393,9 +347,7 @@ async function main() {
   // Compose at native atlas size first. The completed text layer is then
   // nearest-neighbour scaled as one image, before fixed-pixel outlines are
   // applied. This preserves hard pixel edges and scales all layout metrics.
-  const largestGlyphHeight = Math.max(
-    ...glyphEntries.map((glyph) => Math.max(1, Math.round(glyph.h))),
-  );
+  const largestGlyphHeight = Math.max(...glyphEntries.map((glyph) => Math.max(1, Math.round(glyph.h))));
   const configuredLineHeight = Number.isFinite(atlas.lineHeight)
     ? Math.max(1, Math.round(atlas.lineHeight))
     : largestGlyphHeight;
@@ -411,11 +363,7 @@ async function main() {
     const line = lines[lineIndex];
     let cursorX = 0;
 
-    for (
-      let characterIndex = 0;
-      characterIndex < line.length;
-      characterIndex += 1
-    ) {
+    for (let characterIndex = 0; characterIndex < line.length; characterIndex += 1) {
       const character = line[characterIndex];
 
       if (character === ' ') {
@@ -438,12 +386,10 @@ async function main() {
         x: cursorX,
         y: lineIndex * (lineHeight + lineGap),
         width: renderedWidth,
-        height: renderedHeight,
+        height: renderedHeight
       });
 
-      const unscaledAdvance = Number.isFinite(glyph.advance)
-        ? glyph.advance
-        : glyph.w;
+      const unscaledAdvance = Number.isFinite(glyph.advance) ? glyph.advance : glyph.w;
 
       const renderedAdvance = Math.max(1, Math.round(unscaledAdvance));
 
@@ -462,26 +408,22 @@ async function main() {
   // outlines and wide glyphs are not clipped or shifted into the next line.
   const glyphRight = placements.reduce(
     (right, placement) => Math.max(right, placement.x + placement.width),
-    0,
+    0
   );
   const glyphBottom = placements.reduce(
     (bottom, placement) => Math.max(bottom, placement.y + placement.height),
-    0,
+    0
   );
 
   const contentWidth = Math.max(1, ...lineWidths, glyphRight);
 
   const contentHeight = Math.max(
     1,
-    lines.length * lineHeight +
-      Math.max(0, lines.length - 1) * lineGap,
-    glyphBottom,
+    lines.length * lineHeight + Math.max(0, lines.length - 1) * lineGap,
+    glyphBottom
   );
 
-  const outerOutlineRadius = outlines.reduce(
-    (total, outline) => total + outline.width,
-    0,
-  );
+  const outerOutlineRadius = outlines.reduce((total, outline) => total + outline.width, 0);
 
   const scaledContentWidth = Math.max(1, Math.round(contentWidth * glyphScale));
   const scaledContentHeight = Math.max(1, Math.round(contentHeight * glyphScale));
@@ -496,7 +438,7 @@ async function main() {
         left: Math.round(placement.glyph.x),
         top: Math.round(placement.glyph.y),
         width: Math.round(placement.glyph.w),
-        height: Math.round(placement.glyph.h),
+        height: Math.round(placement.glyph.h)
       })
       .png()
       .toBuffer();
@@ -504,7 +446,7 @@ async function main() {
     composites.push({
       input: extractedGlyph,
       left: Math.round(placement.x),
-      top: Math.round(placement.y),
+      top: Math.round(placement.y)
     });
   }
 
@@ -513,8 +455,8 @@ async function main() {
       width: contentWidth,
       height: contentHeight,
       channels: 4,
-      background: '#00000000',
-    },
+      background: '#00000000'
+    }
   })
     .composite(composites)
     .png()
@@ -523,7 +465,7 @@ async function main() {
   const scaledGlyphLayer = await sharp(nativeGlyphLayer)
     .resize(scaledContentWidth, scaledContentHeight, {
       fit: 'fill',
-      kernel: sharp.kernel.nearest,
+      kernel: sharp.kernel.nearest
     })
     .png()
     .toBuffer();
@@ -533,15 +475,15 @@ async function main() {
       width: canvasWidth,
       height: canvasHeight,
       channels: 4,
-      background: '#00000000',
-    },
+      background: '#00000000'
+    }
   })
     .composite([
       {
         input: scaledGlyphLayer,
         left: outerOutlineRadius,
-        top: outerOutlineRadius,
-      },
+        top: outerOutlineRadius
+      }
     ])
     .png()
     .toBuffer();
@@ -555,7 +497,7 @@ async function main() {
     console.log(
       /^(1|true|yes)$/i.test(process.env.CLIPBOARD?.trim() || process.env.CLIPBOARD_ONLY?.trim() || '')
         ? 'Copied PNG to the clipboard.'
-        : `Wrote ${outputPath}`,
+        : `Wrote ${outputPath}`
     );
     return;
   }
@@ -586,13 +528,7 @@ async function main() {
   let currentAlpha = glyphAlpha;
 
   for (const outline of outlines) {
-    const expandedAlpha = dilateAlpha(
-      currentAlpha,
-      canvasWidth,
-      canvasHeight,
-      outline.width,
-      outline.style,
-    );
+    const expandedAlpha = dilateAlpha(currentAlpha, canvasWidth, canvasHeight, outline.width, outline.style);
 
     // Keep each layer as a ring. Compositing complete expanded masks causes
     // adjacent outline colors to overlap and makes the style of an outer
@@ -600,19 +536,14 @@ async function main() {
     const ringAlpha = subtractAlpha(expandedAlpha, currentAlpha);
     currentAlpha = expandedAlpha;
 
-    const coloredPixels = makeColoredMask(
-      ringAlpha,
-      canvasWidth,
-      canvasHeight,
-      outline,
-    );
+    const coloredPixels = makeColoredMask(ringAlpha, canvasWidth, canvasHeight, outline);
 
     const layerBuffer = await sharp(coloredPixels, {
       raw: {
         width: canvasWidth,
         height: canvasHeight,
-        channels: 4,
-      },
+        channels: 4
+      }
     })
       .png()
       .toBuffer();
@@ -627,7 +558,7 @@ async function main() {
     finalComposites.push({
       input: outlineLayers[index],
       left: 0,
-      top: 0,
+      top: 0
     });
   }
 
@@ -635,16 +566,16 @@ async function main() {
   finalComposites.push({
     input: glyphLayer,
     left: 0,
-    top: 0,
+    top: 0
   });
 
   const result = await sharp({
-      create: {
+    create: {
       width: canvasWidth,
       height: canvasHeight,
       channels: 4,
-      background: '#00000000',
-    },
+      background: '#00000000'
+    }
   })
     .composite(finalComposites)
     .png()
@@ -655,7 +586,7 @@ async function main() {
   console.log(
     /^(1|true|yes)$/i.test(process.env.CLIPBOARD?.trim() || process.env.CLIPBOARD_ONLY?.trim() || '')
       ? 'Copied PNG to the clipboard.'
-      : `Wrote ${outputPath}`,
+      : `Wrote ${outputPath}`
   );
 }
 

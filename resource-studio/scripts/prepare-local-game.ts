@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const language = process.argv[2];
 const gameFolder = process.argv[3];
 const force = process.argv.slice(4).includes('--force');
-const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat'];
+const files = ['strings.dat', 'sysfont.dat', 'Sprite1.dat', 'sprite2.dat', 'bitmaps.dat', 'voice.dat'];
 
 if (language !== 'english' && language !== 'vietnamese') {
   throw new Error('Choose a workspace: english or vietnamese.');
@@ -70,6 +70,17 @@ if (await exists(originalStrings)) {
   }
 } else {
   await copyFile(sourceStrings, originalStrings);
+}
+const originalVoice = resolve(origin, 'voice.dat');
+const sourceVoice = resolve(source, 'voice.dat');
+if (await exists(originalVoice)) {
+  if (!(await readFile(originalVoice)).equals(await readFile(sourceVoice))) {
+    throw new Error(
+      `${originalVoice} belongs to a different original game. Move it aside before preparing this workspace.`
+    );
+  }
+} else {
+  await copyFile(sourceVoice, originalVoice);
 }
 
 await mkdir(target, { recursive: true });
