@@ -84,11 +84,12 @@ may still need it for music or other CD-backed data.
 ### Playing without the original CD music
 
 The game's music is stored on the CD and accessed through the old MCI/CD audio
-path. To use local music instead, provide either a matching
-`DoraemonMusic.wav` or the original matching CUE/BIN files beside the game,
-then enable **Use local music** in the patcher. It creates `Music.dat` and
-installs the small DirectSound helper needed for playback. Without that option,
-the original CD/MCI behavior is left in place.
+path. To use local music instead, place the original CUE/BIN pair beside the
+game, then enable **Use local music** in the patcher. It converts the audio
+into `Music.dat` and installs the small DirectSound helper needed for playback.
+You may also place a pre-built `Music.dat` directly; the patcher will recognise
+it without conversion. Without that option, the original CD/MCI behavior is
+left in place.
 
 ### Compatibility notes
 
