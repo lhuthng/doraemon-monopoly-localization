@@ -18,6 +18,10 @@ pub struct ApplyOptions {
     pub local_audio: bool,
     pub modern_volume: bool,
     pub cue: Option<PathBuf>,
+    pub reduce_bgm: bool,
+    pub optimize_voice: bool,
+    pub voice_compression: voice::Compression,
+    pub keep_compressed_audio: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -466,15 +470,24 @@ fn apply_compatibility(
         });
     }
     if backup.exists() && !discard_restored_backup(&backup, folder, sink)? {
-        progress(
-            sink,
-            TaskState::Failed,
-            "A backup exists, but this run would change additional files.",
-            None,
-        );
-        return Err(
-            "some requested executable changes are still missing, but an existing backup protects a previous install; restore first, then apply again".into(),
-        );
+        if options.keep_compressed_audio {
+            progress(
+                sink,
+                TaskState::Skipped,
+                "Stale backup will be updated to include your kept compressed audio.",
+                Some(50),
+            );
+        } else {
+            progress(
+                sink,
+                TaskState::Failed,
+                "A backup exists, but this run would change additional files.",
+                None,
+            );
+            return Err(
+                "some requested executable changes are still missing, but an existing backup protects a previous install; restore first, then apply again".into(),
+            );
+        }
     }
 
     let staged_exe = staging.join("Doraemon.exe");
@@ -497,19 +510,36 @@ fn apply_compatibility(
         "Creating your original-file backup…",
         Some(60),
     );
+    let mut originals: Vec<(String, hash::Hash)> = Vec::new();
+    if let Ok(old_originals) = verified_backup_files(&backup) {
+        for (name, hash) in old_originals {
+            if name != "Doraemon.exe" {
+                originals.push((name, hash));
+            }
+        }
+    }
     fs::copy(&exe_path, backup.join("original/Doraemon.exe"))
         .map_err(|e| format!("backup Doraemon.exe: {e}"))?;
+    originals.push(("Doraemon.exe".into(), hash::bytes(&original)));
     fs::copy(patcher_exe, backup.join("Restore.exe"))
         .map_err(|e| format!("create Restore.exe: {e}"))?;
-    let original_hash = hash::bytes(&original);
-    let created_files: Vec<_> = local_audio
+    let mut created_files: Vec<_> = local_audio
         .created
         .iter()
         .map(|(name, _, digest)| (name.clone(), *digest))
         .collect();
+    if let Ok(old_manifest) = fs::read_to_string(backup.join("manifest.json")) {
+        if let Ok(old_created) = manifest_created_files(&old_manifest) {
+            for (name, hash) in old_created {
+                if !created_files.iter().any(|(n, _)| n == &name) {
+                    created_files.push((name, hash));
+                }
+            }
+        }
+    }
     let manifest = backup_manifest(
         payload.language.label(),
-        &[("Doraemon.exe".into(), original_hash)],
+        &originals,
         &created_files,
     );
     write_synced(&backup.join("manifest.json"), manifest.as_bytes())?;
@@ -545,6 +575,166 @@ fn apply_compatibility(
     Ok(ApplyReport { changed, audio })
 }
 
+fn apply_audio(
+    folder: &Path,
+    options: &ApplyOptions,
+    patcher_exe: &Path,
+    sink: &mut ProgressSink<'_>,
+) -> Result<ApplyReport> {
+    let staging = folder.join(".doraemon-audio-staging");
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir(&staging).map_err(|error| error.to_string())?;
+    let mut prepared: Vec<(String, Option<PathBuf>, PathBuf, hash::Hash)> = Vec::new();
+
+    if options.optimize_voice {
+        let source_path = find_file(folder, "voice.dat")?;
+        let source =
+            fs::read(&source_path).map_err(|error| format!("{}: {error}", source_path.display()))?;
+        progress(sink, TaskState::Working, "Preparing Voice.dat...", Some(10));
+        let output = voice::compress_audio(&source, options.voice_compression)?;
+        if output != source {
+            let staged = staging.join("voice.dat");
+            write_synced(&staged, &output)?;
+            prepared.push((
+                "voice.dat".into(),
+                Some(source_path),
+                staged,
+                hash::bytes(&output),
+            ));
+        } else {
+            progress(
+                sink,
+                TaskState::Skipped,
+                "Voice.dat is already using the selected quality.",
+                Some(30),
+            );
+        }
+    }
+
+    if options.reduce_bgm {
+        progress(sink, TaskState::Working, "Preparing BGM.dat...", Some(35));
+        if matches!(
+            options.voice_compression,
+            voice::Compression::Balanced | voice::Compression::Compact
+        ) {
+            let executable = fs::read(find_file(folder, "Doraemon.exe")?)
+                .map_err(|error| format!("read Doraemon.exe: {error}"))?;
+            if executable.windows(7).any(|window| window == b"BGMRT3\0") {
+                return Err(
+                    "Apply patch once to update local music, then apply the smaller BGM quality"
+                        .into(),
+                );
+            }
+        }
+        let staged = staging.join("BGM.dat");
+        let wav = folder.join("DoraemonMusic.wav");
+        if cue::valid_wav(&wav) {
+            music::encode_wav_quality(&wav, &staged, options.voice_compression)?;
+        } else if let Some(cue_path) = options.cue.as_ref().filter(|path| cue::valid_cue(path)) {
+            music::encode_cue_quality(cue_path, &staged, options.voice_compression)?;
+        } else {
+            return Err(
+                "BGM reduction needs the verified CUE/BIN or DoraemonMusic.wav source".into(),
+            );
+        }
+        let target = folder.join("BGM.dat");
+        let digest = hash::file(&staged)?;
+        if target.exists() && hash::file(&target)? == digest {
+            fs::remove_file(&staged).ok();
+            progress(
+                sink,
+                TaskState::Skipped,
+                "BGM.dat is already reduced.",
+                Some(50),
+            );
+        } else {
+            prepared.push((
+                "BGM.dat".into(),
+                target.exists().then_some(target),
+                staged,
+                digest,
+            ));
+        }
+    }
+
+    if prepared.is_empty() {
+        let _ = fs::remove_dir(&staging);
+        return Ok(ApplyReport {
+            changed: Vec::new(),
+            audio: "Audio is already using the selected settings.".into(),
+        });
+    }
+
+    let backup = folder.join("backup");
+    let reuse = backup.exists() && !discard_restored_backup(&backup, folder, sink)?;
+    fs::create_dir_all(backup.join("original")).map_err(|error| error.to_string())?;
+    let mut originals = if reuse {
+        verified_backup_files(&backup)?
+    } else {
+        HashMap::new()
+    };
+    let mut created = if reuse {
+        let manifest = fs::read_to_string(backup.join("manifest.json"))
+            .map_err(|error| format!("read backup manifest: {error}"))?;
+        manifest_created_files(&manifest)?
+    } else {
+        HashMap::new()
+    };
+    for (name, source, _, target_hash) in &prepared {
+        if created.contains_key(name) {
+            created.insert(name.clone(), *target_hash);
+        } else if let Some(source) = source {
+            if !originals.contains_key(name) && !created.contains_key(name) {
+                let destination = backup.join("original").join(name);
+                fs::copy(source, &destination)
+                    .map_err(|error| format!("backup {name}: {error}"))?;
+                originals.insert(name.clone(), hash::file(&destination)?);
+            }
+        } else {
+            created.insert(name.clone(), *target_hash);
+        }
+    }
+    let mut originals: Vec<_> = originals.into_iter().collect();
+    let mut created: Vec<_> = created.into_iter().collect();
+    originals.sort_by(|a, b| a.0.cmp(&b.0));
+    created.sort_by(|a, b| a.0.cmp(&b.0));
+    fs::copy(patcher_exe, backup.join("Restore.exe"))
+        .map_err(|error| format!("create Restore.exe: {error}"))?;
+    let manifest = backup_manifest("Audio", &originals, &created);
+    write_synced(&backup.join("manifest.json"), manifest.as_bytes())?;
+
+    progress(
+        sink,
+        TaskState::Working,
+        "Installing audio...",
+        Some(75),
+    );
+    let mut changed = Vec::new();
+    for (name, source, staged, expected) in prepared {
+        let target = source.unwrap_or_else(|| folder.join(&name));
+        replace_file(&staged, &target)?;
+        if hash::file(&target)? != expected {
+            return Err(format!(
+                "{name} failed installation verification; restore from backup"
+            ));
+        }
+        changed.push(name);
+    }
+    let _ = fs::remove_dir(&staging);
+    progress(
+        sink,
+        TaskState::Done,
+        "Audio was reduced and verified.",
+        Some(100),
+    );
+    Ok(ApplyReport {
+        changed,
+        audio: "Audio files were updated.".into(),
+    })
+}
+
 pub fn apply(
     folder: &Path,
     payload: &Payload,
@@ -575,6 +765,9 @@ pub fn apply_with_progress(
             None,
         );
         return Err(format!("{} is not a game folder", folder.display()));
+    }
+    if payload.language == Language::Custom && (options.optimize_voice || options.reduce_bgm) {
+        return apply_audio(folder, options, patcher_exe, sink);
     }
     if payload.language == Language::Custom {
         return apply_compatibility(folder, payload, options, patcher_exe, sink);
@@ -611,24 +804,28 @@ pub fn apply_with_progress(
             }
         }
         if let Some(voice_patch) = &payload.voice {
-            match find_file(folder, "voice.dat")
-                .and_then(|path| fs::read(&path).map_err(|e| format!("{}: {e}", path.display())))
-            {
-                Ok(bytes) => {
-                    let digest = hash::bytes(&bytes);
-                    if !((digest == voice_patch.base_hash
-                        && bytes.len() as u64 == voice_patch.base_len)
-                        || (digest == voice_patch.target_hash
-                            && bytes.len() as u64 == voice_patch.target_len))
-                    {
-                        base_ok = false;
-                        mismatches
-                            .push("voice.dat does not match this localization payload".into());
+            if options.keep_compressed_audio {
+                // user chose to keep the current compressed voice.dat as-is
+            } else {
+                match find_file(folder, "voice.dat")
+                    .and_then(|path| fs::read(&path).map_err(|e| format!("{}: {e}", path.display())))
+                {
+                    Ok(bytes) => {
+                        let digest = hash::bytes(&bytes);
+                        if !((digest == voice_patch.base_hash
+                            && bytes.len() as u64 == voice_patch.base_len)
+                            || (digest == voice_patch.target_hash
+                                && bytes.len() as u64 == voice_patch.target_len))
+                        {
+                            base_ok = false;
+                            mismatches
+                                .push("voice.dat does not match this localization payload".into());
+                        }
                     }
-                }
-                Err(_) => {
-                    base_ok = false;
-                    mismatches.push("voice.dat is missing".into());
+                    Err(_) => {
+                        base_ok = false;
+                        mismatches.push("voice.dat is missing".into());
+                    }
                 }
             }
         }
@@ -656,16 +853,18 @@ pub fn apply_with_progress(
                     mismatches.push(format!("{} does not match", required.name));
                 }
             } else if required.name.eq_ignore_ascii_case("voice.dat") {
-                if let Some(voice_patch) = &payload.voice {
-                    if (digest != required.hash || length != required.len)
-                        && (digest != voice_patch.target_hash || length != voice_patch.target_len)
-                    {
+                if !options.keep_compressed_audio {
+                    if let Some(voice_patch) = &payload.voice {
+                        if (digest != required.hash || length != required.len)
+                            && (digest != voice_patch.target_hash || length != voice_patch.target_len)
+                        {
+                            base_ok = false;
+                            mismatches.push(format!("{} does not match", required.name));
+                        }
+                    } else if digest != required.hash || length != required.len {
                         base_ok = false;
                         mismatches.push(format!("{} does not match", required.name));
                     }
-                } else if digest != required.hash || length != required.len {
-                    base_ok = false;
-                    mismatches.push(format!("{} does not match", required.name));
                 }
             } else if digest != required.hash || length != required.len {
                 base_ok = false;
@@ -746,52 +945,68 @@ pub fn apply_with_progress(
             );
         }
     }
-    if let Some(voice_patch) = &payload.voice {
-        let source_path = find_file(folder, "voice.dat")?;
-        let source = fs::read(&source_path)
-            .map_err(|error| format!("{}: {error}", source_path.display()))?;
-        progress(
-            sink,
-            TaskState::Working,
-            "Checking voice.dat records…",
-            Some(31),
-        );
-        if voice::matches(&source, voice_patch) {
-            progress(
-                sink,
-                TaskState::Skipped,
-                format!(
-                    "voice.dat already contains all {} changed voice records.",
-                    voice::replacement_count(voice_patch)
-                ),
-                Some(33),
-            );
-        } else {
+    if !options.keep_compressed_audio {
+        if let Some(voice_patch) = &payload.voice {
+            let source_path = find_file(folder, "voice.dat")?;
+            let source = fs::read(&source_path)
+                .map_err(|error| format!("{}: {error}", source_path.display()))?;
             progress(
                 sink,
                 TaskState::Working,
-                format!(
-                    "Updating {} voice records and rebuilding voice.dat…",
-                    voice::replacement_count(voice_patch)
-                ),
-                Some(32),
+                "Checking voice.dat records…",
+                Some(31),
             );
-            let output = voice::apply_patch(&source, voice_patch)?;
-            let temporary = staging.join("voice.dat");
-            write_synced(&temporary, &output)?;
-            generated.push((
-                "voice.dat".to_string(),
-                source_path,
-                temporary,
-                voice_patch.target_hash,
-            ));
-            progress(
-                sink,
-                TaskState::Done,
-                "voice.dat records and archive offsets verified.",
-                Some(34),
-            );
+            if voice::matches(&source, voice_patch) && !options.optimize_voice {
+                progress(
+                    sink,
+                    TaskState::Skipped,
+                    format!(
+                        "voice.dat already contains all {} changed voice records.",
+                        voice::replacement_count(voice_patch)
+                    ),
+                    Some(33),
+                );
+            } else {
+                progress(
+                    sink,
+                    TaskState::Working,
+                    format!(
+                        "Updating {} voice records and rebuilding voice.dat…",
+                        voice::replacement_count(voice_patch)
+                    ),
+                    Some(32),
+                );
+                let mut output = voice::apply_patch(&source, voice_patch)?;
+                if options.optimize_voice { output = voice::compress_audio(&output, options.voice_compression)?; }
+                let temporary = staging.join("voice.dat");
+                write_synced(&temporary, &output)?;
+                generated.push((
+                    "voice.dat".to_string(),
+                    source_path,
+                    temporary,
+                    voice_patch.target_hash,
+                ));
+                progress(
+                    sink,
+                    TaskState::Done,
+                    "voice.dat records and archive offsets verified.",
+                    Some(34),
+                );
+            }
+        } else if options.optimize_voice {
+            let source_path = find_file(folder, "voice.dat")?;
+            let source = fs::read(&source_path).map_err(|error| format!("{}: {error}", source_path.display()))?;
+            let output = voice::compress_audio(&source, options.voice_compression)?;
+            if output != source {
+                let temporary = staging.join("voice.dat");
+                write_synced(&temporary, &output)?;
+                let digest = hash::bytes(&output);
+                generated.push(("voice.dat".to_string(), source_path, temporary, digest));
+                progress(sink, TaskState::Done, "voice.dat audio was reduced and verified.", Some(34));
+            }
         }
+    } else {
+        progress(sink, TaskState::Skipped, "Keeping compressed voice.dat as-is.", Some(34));
     }
     for patch in &patches {
         let source_path = find_file(folder, &patch.name)?;
@@ -829,7 +1044,16 @@ pub fn apply_with_progress(
         );
     }
 
-    let local_audio = prepare_local_audio(folder, &staging, payload, options, sink)?;
+    let local_audio = if !options.keep_compressed_audio {
+        prepare_local_audio(folder, &staging, payload, options, sink)?
+    } else {
+        progress(sink, TaskState::Skipped, "Keeping compressed BGM.dat as-is.", Some(42));
+        LocalAudioPreparation {
+            enabled: false,
+            summary: "Compressed audio files were kept as-is per user choice.".into(),
+            created: Vec::new(),
+        }
+    };
     let exe_path = find_file(folder, "Doraemon.exe")?;
     let exe_source =
         fs::read(&exe_path).map_err(|error| format!("{}: {error}", exe_path.display()))?;
@@ -893,32 +1117,51 @@ pub fn apply_with_progress(
             Some(60),
         );
         let originals = verified_backup_files(&backup)?;
+        let mut missing = Vec::new();
         for (name, _, _, _) in &generated {
             if !originals.contains_key(name) {
-                return Err(format!(
-                    "the existing backup does not contain an original {name}; restore before applying this additional change"
-                ));
+                missing.push(name.clone());
             }
         }
-        if !local_audio.created.is_empty() {
-            return Err("the existing backup does not own these newly generated local-music files; restore before adding local music".into());
+        if !missing.is_empty() {
+            if options.keep_compressed_audio {
+                progress(
+                    sink,
+                    TaskState::Skipped,
+                    format!("Existing backup is incomplete (no original {}). Creating a fresh backup.", missing.join(", ")),
+                    Some(60),
+                );
+                fs::remove_dir_all(&backup).map_err(|error| format!("remove stale backup: {error}"))?;
+            } else {
+                return Err(format!(
+                    "the existing backup does not contain an original {}; restore before applying this additional change",
+                    missing[0]
+                ));
+            }
+        } else {
+            if !local_audio.created.is_empty() {
+                return Err("the existing backup does not own these newly generated local-music files; restore before adding local music".into());
+            }
+            fs::copy(patcher_exe, backup.join("Restore.exe"))
+                .map_err(|error| format!("refresh Restore.exe: {error}"))?;
+            progress(
+                sink,
+                TaskState::Done,
+                "The existing original-file backup is valid and will be reused.",
+                Some(70),
+            );
         }
-        fs::copy(patcher_exe, backup.join("Restore.exe"))
-            .map_err(|error| format!("refresh Restore.exe: {error}"))?;
-        progress(
-            sink,
-            TaskState::Done,
-            "The existing original-file backup is valid and will be reused.",
-            Some(70),
-        );
-    } else {
+    }
+    if !backup.exists() || discard_restored_backup(&backup, folder, sink)? {
         progress(
             sink,
             TaskState::Working,
-            "Creating your original-file backup…",
+            if backup.exists() { "Creating your original-file backup…" } else { "Creating your original-file backup…" },
             Some(65),
         );
-        fs::create_dir_all(backup.join("original")).map_err(|error| error.to_string())?;
+        if !backup.exists() {
+            fs::create_dir_all(backup.join("original")).map_err(|error| error.to_string())?;
+        }
         let mut originals = Vec::new();
         for (name, source, _, _) in &generated {
             let destination = backup.join("original").join(name);
@@ -978,6 +1221,107 @@ pub fn apply_with_progress(
         Some(100),
     );
     Ok(ApplyReport { changed, audio })
+}
+
+pub fn compressed_audio_files(backup: &Path, game: &Path) -> Result<Vec<String>> {
+    let manifest_path = backup.join("manifest.json");
+    let manifest = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    let mut compressed = Vec::new();
+
+    let mut in_files = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed == "\"files\": {" {
+            in_files = true;
+            continue;
+        }
+        if in_files && trimmed == "}," {
+            break;
+        }
+        if !in_files {
+            continue;
+        }
+        let entry = trimmed.trim_end_matches(',');
+        let (name, digest) = entry
+            .split_once(':')
+            .ok_or("invalid backup manifest file entry")?;
+        let name = name.trim().trim_matches('"').to_string();
+        if name.eq_ignore_ascii_case("voice.dat") {
+            let expected = hash::parse(digest.trim().trim_matches('"'))?;
+            if let Ok(path) = find_file(game, "voice.dat") {
+                if hash::file(&path)? != expected {
+                    compressed.push(name);
+                }
+            }
+        }
+    }
+
+    let created = manifest_created_files(&manifest)?;
+    if let Some(expected) = created.get("BGM.dat") {
+        let bgm_path = game.join("BGM.dat");
+        if bgm_path.exists() && hash::file(&bgm_path)? != *expected {
+            compressed.push("BGM.dat".into());
+        }
+    }
+
+    Ok(compressed)
+}
+
+pub fn restore_skipping(backup: &Path, skip: &[&str]) -> Result<Vec<String>> {
+    let manifest_path = backup.join("manifest.json");
+    let manifest = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    let game = backup
+        .parent()
+        .ok_or("backup folder has no parent game folder")?;
+    let mut restored = Vec::new();
+    let mut in_files = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed == "\"files\": {" {
+            in_files = true;
+            continue;
+        }
+        if in_files && trimmed == "}," {
+            in_files = false;
+            continue;
+        }
+        if in_files {
+            let entry = trimmed.trim_end_matches(',');
+            let (name, digest) = entry
+                .split_once(':')
+                .ok_or("invalid backup manifest file entry")?;
+            let name = name.trim().trim_matches('"');
+            if skip.iter().any(|s| s.eq_ignore_ascii_case(name)) {
+                continue;
+            }
+            let digest = digest.trim().trim_matches('"');
+            let expected = hash::parse(digest)?;
+            let source = backup.join("original").join(name);
+            if hash::file(&source)? != expected {
+                return Err(format!("backup copy of {name} was modified"));
+            }
+            let temporary = game.join(format!(".{name}.restore.tmp"));
+            fs::copy(&source, &temporary).map_err(|error| error.to_string())?;
+            let target = find_file(game, name).unwrap_or_else(|_| game.join(name));
+            replace_file(&temporary, &target)?;
+            if hash::file(&target)? != expected {
+                return Err(format!("restored {name} failed verification"));
+            }
+            restored.push(name.to_string());
+        }
+    }
+    for (name, digest) in manifest_created_files(&manifest)? {
+        if skip.iter().any(|s| s.eq_ignore_ascii_case(&name)) {
+            continue;
+        }
+        let path = game.join(name);
+        if path.exists() && hash::file(&path)? == digest {
+            fs::remove_file(path).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(restored)
 }
 
 pub fn restore(backup: &Path) -> Result<Vec<String>> {
@@ -1166,6 +1510,7 @@ mod tests {
                 local_audio: false,
                 modern_volume: false,
                 cue: None,
+                ..ApplyOptions::default()
             },
             &std::env::current_exe().unwrap(),
         )
@@ -1182,6 +1527,7 @@ mod tests {
                 local_audio: false,
                 modern_volume: false,
                 cue: None,
+                ..ApplyOptions::default()
             },
             &std::env::current_exe().unwrap(),
         )
@@ -1203,6 +1549,7 @@ mod tests {
                 local_audio: false,
                 modern_volume: false,
                 cue: None,
+                ..ApplyOptions::default()
             },
             &std::env::current_exe().unwrap(),
         )
@@ -1255,6 +1602,7 @@ mod tests {
                 local_audio: true,
                 modern_volume: false,
                 cue: Some(PathBuf::from(cue_path)),
+                ..ApplyOptions::default()
             },
             &std::env::current_exe().unwrap(),
         )
@@ -1298,6 +1646,7 @@ mod tests {
                 local_audio: false,
                 modern_volume: false,
                 cue: None,
+                ..ApplyOptions::default()
             },
             &std::env::current_exe().unwrap(),
         )

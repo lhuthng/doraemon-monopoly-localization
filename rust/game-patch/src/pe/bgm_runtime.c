@@ -9,9 +9,6 @@
 #define HEADER_SIZE 192
 #define SAMPLE_RATE 22050
 #define BLOCK_FRAMES 4096
-#define HALF_FRAMES 44100
-#define HALF_BYTES (HALF_FRAMES * 2)
-#define BUFFER_BYTES (HALF_BYTES * 2)
 #define INVALID_FILE ((HANDLE)(intptr_t)-1)
 
 typedef DWORD (__stdcall *GetModuleFileNameA_t)(HMODULE, char *, DWORD);
@@ -50,6 +47,15 @@ typedef int (__thiscall *PlayMemory)(void *, int, void *, int);
 
 typedef struct { DWORD id, offset, length, frames; } Track;
 typedef struct {
+    WORD format, channels;
+    DWORD samples_per_second, bytes_per_second;
+    WORD block_align, bits_per_sample, extra;
+} WaveFormat;
+typedef struct {
+    DWORD size, flags, bytes, reserved;
+    WaveFormat *format;
+} BufferDescription;
+typedef struct {
     HANDLE file;
     void *manager;
     void *buffer;
@@ -60,9 +66,11 @@ typedef struct {
     volatile LONG lock;
     DWORD generation;
     DWORD level;
+    DWORD sample_rate, half_frames, half_bytes, buffer_bytes;
     int active_track;
     int current_half;
     int playing;
+    int full_track;
     Track tracks[TRACKS];
     DWORD track_offset, encoded_left, frames_left;
     DWORD block_left;
@@ -70,11 +78,11 @@ typedef struct {
     BYTE packed;
 } State;
 
-static State state = { INVALID_FILE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65535, -1, 0, 0 };
+static State state = { INVALID_FILE };
 
 /* PE patch revisions are not safely replaceable in place. This marker lets
    the Rust patcher distinguish this streamer from the first embedded build. */
-__declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT3";
+__declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT4";
 
 static const DWORD track_frames[TRACKS] = {
     7525812,2865912,924924,2394924,174048,2130324,1541736,1376802,1903944,308994
@@ -130,7 +138,7 @@ static int read_cached(BYTE *target, DWORD length) {
         DWORD available, take, got = 0;
         if (state.input_at == state.input_len) {
             take = state.encoded_left;
-            if (take > HALF_BYTES) take = HALF_BYTES;
+            if (take > state.half_bytes) take = state.half_bytes;
             if (!take || !ReadFile_(state.file, state.input, take, &got, 0) || got != take) return 0;
             state.input_at = 0;
             state.input_len = take;
@@ -265,6 +273,40 @@ static HRESULT unlock_buffer(void *object, void *a, DWORD an, void *b, DWORD bn)
     typedef HRESULT (__stdcall *Fn)(void *,void*,DWORD,void*,DWORD);
     return ((Fn)(*(void ***)object)[19])(object,a,an,b,bn);
 }
+static void set_volume(void);
+
+static int create_full_buffer(DWORD frames) {
+    BufferDescription description;
+    WaveFormat format;
+    void *device, *a=0, *b=0;
+    DWORD bytes=frames*2, an=0, bn=0;
+    typedef HRESULT (__stdcall *CreateSoundBufferFn)(void *,BufferDescription *,void **,void *);
+    device=*(void **)((BYTE*)state.manager+0x10c);
+    if (!device) return 0;
+    format.format=1; format.channels=1; format.samples_per_second=state.sample_rate;
+    format.bytes_per_second=state.sample_rate*2; format.block_align=2;
+    format.bits_per_sample=16; format.extra=0;
+    description.size=sizeof(description);
+    description.flags=*(DWORD *)((BYTE*)state.manager+0xe8);
+    description.bytes=bytes; description.reserved=0; description.format=&format;
+    if (((CreateSoundBufferFn)(*(void ***)device)[3])(device,&description,&state.buffer,0) != 0 ||
+        !state.buffer) { state.buffer=0; return 0; }
+    if (lock_buffer(state.buffer,0,bytes,&a,&an,&b,&bn) != 0) {
+        com0(state.buffer,2); state.buffer=0; return 0;
+    }
+    if (!decode((BYTE*)a,an/2) || (b && bn && !decode((BYTE*)b,bn/2))) {
+        unlock_buffer(state.buffer,a,an,b,bn);
+        com0(state.buffer,2); state.buffer=0; return 0;
+    }
+    if (unlock_buffer(state.buffer,a,an,b,bn) != 0) {
+        com0(state.buffer,2); state.buffer=0; return 0;
+    }
+    if (com1(state.buffer,13,0) != 0 || play_buffer(state.buffer) != 0) {
+        com0(state.buffer,2); state.buffer=0; return 0;
+    }
+    set_volume();
+    return 1;
+}
 static void set_volume(void) {
     DWORD index = (state.level * 53UL) / 65535UL;
     if (state.buffer) com1(state.buffer, 15, (DWORD)volume_table[index]);
@@ -282,21 +324,22 @@ static int refill(DWORD offset, DWORD frames) {
     return unlock_buffer(state.buffer,a,an,b,bn) == 0;
 }
 
-static void wave_header(BYTE *p) {
-    copy_bytes(p,(const BYTE*)"RIFF",4); put32(p+4,BUFFER_BYTES+36);
+static void wave_header(BYTE *p, DWORD bytes) {
+    copy_bytes(p,(const BYTE*)"RIFF",4); put32(p+4,bytes+36);
     copy_bytes(p+8,(const BYTE*)"WAVEfmt ",8); put32(p+16,16); put16(p+20,1); put16(p+22,1);
-    put32(p+24,SAMPLE_RATE); put32(p+28,SAMPLE_RATE*2); put16(p+32,2); put16(p+34,16);
-    copy_bytes(p+36,(const BYTE*)"data",4); put32(p+40,BUFFER_BYTES);
+    put32(p+24,state.sample_rate); put32(p+28,state.sample_rate*2); put16(p+32,2); put16(p+34,16);
+    copy_bytes(p+36,(const BYTE*)"data",4); put32(p+40,bytes);
 }
 
-static int create_buffer(void) {
+static int create_buffer(DWORD frames) {
     BYTE *seed;
+    DWORD bytes=frames*2;
     int slot;
     void **owned;
-    seed = (BYTE*)game_alloc(BUFFER_BYTES + 44);
+    seed = (BYTE*)game_alloc(bytes + 44);
     if (!seed) return 0;
-    wave_header(seed);
-    if (!decode(seed + 44, BUFFER_BYTES/2)) { game_free(seed); return 0; }
+    wave_header(seed,bytes);
+    if (!decode(seed + 44, frames)) { game_free(seed); return 0; }
     slot = reserve_slot(state.manager);
     if (slot < 0 || slot >= 8) { game_free(seed); return 0; }
     if (!play_memory(state.manager, slot, seed, 1)) {
@@ -322,20 +365,33 @@ static void __stdcall BgmTimerCallback(UINT id, UINT message, DWORD user, DWORD 
     DWORD cursor, half;
     (void)id; (void)message; (void)first; (void)second;
     if (!try_lock()) return;
-    if (user==state.generation && state.playing && state.buffer && get_position(state.buffer,&cursor) == 0) {
-        half = cursor >= HALF_BYTES;
+    if (user==state.generation && state.playing &&
+        state.buffer && get_position(state.buffer,&cursor) == 0) {
+        half = cursor >= state.half_bytes;
         if ((int)half != state.current_half) {
-            if (refill(half ? 0 : HALF_BYTES, HALF_FRAMES)) state.current_half = (int)half;
+            if (refill(half ? 0 : state.half_bytes, state.half_frames)) state.current_half = (int)half;
             else state.playing = 0;
         }
     }
     unlock();
 }
 
+static void stop_timer(void) {
+    if (state.timer) { timeKillEvent_(state.timer); state.timer=0; timeEndPeriod_(1); }
+}
+
+static int start_timer(void) {
+    if (state.timer) return 1;
+    timeBeginPeriod_(1);
+    state.timer=timeSetEvent_(250,10,(void*)BgmTimerCallback,state.generation,1);
+    if (!state.timer) { timeEndPeriod_(1); return 0; }
+    return 1;
+}
+
 static void close_locked(void) {
     ++state.generation;
     state.playing = 0;
-    if (state.timer) { timeKillEvent_(state.timer); state.timer=0; timeEndPeriod_(1); }
+    stop_timer();
     if (state.buffer) { com0(state.buffer,18); com0(state.buffer,2); state.buffer=0; }
     if (state.input) { game_free(state.input); state.input=0; }
     if (state.scratch) { game_free(state.scratch); state.scratch=0; }
@@ -354,23 +410,28 @@ __declspec(dllexport) DWORD __stdcall BgmInit(void *manager) {
     state.file=CreateFileA_(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
     if (state.file==INVALID_FILE || !read_exact(h,HEADER_SIZE)) { close_locked(); unlock(); return 0; }
     size=SetFilePointer_(state.file,0,0,FILE_END);
+    state.sample_rate=le32(h+16);
     if (!equal(h,"DBGM1\0\0\0",8) || le32(h+8)!=1 || le32(h+12)!=TRACKS ||
-        le32(h+16)!=SAMPLE_RATE || le16(h+20)!=1 || le16(h+22)!=16 || le32(h+24)!=BLOCK_FRAMES) {
+        (state.sample_rate!=22050 && state.sample_rate!=14700 && state.sample_rate!=11025) ||
+        le16(h+20)!=1 || le16(h+22)!=16 || le32(h+24)!=BLOCK_FRAMES) {
         close_locked(); unlock(); return 0;
     }
+    state.half_frames=state.sample_rate*2;
+    state.half_bytes=state.half_frames*2;
+    state.buffer_bytes=state.half_bytes*2;
     for (i=0;i<TRACKS;++i) {
         BYTE *e=h+32+i*16; Track *t=&state.tracks[i];
         t->id=le32(e); t->offset=le32(e+4); t->length=le32(e+8); t->frames=le32(e+12);
-        if (t->id!=(DWORD)(i+2) || t->offset!=previous || !t->length || t->frames!=track_frames[i] ||
+        DWORD expected=state.sample_rate==22050 ? track_frames[i] :
+            (state.sample_rate==14700 ? track_frames[i]*2/3 : track_frames[i]/2);
+        if (t->id!=(DWORD)(i+2) || t->offset!=previous || !t->length || t->frames!=expected ||
             t->offset+t->length<t->offset || t->offset+t->length>size) { close_locked(); unlock(); return 0; }
         previous=t->offset+t->length;
     }
     if (previous!=size || !validate_tracks() ||
-        !(state.input=(BYTE*)game_alloc(HALF_BYTES)) ||
-        !(state.scratch=(BYTE*)game_alloc(HALF_BYTES))) { close_locked(); unlock(); return 0; }
-    timeBeginPeriod_(1);
-    state.timer=timeSetEvent_(1000,1,(void*)BgmTimerCallback,state.generation,1);
-    if (!state.timer) { timeEndPeriod_(1); close_locked(); unlock(); return 0; }
+        !(state.input=(BYTE*)game_alloc(state.half_bytes)) ||
+        !(state.scratch=(BYTE*)game_alloc(state.half_bytes))) { close_locked(); unlock(); return 0; }
+    start_timer();
     unlock(); return 1;
 }
 
@@ -381,10 +442,11 @@ __declspec(dllexport) DWORD __stdcall BgmPlay(DWORD id) {
         if (state.buffer) com0(state.buffer,18);
         state.active_track=(int)id-2;
         if (reset_track()) {
-            if (!state.buffer) ok=create_buffer();
-            else {
-                ok=refill(0,HALF_FRAMES) && refill(HALF_BYTES,HALF_FRAMES);
-                if (ok) { com1(state.buffer,13,0); set_volume(); ok=play_buffer(state.buffer)==0; }
+            if (!state.buffer) ok=create_buffer(state.buffer_bytes/2);
+            else ok=refill(0, state.half_frames) && refill(state.half_bytes, state.half_frames) &&
+                com0(state.buffer,18)==0 && com1(state.buffer,13,0)==0 && play_buffer(state.buffer)==0;
+            if (ok && !state.timer) {
+                ok=start_timer();
             }
         }
     }
@@ -392,7 +454,7 @@ __declspec(dllexport) DWORD __stdcall BgmPlay(DWORD id) {
 }
 __declspec(dllexport) DWORD __stdcall BgmStop(void) { acquire(); state.playing=0; if(state.buffer)com0(state.buffer,18); unlock(); return 1; }
 __declspec(dllexport) DWORD __stdcall BgmDuration(DWORD id) {
-    DWORD result=0; acquire(); if(id>=2&&id<=11) result=(state.tracks[id-2].frames+SAMPLE_RATE-1)/SAMPLE_RATE; unlock(); return result;
+    DWORD result=0; acquire(); if(id>=2&&id<=11) result=(state.tracks[id-2].frames+state.sample_rate-1)/state.sample_rate; unlock(); return result;
 }
 __declspec(dllexport) DWORD __stdcall BgmCount(void) { return 11; }
 __declspec(dllexport) DWORD __stdcall BgmVolume(DWORD level) { acquire(); state.level=level; set_volume(); unlock(); return 1; }

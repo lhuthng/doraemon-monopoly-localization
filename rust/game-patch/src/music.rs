@@ -71,25 +71,31 @@ fn encode_nibble(sample: i16, predictor: &mut i32, index: &mut i32) -> u8 {
     nibble
 }
 
-fn mono_sample(pair: &[u8]) -> i16 {
-    let sum = i16::from_le_bytes(pair[0..2].try_into().unwrap()) as i32
-        + i16::from_le_bytes(pair[2..4].try_into().unwrap()) as i32
-        + i16::from_le_bytes(pair[4..6].try_into().unwrap()) as i32
-        + i16::from_le_bytes(pair[6..8].try_into().unwrap()) as i32;
-    (sum / 4).clamp(i16::MIN as i32, i16::MAX as i32) as i16
+fn mono_sample(source: &[u8]) -> i16 {
+    let samples = source.len() / 2;
+    let sum: i64 = source
+        .chunks_exact(2)
+        .map(|sample| i16::from_le_bytes([sample[0], sample[1]]) as i64)
+        .sum();
+    (sum / samples as i64).clamp(i16::MIN as i64, i16::MAX as i64) as i16
 }
 
-fn encode_track<R: Read>(source: &mut R, target: &mut File, frames: u32) -> Result<u32> {
+fn encode_track<R: Read>(
+    source: &mut R,
+    target: &mut File,
+    frames: u32,
+    source_frames_per_output: usize,
+) -> Result<u32> {
     let mut remaining = frames as usize;
     let mut written = 0_u32;
     while remaining != 0 {
         let count = remaining.min(BLOCK_FRAMES);
-        // Two 44.1 kHz stereo source frames become one 22.05 kHz mono frame.
-        let mut pcm = vec![0_u8; count * 8];
+        let bytes_per_output = source_frames_per_output * 4;
+        let mut pcm = vec![0_u8; count * bytes_per_output];
         source
             .read_exact(&mut pcm)
             .map_err(|error| format!("read source PCM: {error}"))?;
-        let first = mono_sample(&pcm[..8]);
+        let first = mono_sample(&pcm[..bytes_per_output]);
         let mut block = Vec::with_capacity(6 + count.div_ceil(2));
         block.extend_from_slice(&(count as u16).to_le_bytes());
         block.extend_from_slice(&first.to_le_bytes());
@@ -98,7 +104,8 @@ fn encode_track<R: Read>(source: &mut R, target: &mut File, frames: u32) -> Resu
         let mut step_index = 0;
         let mut packed = 0_u8;
         for frame in 1..count {
-            let sample = mono_sample(&pcm[frame * 8..frame * 8 + 8]);
+            let at = frame * bytes_per_output;
+            let sample = mono_sample(&pcm[at..at + bytes_per_output]);
             let nibble = encode_nibble(sample, &mut predictor, &mut step_index);
             if frame & 1 == 1 {
                 packed = nibble;
@@ -120,7 +127,16 @@ fn encode_track<R: Read>(source: &mut R, target: &mut File, frames: u32) -> Resu
     Ok(written)
 }
 
-fn encode_reader<R: Read>(source: &mut R, output: &Path, track_frames: &[u32]) -> Result<()> {
+fn encode_reader<R: Read>(
+    source: &mut R,
+    output: &Path,
+    source_frames_per_output: u32,
+) -> Result<()> {
+    let sample_rate = 44_100 / source_frames_per_output;
+    let track_frames: Vec<u32> = TRACK_FRAMES
+        .iter()
+        .map(|frames| frames * 2 / source_frames_per_output)
+        .collect();
     if track_frames.len() != TRACK_COUNT {
         return Err("BGM.dat requires exactly ten tracks".into());
     }
@@ -135,14 +151,19 @@ fn encode_reader<R: Read>(source: &mut R, output: &Path, track_frames: &[u32]) -
         let offset = target
             .stream_position()
             .map_err(|error| error.to_string())? as u32;
-        let length = encode_track(source, &mut target, frames)?;
+        let length = encode_track(
+            source,
+            &mut target,
+            frames,
+            source_frames_per_output as usize,
+        )?;
         entries.push((index as u32 + 2, offset, length, frames));
     }
     let mut header = [0_u8; HEADER_SIZE];
     header[..8].copy_from_slice(MAGIC);
     put_u32(&mut header, 8, 1);
     put_u32(&mut header, 12, TRACK_COUNT as u32);
-    put_u32(&mut header, 16, SAMPLE_RATE);
+    put_u32(&mut header, 16, sample_rate);
     put_u16(&mut header, 20, 1);
     put_u16(&mut header, 22, 16);
     put_u32(&mut header, 24, BLOCK_FRAMES as u32);
@@ -176,7 +197,7 @@ pub fn encode_wav(wav: &Path, output: &Path) -> Result<()> {
     source
         .seek(SeekFrom::Start(44))
         .map_err(|error| error.to_string())?;
-    encode_reader(&mut source, output, &TRACK_FRAMES)
+    encode_reader(&mut source, output, 2)
 }
 
 pub fn encode_cue(cue_path: &Path, output: &Path) -> Result<()> {
@@ -189,7 +210,47 @@ pub fn encode_cue(cue_path: &Path, output: &Path) -> Result<()> {
     source
         .seek(SeekFrom::Start(102_263 * 2_352))
         .map_err(|error| error.to_string())?;
-    encode_reader(&mut source, output, &TRACK_FRAMES)
+    encode_reader(&mut source, output, 2)
+}
+
+fn quality_factor(quality: crate::voice::Compression) -> u32 {
+    match quality {
+        crate::voice::Compression::Original | crate::voice::Compression::High => 2,
+        crate::voice::Compression::Balanced => 3,
+        crate::voice::Compression::Compact => 4,
+    }
+}
+
+pub fn encode_wav_quality(
+    wav: &Path,
+    output: &Path,
+    quality: crate::voice::Compression,
+) -> Result<()> {
+    if !crate::cue::valid_wav(wav) {
+        return Err("DoraemonMusic.wav is not the verified disc extraction".into());
+    }
+    let mut source = File::open(wav).map_err(|error| format!("{}: {error}", wav.display()))?;
+    source
+        .seek(SeekFrom::Start(44))
+        .map_err(|error| error.to_string())?;
+    encode_reader(&mut source, output, quality_factor(quality))
+}
+
+pub fn encode_cue_quality(
+    cue_path: &Path,
+    output: &Path,
+    quality: crate::voice::Compression,
+) -> Result<()> {
+    let cue = crate::cue::parse(cue_path)?;
+    if !crate::cue::valid_cue(cue_path) {
+        return Err("CUE/BIN is not the verified Doraemon disc image".into());
+    }
+    let mut source = File::open(&cue.bin_path)
+        .map_err(|error| format!("{}: {error}", cue.bin_path.display()))?;
+    source
+        .seek(SeekFrom::Start(102_263 * 2_352))
+        .map_err(|error| error.to_string())?;
+    encode_reader(&mut source, output, quality_factor(quality))
 }
 
 pub fn valid(path: &Path) -> bool {
@@ -200,11 +261,20 @@ pub fn valid(path: &Path) -> bool {
         return false;
     };
     let mut header = [0_u8; HEADER_SIZE];
-    if file.read_exact(&mut header).is_err()
-        || &header[..8] != MAGIC
+    if file.read_exact(&mut header).is_err() {
+        return false;
+    }
+    let sample_rate = get_u32(&header, 16);
+    let factor = match sample_rate {
+        22_050 => 2,
+        14_700 => 3,
+        11_025 => 4,
+        _ => return false,
+    };
+    if &header[..8] != MAGIC
         || get_u32(&header, 8) != 1
         || get_u32(&header, 12) != TRACK_COUNT as u32
-        || get_u32(&header, 16) != SAMPLE_RATE
+        || get_u32(&header, 16) != sample_rate
         || get_u16(&header, 20) != 1
         || get_u16(&header, 22) != 16
         || get_u32(&header, 24) != BLOCK_FRAMES as u32
@@ -221,7 +291,7 @@ pub fn valid(path: &Path) -> bool {
         if id != index as u32 + 2
             || offset != previous_end
             || length == 0
-            || frames != TRACK_FRAMES[index]
+            || frames != TRACK_FRAMES[index] * 2 / factor
             || offset + length > size
         {
             return false;
@@ -373,19 +443,31 @@ mod tests {
             return;
         };
         let output = synthetic_path("cue-fixture");
+        let compact_output = synthetic_path("compact-cue-fixture");
         let wav = synthetic_path("fixture").with_extension("wav");
         let wav_output = synthetic_path("wav-fixture");
-        for path in [&output, &wav, &wav_output] {
+        for path in [&output, &compact_output, &wav, &wav_output] {
             let _ = std::fs::remove_file(path);
         }
         encode_cue(Path::new(&cue), &output).unwrap();
+        encode_cue_quality(
+            Path::new(&cue),
+            &compact_output,
+            crate::voice::Compression::Compact,
+        )
+        .unwrap();
         crate::cue::extract(Path::new(&cue), &wav).unwrap();
         encode_wav(&wav, &wav_output).unwrap();
         assert!(valid(&output) && valid(&wav_output));
         assert_eq!(std::fs::read(&output).unwrap(), std::fs::read(&wav_output).unwrap());
         let size = std::fs::metadata(&output).unwrap().len();
         assert!((8_000_000..15_000_000).contains(&size));
+        let compact_size = std::fs::metadata(&compact_output).unwrap().len();
+        eprintln!("Compact BGM.dat: {compact_size} bytes from {size} bytes");
+        assert!(valid(&compact_output));
+        assert!(compact_size < 8_000_000);
         std::fs::remove_file(output).unwrap();
+        std::fs::remove_file(compact_output).unwrap();
         std::fs::remove_file(wav_output).unwrap();
         std::fs::remove_file(wav).unwrap();
     }

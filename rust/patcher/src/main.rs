@@ -137,6 +137,7 @@ mod windows_app {
         subtitle: nwg::Label,
         title_font: nwg::Font,
         group_font: nwg::Font,
+        log_font: nwg::Font,
         options_group: nwg::ControlHandle,
         language_label: nwg::Label,
         language: nwg::ComboBox<String>,
@@ -144,6 +145,12 @@ mod windows_app {
         no_reg: nwg::CheckBox,
         local_audio: nwg::CheckBox,
         modern_volume: nwg::CheckBox,
+        audio_group: nwg::ControlHandle,
+        reduce_bgm: nwg::CheckBox,
+        optimize_voice: nwg::CheckBox,
+        voice_quality_label: nwg::Label,
+        voice_quality: nwg::ComboBox<String>,
+        audio_apply: nwg::Button,
 
         music: nwg::Label,
         refresh_music: nwg::Button,
@@ -162,6 +169,7 @@ mod windows_app {
     impl Drop for Ui {
         fn drop(&mut self) {
             self.options_group.destroy();
+            self.audio_group.destroy();
             self.actions_group.destroy();
             self.log_group.destroy();
         }
@@ -232,17 +240,21 @@ mod windows_app {
 
     fn append_log(ui: &Ui, state: TaskState, message: &str) {
         let marker = match state {
-            TaskState::Working => "●",
-            TaskState::Done => "✓",
-            TaskState::Skipped => "–",
-            TaskState::Failed => "✕",
+            TaskState::Working => "[....]",
+            TaskState::Done => "[ OK ]",
+            TaskState::Skipped => "[SKIP]",
+            TaskState::Failed => "[FAIL]",
         };
         let color = match state {
-            TaskState::Working => [49, 91, 148],
-            TaskState::Done => [35, 116, 75],
-            TaskState::Skipped => [104, 100, 90],
-            TaskState::Failed => [173, 54, 54],
+            TaskState::Working => [40, 110, 200],
+            TaskState::Done => [45, 145, 85],
+            TaskState::Skipped => [190, 160, 45],
+            TaskState::Failed => [200, 55, 55],
         };
+        let message = message
+            .replace('…', "...")
+            .replace('—', "-")
+            .replace('–', "-");
         let start = ui.log.len();
         ui.log.appendln(&format!("{marker} {message}"));
         let end = ui.log.len();
@@ -274,14 +286,24 @@ mod windows_app {
         if icon.len() < 22 || &icon[0..4] != [0, 0, 1, 0] {
             return Err("embedded game icon is invalid".into());
         }
-        let size = u32::from_le_bytes(icon[14..18].try_into().unwrap()) as usize;
-        let offset = u32::from_le_bytes(icon[18..22].try_into().unwrap()) as usize;
-        let image = icon
-            .get(offset..offset + size)
-            .ok_or("embedded game icon is truncated")?;
-        let mut group = vec![0, 0, 1, 0, 1, 0, 32, 32, 0, 0, 1, 0, 32, 0];
-        group.extend_from_slice(&(image.len() as u32).to_le_bytes());
-        group.extend_from_slice(&2u16.to_le_bytes()); // existing 32x32 icon resource ID
+        let count = u16::from_le_bytes(icon[4..6].try_into().unwrap()) as usize;
+        if count == 0 || count > 3 || icon.len() < 6 + count * 16 {
+            return Err("embedded game icon directory is invalid".into());
+        }
+        let mut images = Vec::with_capacity(count);
+        let mut group = icon[..6].to_vec();
+        for index in 0..count {
+            let entry = &icon[6 + index * 16..22 + index * 16];
+            let size = u32::from_le_bytes(entry[8..12].try_into().unwrap()) as usize;
+            let offset = u32::from_le_bytes(entry[12..16].try_into().unwrap()) as usize;
+            let image = icon
+                .get(offset..offset + size)
+                .ok_or("embedded game icon image is truncated")?;
+            let resource_id = index as u16 + 1;
+            group.extend_from_slice(&entry[..12]);
+            group.extend_from_slice(&resource_id.to_le_bytes());
+            images.push((resource_id, image));
+        }
         let path: Vec<u16> = OsStr::new(&game.join("Doraemon.exe"))
             .encode_wide()
             .chain(iter::once(0))
@@ -293,17 +315,21 @@ mod windows_app {
                 std::io::Error::last_os_error()
             ));
         }
-        let image_ok = unsafe {
-            UpdateResourceW(
-                handle,
-                3usize as *const u16,
-                2usize as *const u16,
-                0x409,
-                image.as_ptr().cast(),
-                image.len() as u32,
-            )
-        } != 0;
-        let group_ok = image_ok
+        let mut images_ok = true;
+        for (resource_id, image) in images {
+            images_ok = images_ok
+                && unsafe {
+                    UpdateResourceW(
+                        handle,
+                        3usize as *const u16,
+                        resource_id as usize as *const u16,
+                        0x409,
+                        image.as_ptr().cast(),
+                        image.len() as u32,
+                    )
+                } != 0;
+        }
+        let group_ok = images_ok
             && unsafe {
                 UpdateResourceW(
                     handle,
@@ -402,7 +428,7 @@ mod windows_app {
             let mut ui = Self::default();
 
             nwg::Window::builder()
-                .size((640, 664))
+                .size((640, 730))
                 .position((300, 150))
                 .title("Doraemon Monopoly Patcher")
                 .flags(
@@ -424,6 +450,11 @@ mod windows_app {
                 .family("Tahoma")
                 .weight(700)
                 .build(&mut ui.group_font)?;
+
+            nwg::Font::builder()
+                .family("Consolas")
+                .size(18)
+                .build(&mut ui.log_font)?;
 
             // -- Title banner --
 
@@ -559,6 +590,59 @@ mod windows_app {
                 .parent(&ui.window)
                 .build(&mut ui.play)?;
 
+            // -- Audio group box --
+
+            ui.audio_group =
+                make_group_box(&ui.window, " Audio ", 12, 356, 616, 94, &ui.group_font)?;
+
+            nwg::CheckBox::builder()
+                .text("Reduce BGM.dat")
+                .check_state(nwg::CheckBoxState::Unchecked)
+                .enabled(
+                    find_cue(game).is_some()
+                        || cue::valid_wav(&game.join("DoraemonMusic.wav")),
+                )
+                .position((24, 378))
+                .size((180, 20))
+                .parent(&ui.window)
+                .build(&mut ui.reduce_bgm)?;
+
+            nwg::CheckBox::builder()
+                .text("Reduce Voice.dat")
+                .check_state(nwg::CheckBoxState::Unchecked)
+                .position((220, 378))
+                .size((210, 20))
+                .parent(&ui.window)
+                .build(&mut ui.optimize_voice)?;
+
+            nwg::Label::builder()
+                .text("Quality:")
+                .position((24, 410))
+                .size((60, 20))
+                .parent(&ui.window)
+                .build(&mut ui.voice_quality_label)?;
+
+            nwg::ComboBox::builder()
+                .collection(vec![
+                    "Original".into(),
+                    "High".into(),
+                    "Balanced".into(),
+                    "Compact".into(),
+                ])
+                .selected_index(Some(0))
+                .position((88, 406))
+                .size((190, 26))
+                .parent(&ui.window)
+                .build(&mut ui.voice_quality)?;
+
+            nwg::Button::builder()
+                .text("Compress")
+                .enabled(false)
+                .position((480, 400))
+                .size((125, 30))
+                .parent(&ui.window)
+                .build(&mut ui.audio_apply)?;
+
             // -- Progress bar --
 
             nwg::ProgressBar::builder()
@@ -566,28 +650,30 @@ mod windows_app {
                 .pos(0)
                 .step(1)
                 .size((616, 22))
-                .position((12, 358))
+                .position((12, 460))
                 .parent(&ui.window)
                 .build(&mut ui.progress)?;
 
             // -- Log group box --
 
-            ui.log_group = make_group_box(&ui.window, " Log ", 12, 392, 616, 240, &ui.group_font)?;
+            ui.log_group =
+                make_group_box(&ui.window, " Log ", 12, 492, 616, 190, &ui.group_font)?;
 
             nwg::RichTextBox::builder()
                 .text("")
                 .readonly(true)
-                .position((24, 414))
-                .size((592, 208))
+                .position((24, 514))
+                .size((592, 158))
                 .parent(&ui.window)
                 .build(&mut ui.log)?;
+            ui.log.set_font(Some(&ui.log_font));
             ui.log.set_background_color([250, 250, 248]);
 
             // -- Exit button --
 
             nwg::Button::builder()
                 .text("Exit")
-                .position((548, 634))
+                .position((548, 690))
                 .size((80, 24))
                 .parent(&ui.window)
                 .build(&mut ui.exit)?;
@@ -673,6 +759,10 @@ mod windows_app {
             ui.subtitle
                 .set_text("Restore the exact original files kept in this backup.");
             ui.apply.set_enabled(false);
+            ui.audio_apply.set_enabled(false);
+            ui.reduce_bgm.set_enabled(false);
+            ui.optimize_voice.set_enabled(false);
+            ui.voice_quality.set_enabled(false);
             ui.wrapper.set_enabled(false);
             ui.play.set_enabled(game.join("Doraemon.exe").is_file());
             ui.no_disc.set_enabled(false);
@@ -742,6 +832,13 @@ mod windows_app {
                                 );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.wrapper
                                     .set_enabled(events_wrapper_available && !restore_mode);
                                 ui.play
@@ -757,6 +854,13 @@ mod windows_app {
                                 );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper
                                     .set_enabled(events_wrapper_available && !restore_mode);
@@ -774,6 +878,13 @@ mod windows_app {
                                 events_busy.set(false);
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.wrapper
                                     .set_enabled(events_wrapper_available && !restore_mode);
                                 ui.play
@@ -795,6 +906,13 @@ mod windows_app {
                                 );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper
                                     .set_enabled(events_wrapper_available && !restore_mode);
@@ -810,6 +928,13 @@ mod windows_app {
                                 );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(!restore_mode);
                                 ui.play
@@ -824,6 +949,13 @@ mod windows_app {
                                 );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(!restore_mode);
                                 ui.play
@@ -839,6 +971,13 @@ mod windows_app {
                                 );
                                 events_busy.set(false);
                                 ui.apply.set_enabled(!restore_mode);
+                                ui.audio_apply.set_enabled(
+                                    !restore_mode
+                                        && (ui.optimize_voice.check_state()
+                                            == nwg::CheckBoxState::Checked
+                                            || ui.reduce_bgm.check_state()
+                                                == nwg::CheckBoxState::Checked),
+                                );
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.wrapper.set_enabled(!restore_mode);
                                 ui.play
@@ -852,34 +991,97 @@ mod windows_app {
                         || find_cue(&events_game).is_some()
                         || cue::valid_wav(&events_game.join("DoraemonMusic.wav"));
                     ui.local_audio.set_enabled(has_music);
-                } else if event == nwg::Event::OnButtonClick && handle == ui.apply.handle {
+                    ui.reduce_bgm.set_enabled(
+                        find_cue(&events_game).is_some()
+                            || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
+                    );
+                } else if event == nwg::Event::OnButtonClick
+                    && (handle == ui.optimize_voice.handle || handle == ui.reduce_bgm.handle)
+                {
+                    ui.audio_apply.set_enabled(
+                        !restore_mode
+                            && (ui.optimize_voice.check_state() == nwg::CheckBoxState::Checked
+                                || ui.reduce_bgm.check_state() == nwg::CheckBoxState::Checked),
+                    );
+                } else if event == nwg::Event::OnButtonClick
+                    && (handle == ui.apply.handle || handle == ui.audio_apply.handle)
+                {
+                    let audio_only = handle == ui.audio_apply.handle;
                     events_busy.set(true);
                     ui.apply.set_enabled(false);
+                    ui.audio_apply.set_enabled(false);
                     ui.restore.set_enabled(false);
                     ui.wrapper.set_enabled(false);
                     ui.play.set_enabled(false);
                     ui.refresh_music.set_enabled(false);
-                    append_log(&ui, TaskState::Working, "Starting Apply…");
+                    append_log(
+                        &ui,
+                        TaskState::Working,
+                        if audio_only {
+                            "Preparing audio…"
+                        } else {
+                            "Starting Apply…"
+                        },
+                    );
                     let _ =
                         std::fs::remove_file(events_game.join("Doraemon-Patcher-diagnostic.log"));
-                    write_diagnostic(&events_game, TaskState::Working, "Apply button pressed.");
-                    let options = ApplyOptions {
-                        no_disc: ui.no_disc.check_state() == nwg::CheckBoxState::Checked,
-                        no_reg: ui.no_reg.check_state() == nwg::CheckBoxState::Checked,
-                        local_audio: ui.local_audio.check_state() == nwg::CheckBoxState::Checked,
-                        modern_volume: ui.modern_volume.check_state()
-                            == nwg::CheckBoxState::Checked,
+                    write_diagnostic(
+                        &events_game,
+                        TaskState::Working,
+                        if audio_only {
+                            "Apply audio button pressed."
+                        } else {
+                            "Apply patch button pressed."
+                        },
+                    );
+                    let backup_path = events_game.join("backup");
+                    let keep_compressed = !audio_only && backup_path.is_dir()
+                        && install::compressed_audio_files(&backup_path, &events_game)
+                            .is_ok_and(|compressed| {
+                                if compressed.is_empty() {
+                                    return false;
+                                }
+                                let content = format!(
+                                    "The following audio file{} been modified since the last patch:\n- {}\n\nKeep the current compressed audio?\n(Choosing Yes will skip restoring and regenerating these files.)",
+                                    if compressed.len() == 1 { " has" } else { "s have" },
+                                    compressed.join("\n- ")
+                                );
+                                nwg::modal_message(
+                                    &ui.window,
+                                    &nwg::MessageParams {
+                                        title: "Keep compressed audio?",
+                                        content: &content,
+                                        buttons: nwg::MessageButtons::YesNo,
+                                        icons: nwg::MessageIcons::Question,
+                                    },
+                                ) == nwg::MessageChoice::Yes
+                            });
+                    let mut options = ApplyOptions {
+                        no_disc: !audio_only
+                            && ui.no_disc.check_state() == nwg::CheckBoxState::Checked,
+                        no_reg: !audio_only
+                            && ui.no_reg.check_state() == nwg::CheckBoxState::Checked,
+                        local_audio: !audio_only
+                            && ui.local_audio.check_state() == nwg::CheckBoxState::Checked,
+                        modern_volume: !audio_only
+                            && ui.modern_volume.check_state() == nwg::CheckBoxState::Checked,
                         cue: find_cue(&events_game),
+                        reduce_bgm: audio_only
+                            && ui.reduce_bgm.check_state() == nwg::CheckBoxState::Checked,
+                        optimize_voice: audio_only
+                            && ui.optimize_voice.check_state() == nwg::CheckBoxState::Checked,
+                        voice_compression: match ui.voice_quality.selection() { Some(1) => doraemon_game_patch::voice::Compression::High, Some(2) => doraemon_game_patch::voice::Compression::Balanced, Some(3) => doraemon_game_patch::voice::Compression::Compact, _ => doraemon_game_patch::voice::Compression::Original },
+                        keep_compressed_audio: keep_compressed,
                     };
                     let game = (*events_game).clone();
                     let selection = ui.language.selection();
-                    let payload = if selection == events_english_index {
+                    let payload = if !audio_only && selection == events_english_index {
                         events_payload
                             .as_ref()
                             .as_ref()
                             .expect("English is available")
                             .clone()
-                    } else if selection == events_vietnamese_index {
+                    } else if !audio_only && selection == events_vietnamese_index {
                         events_vietnamese
                             .as_ref()
                             .as_ref()
@@ -904,9 +1106,9 @@ mod windows_app {
                         payload.voice = None;
                         payload
                     };
-                    let icon = if selection == events_english_index {
+                    let icon = if !audio_only && selection == events_english_index {
                         Some(super::ENGLISH_ICON)
-                    } else if selection == events_vietnamese_index {
+                    } else if !audio_only && selection == events_vietnamese_index {
                         Some(super::VIETNAMESE_ICON)
                     } else {
                         None
@@ -919,10 +1121,25 @@ mod windows_app {
                                 || options.no_disc
                                 || options.no_reg
                                 || options.local_audio
-                                || options.modern_volume;
+                                || options.modern_volume
+                                || options.reduce_bgm
+                                || options.optimize_voice;
                             let backup = game.join("backup");
-                            if backup.is_dir() {
-                                let message = if wants_changes {
+                            if backup.is_dir() && !audio_only {
+                                let mut saved_compressed: Vec<(String, Vec<u8>)> = Vec::new();
+                                if options.keep_compressed_audio {
+                                    for name in &["voice.dat", "BGM.dat"] {
+                                        let path = game.join(name);
+                                        if path.exists() {
+                                            if let Ok(data) = std::fs::read(&path) {
+                                                saved_compressed.push((name.to_string(), data));
+                                            }
+                                        }
+                                    }
+                                }
+                                let message = if options.keep_compressed_audio {
+                                    "Restoring original files while keeping your compressed audio…"
+                                } else if wants_changes {
                                     "Restoring the original files before applying your new choices…"
                                 } else {
                                     "No patch choices selected; restoring the original files…"
@@ -931,6 +1148,10 @@ mod windows_app {
                                 write_diagnostic(&game, update.state, &update.message);
                                 let _ = tx.send(UiEvent::Progress(update));
                                 let restored = install::restore(&backup)?;
+                                for (name, data) in &saved_compressed {
+                                    let target = game.join(name);
+                                    let _ = std::fs::write(&target, data);
+                                }
                                 let update = TaskProgress { state: TaskState::Done, message: format!("Original files restored: {}.", restored.join(", ")), progress: Some(10) };
                                 write_diagnostic(&game, update.state, &update.message);
                                 let _ = tx.send(UiEvent::Progress(update));
@@ -981,6 +1202,7 @@ mod windows_app {
                 } else if event == nwg::Event::OnButtonClick && handle == ui.restore.handle {
                     events_busy.set(true);
                     ui.apply.set_enabled(false);
+                    ui.audio_apply.set_enabled(false);
                     ui.restore.set_enabled(false);
                     ui.wrapper.set_enabled(false);
                     ui.play.set_enabled(false);
@@ -1001,6 +1223,7 @@ mod windows_app {
                 } else if event == nwg::Event::OnButtonClick && handle == ui.wrapper.handle {
                     events_busy.set(true);
                     ui.apply.set_enabled(false);
+                    ui.audio_apply.set_enabled(false);
                     ui.restore.set_enabled(false);
                     ui.wrapper.set_enabled(false);
                     ui.play.set_enabled(false);

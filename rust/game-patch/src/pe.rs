@@ -1061,7 +1061,7 @@ fn install_local_music_bgm_volume_hook(
 
 /// Upgrades an older `.port` patch with the current BGM volume hook in place.
 fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"BGMRT3\0").is_some() {
+    if find_bytes(output, b"BGMRT4\0").is_some() {
         let (_, labels) = portable_section(false, b"\0")?;
         return install_local_music_bgm_volume_hook(
             output,
@@ -1102,7 +1102,7 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
     if find_bytes(output, b"doraudio.dll\0").is_some() {
         return Err("this executable uses the retired doraudio.dll/Music.dat backend; restore the original executable before enabling BGM.dat".into());
     }
-    if find_bytes(output, b"BGMRT3\0").is_none() {
+    if find_bytes(output, b"BGMRT4\0").is_none() {
         return Err("this older portable build predates embedded BGM.dat streaming; restore the original executable before enabling local music".into());
     }
     let (_, labels) = portable_section(false, b"\0")?;
@@ -1168,7 +1168,7 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
 
 /// Restores the original CD/MCI Music routines and constructor fallback.
 fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"BGMRT3\0").is_none() || output.get(0x85043) != Some(&0xe9) {
+    if find_bytes(output, b"BGMRT4\0").is_none() || output.get(0x85043) != Some(&0xe9) {
         return Ok(false);
     }
     let (_, labels) = portable_section(false, b"\0")?;
@@ -1500,7 +1500,7 @@ mod tests {
             bgm_symbols::BGMDISPATCH
         );
         assert!(find_bytes(&section, b"BGM.dat\0").is_some());
-        assert!(find_bytes(&section, b"BGMRT3\0").is_some());
+        assert!(find_bytes(&section, b"BGMRT4\0").is_some());
         assert!(find_bytes(&section, b"doraudio.dll\0").is_none());
         let open = (labels["open_music"] - PORT_VA) as usize;
         let play = (labels["play"] - PORT_VA) as usize;
