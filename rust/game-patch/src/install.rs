@@ -180,13 +180,6 @@ fn selected_patches(profile: &PatchProfile, _no_disc: bool) -> Vec<&FilePatch> {
     profile.files.iter().collect()
 }
 
-fn bundled_audio_helper(payload: &Payload) -> Option<&crate::payload::BundledFile> {
-    payload
-        .bundled
-        .iter()
-        .find(|file| file.name.eq_ignore_ascii_case("doraudio.dll"))
-}
-
 struct LocalAudioPreparation {
     enabled: bool,
     summary: String,
@@ -196,7 +189,7 @@ struct LocalAudioPreparation {
 fn prepare_local_audio(
     folder: &Path,
     staging: &Path,
-    payload: &Payload,
+    _payload: &Payload,
     options: &ApplyOptions,
     sink: &mut ProgressSink<'_>,
 ) -> Result<LocalAudioPreparation> {
@@ -213,12 +206,12 @@ fn prepare_local_audio(
             created: Vec::new(),
         });
     }
-    let music_path = folder.join("Music.dat");
+    let music_path = folder.join("BGM.dat");
     let wav_path = folder.join("DoraemonMusic.wav");
     let source = if music::valid(&music_path) {
         None
     } else if music_path.exists() {
-        return Err("Music.dat exists but is not a valid Doraemon local-music file; move it aside before applying local music".into());
+        return Err("BGM.dat exists but is not a valid Doraemon local-music file; move it aside before applying local music".into());
     } else if cue::valid_wav(&wav_path) {
         Some((wav_path, true))
     } else if let Some(cue_path) = options.cue.as_ref().filter(|path| cue::valid_cue(path)) {
@@ -227,7 +220,7 @@ fn prepare_local_audio(
         progress(
             sink,
             TaskState::Skipped,
-            "Local music was requested, but no Music.dat, verified WAV, or CUE/BIN was found. The original music code was left untouched.",
+            "Local music was requested, but no BGM.dat, verified WAV, or CUE/BIN was found. The original music code was left untouched.",
             Some(45),
         );
         return Ok(LocalAudioPreparation {
@@ -237,47 +230,36 @@ fn prepare_local_audio(
             created: Vec::new(),
         });
     };
-    let helper = bundled_audio_helper(payload)
-        .ok_or("this patcher does not include doraudio.dll, so local music cannot be enabled")?;
-    let helper_path = folder.join("doraudio.dll");
-    if helper_path.exists() && hash::file(&helper_path)? != helper.hash {
-        return Err("doraudio.dll already exists and differs from this patcher; move it aside before enabling local music".into());
-    }
     let mut created = Vec::new();
     if let Some((source_path, is_wav)) = source {
         progress(
             sink,
             TaskState::Working,
             if is_wav {
-                "Compressing DoraemonMusic.wav into Music.dat…"
+                "Compressing DoraemonMusic.wav into BGM.dat…"
             } else {
-                "Reading the disc image and building Music.dat…"
+                "Reading the disc image and building BGM.dat…"
             },
             Some(43),
         );
-        let staged = staging.join("Music.dat");
+        let staged = staging.join("BGM.dat");
         if is_wav {
             music::encode_wav(&source_path, &staged)?;
         } else {
             music::encode_cue(&source_path, &staged)?;
         }
         let digest = hash::file(&staged)?;
-        created.push(("Music.dat".into(), staged, digest));
-    }
-    if !helper_path.exists() {
-        let staged = staging.join("doraudio.dll");
-        write_synced(&staged, &helper.bytes)?;
-        created.push(("doraudio.dll".into(), staged, helper.hash));
+        created.push(("BGM.dat".into(), staged, digest));
     }
     progress(
         sink,
         TaskState::Done,
-        "Local DirectSound music is ready.",
+        "Local BGM.dat streaming is ready.",
         Some(47),
     );
     Ok(LocalAudioPreparation {
         enabled: true,
-        summary: "Music.dat will play through the local DirectSound backend.".into(),
+        summary: "BGM.dat will play through the game's Win95-safe sound path.".into(),
         created,
     })
 }
@@ -1097,17 +1079,12 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         let staging = folder.join("staging");
         fs::create_dir_all(&staging).unwrap();
-        let helper = b"helper".to_vec();
         let payload = Payload {
             language: Language::Custom,
             profiles: Vec::new(),
             strings: None,
             voice: None,
-            bundled: vec![BundledFile {
-                name: "doraudio.dll".into(),
-                hash: hash::bytes(&helper),
-                bytes: helper,
-            }],
+            bundled: Vec::new(),
         };
         let prepared = prepare_local_audio(
             &folder,
@@ -1122,23 +1099,16 @@ mod tests {
         .unwrap();
         assert!(!prepared.enabled);
         assert!(prepared.created.is_empty());
-        assert!(!staging.join("doraudio.dll").exists());
-        assert!(!staging.join("Music.dat").exists());
+        assert!(!staging.join("BGM.dat").exists());
         fs::remove_dir_all(folder).unwrap();
     }
 
     #[test]
     fn backup_manifest_tracks_all_generated_local_music_files() {
         let music = hash::bytes(b"music");
-        let helper = hash::bytes(b"helper");
-        let manifest = backup_manifest(
-            "test",
-            &[],
-            &[("Music.dat".into(), music), ("doraudio.dll".into(), helper)],
-        );
+        let manifest = backup_manifest("test", &[], &[("BGM.dat".into(), music)]);
         let created = manifest_created_files(&manifest).unwrap();
-        assert_eq!(created.get("Music.dat"), Some(&music));
-        assert_eq!(created.get("doraudio.dll"), Some(&helper));
+        assert_eq!(created.get("BGM.dat"), Some(&music));
     }
 
     #[test]
@@ -1243,21 +1213,14 @@ mod tests {
 
     #[test]
     fn real_local_music_installs_and_restores_when_fixtures_are_available() {
-        let (Ok(base), Ok(payload_path), Ok(cue_path), Ok(helper_path)) = (
+        let (Ok(base), Ok(payload_path), Ok(cue_path)) = (
             std::env::var("DORAEMON_TEST_DATA_DIR"),
             std::env::var("DORAEMON_TEST_PAYLOAD"),
             std::env::var("DORAEMON_TEST_CUE"),
-            std::env::var("DORAEMON_TEST_AUDIO_HELPER"),
         ) else {
             return;
         };
-        let mut payload = crate::payload::decode(&fs::read(payload_path).unwrap()).unwrap();
-        let helper = fs::read(helper_path).unwrap();
-        payload.bundled.push(BundledFile {
-            name: "doraudio.dll".into(),
-            hash: hash::bytes(&helper),
-            bytes: helper,
-        });
+        let payload = crate::payload::decode(&fs::read(payload_path).unwrap()).unwrap();
         let folder = std::env::temp_dir().join(format!(
             "doraemon-local-music-install-test-{}",
             std::process::id()
@@ -1296,13 +1259,10 @@ mod tests {
             &std::env::current_exe().unwrap(),
         )
         .unwrap();
-        assert!(report.changed.iter().any(|name| name == "Music.dat"));
-        assert!(report.changed.iter().any(|name| name == "doraudio.dll"));
-        assert!(music::valid(&folder.join("Music.dat")));
-        assert!(folder.join("doraudio.dll").is_file());
+        assert!(report.changed.iter().any(|name| name == "BGM.dat"));
+        assert!(music::valid(&folder.join("BGM.dat")));
         restore(&folder.join("backup")).unwrap();
-        assert!(!folder.join("Music.dat").exists());
-        assert!(!folder.join("doraudio.dll").exists());
+        assert!(!folder.join("BGM.dat").exists());
         fs::remove_dir_all(folder).unwrap();
     }
 

@@ -75,7 +75,7 @@ may still need it for music or other CD-backed data.
 | Language             | Applies the selected English or Vietnamese difference payload.                                                                          |
 | Skip disc check      | Does not require the original CD check during patching. It does not provide CD content.                                                 |
 | Skip registry check  | Skips validation of the expected Windows registry setup.                                                                                |
-| Use local music      | Replaces CD/MCI music playback with `Music.dat` and the bundled DirectSound helper, using a supplied WAV or CUE/BIN source.             |
+| Use local music      | Replaces CD/MCI music with compressed `BGM.dat`, streamed through a buffer created by the game's original Win95 DirectSound path.       |
 | Fix volume control   | Patches the legacy volume path for Windows 7+ and CrossOver.                                                                            |
 | Add graphics wrapper | Installs the bundled cnc-ddraw files for improved compatibility with modern graphics systems. This is separate from the language patch. |
 | Play                 | Launches the patched `Doraemon.exe` from the patcher's folder.                                                                          |
@@ -86,8 +86,8 @@ may still need it for music or other CD-backed data.
 The game's music is stored on the CD and accessed through the old MCI/CD audio
 path. To use local music instead, place the original CUE/BIN pair beside the
 game, then enable **Use local music** in the patcher. It converts the audio
-into `Music.dat` and installs the small DirectSound helper needed for playback.
-You may also place a pre-built `Music.dat` directly; the patcher will recognise
+into `BGM.dat`; playback code is embedded into `Doraemon.exe`, so no helper DLL is needed.
+You may also place a pre-built `BGM.dat` directly; the patcher will recognise
 it without conversion. Without that option, the original CD/MCI behavior is
 left in place.
 
@@ -191,7 +191,7 @@ intentional-empty flag.
 | `loc-gian.dmpatch`     | Gian contributor       | Strings group `008`; Gian dialogue records and voice replacements.       |
 | `loc-others.dmpatch`   | Global/gadget/events   | Strings groups `000`, `001`, `002`; menu/misc voice records; shared action text `000/031`–`000/035`; shared action voice `00*/001/011`–`00*/001/015`. |
 | `sprites.dmpatch`      | Sprite maintainer      | Binary deltas for `sysfont.dat`, `Sprite1.dat`, `sprite2.dat`, `bitmaps.dat`. No strings, voice, or executable changes. |
-| `runtime.dmpatch`      | Runtime maintainer     | Executable patches (language, no-disc, no-reg, local-audio, modern-volume) and bundled files (doraudio.dll, cnc-ddraw). |
+| `runtime.dmpatch`      | Runtime maintainer     | Executable patches (language, no-disc, no-reg, embedded BGM streaming, modern-volume) and optional cnc-ddraw files.     |
 
 Validation rules:
 - A Doraemon string record inside `loc-nobita.dmpatch` is rejected.

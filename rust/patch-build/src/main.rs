@@ -392,7 +392,7 @@ fn universal(arguments: &[String]) -> Result<(), String> {
 
     // For multipart, use directory-based env vars
     if english_dir.is_some() || vietnamese_dir.is_some() {
-        // Inject cnc-ddraw wrapper + audio helper into each runtime.dmpatch.
+        // Inject the optional cnc-ddraw wrapper into each runtime.dmpatch.
         // These files are not bundled at release-parts time (which runs without
         // --cnc-ddraw-dir for contributor builds), so we patch them in here.
         if !wrapper.is_empty() {
@@ -617,71 +617,8 @@ fn wrapper_files(arguments: &[String]) -> Result<Vec<BundledFile>, String> {
     Ok(output)
 }
 
-fn audio_helper_file() -> Result<Option<BundledFile>, String> {
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = workspace.join("native/doraudio/doraudio.c");
-    let build = workspace.join("target/doraudio");
-    fs::create_dir_all(&build).map_err(|error| error.to_string())?;
-    let object = build.join("doraudio.o");
-    let dll = build.join("doraudio.dll");
-    let compile = Command::new("i686-w64-mingw32-gcc")
-        .current_dir(&workspace)
-        .args([
-            "-Os",
-            "-D_WIN32_WINNT=0x0400",
-            "-ffreestanding",
-            "-fno-builtin",
-            "-c",
-        ])
-        .arg(&source)
-        .arg("-o")
-        .arg(&object)
-        .status();
-    match compile {
-        Ok(status) if status.success() => {}
-        Ok(status) => {
-            return Err(format!("doraudio.dll compilation failed with {status}"));
-        }
-        Err(error) => {
-            eprintln!(
-                "Warning: cannot compile doraudio.dll, local music will be unavailable: {error}"
-            );
-            return Ok(None);
-        }
-    }
-    let link = Command::new("i686-w64-mingw32-gcc")
-        .current_dir(&workspace)
-        .args([
-            "-shared",
-            "-nostdlib",
-            "-Wl,--entry,_DllMain@12",
-            "-Wl,--subsystem,windows:4.0",
-            "-Wl,--kill-at",
-            "-s",
-            "-o",
-        ])
-        .arg(&dll)
-        .arg(&object)
-        .arg("-lkernel32")
-        .status()
-        .map_err(|error| format!("link doraudio.dll: {error}"))?;
-    if !link.success() {
-        return Err(format!("doraudio.dll link failed with {link}"));
-    }
-    let bytes = fs::read(&dll).map_err(|error| format!("{}: {error}", dll.display()))?;
-    Ok(Some(BundledFile {
-        name: "doraudio.dll".into(),
-        hash: hash::bytes(&bytes),
-        bytes,
-    }))
-}
-
 fn runtime_files(arguments: &[String]) -> Result<Vec<BundledFile>, String> {
-    let mut files = wrapper_files(arguments)?;
-    if let Some(audio) = audio_helper_file()? {
-        files.push(audio);
-    }
-    Ok(files)
+    wrapper_files(arguments)
 }
 
 fn build_profile(name: &str, base: &Path, target: &Path) -> Result<PatchProfile, String> {
@@ -1079,7 +1016,7 @@ fn release(arguments: &[String]) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     fs::write(
         output.join("README.txt"),
-        "Doraemon Monopoly localization patcher\r\n\r\nUse only with your own supported Cantonese installation. Copy this patcher beside Doraemon.exe and run it there. It validates every required file, creates backup\\original, backup\\manifest.json, and backup\\Restore.exe, then installs verified differences. When local music is selected, Music.dat is reused or built from a verified DoraemonMusic.wav or CUE/BIN. Leaving local music off preserves the original CD/MCI behavior exactly. Builds made with --cnc-ddraw-dir can also add the graphics wrapper from the patcher window.\r\n",
+        "Doraemon Monopoly localization patcher\r\n\r\nUse only with your own supported Cantonese installation. Copy this Windows 7+ patcher beside Doraemon.exe and run it there. It validates every required file, creates backup\\original, backup\\manifest.json, and backup\\Restore.exe, then installs verified differences. When local music is selected, BGM.dat is reused or built from a verified DoraemonMusic.wav or CUE/BIN. The patched game streams BGM.dat through its original Win95 DirectSound path without a helper DLL. Leaving local music off preserves the original CD/MCI behavior exactly.\r\n",
     )
     .map_err(|error| error.to_string())?;
     fs::remove_file(payload_path).map_err(|error| error.to_string())?;
@@ -1147,7 +1084,7 @@ fn portable(arguments: &[String]) -> Result<(), String> {
         ),
     )
     .map_err(|e| e.to_string())?;
-    fs::write(output.join("README.txt"), "Doraemon v1.26 portable compatibility patcher\r\n\r\nCopy this patcher beside Doraemon.exe, then run it there. It always patches its own folder and does not ask for a game path. The patcher detects supported executable layouts and applies only selected registry, disc, local-music, and volume changes. Local music uses Music.dat through DirectSound and is installed only when its checkbox is selected and a verified source is available. A backup is created before writing.\r\n").map_err(|e| e.to_string())?;
+    fs::write(output.join("README.txt"), "Doraemon v1.26 portable compatibility patcher\r\n\r\nCopy this Windows 7+ patcher beside Doraemon.exe, then run it there. It always patches its own folder and does not ask for a game path. Local music uses compressed BGM.dat through the game\'s Win95-compatible DirectSound path and is installed only when its checkbox is selected and a verified source is available. No audio helper DLL is required. A backup is created before writing.\r\n").map_err(|e| e.to_string())?;
     fs::remove_file(payload_path).ok();
     println!("Built {}", destination.display());
     Ok(())

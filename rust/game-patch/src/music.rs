@@ -6,14 +6,14 @@ use std::{
 
 use crate::{install::replace_file, Result};
 
-pub const MAGIC: &[u8; 8] = b"DMUSIC1\0";
+pub const MAGIC: &[u8; 8] = b"DBGM1\0\0\0";
 pub const HEADER_SIZE: usize = 192;
 pub const TRACK_COUNT: usize = 10;
-pub const SAMPLE_RATE: u32 = 44_100;
+pub const SAMPLE_RATE: u32 = 22_050;
 pub const BLOCK_FRAMES: usize = 4_096;
 pub const TRACK_FRAMES: [u32; TRACK_COUNT] = [
-    15_051_624, 5_731_824, 1_849_848, 4_789_848, 348_096, 4_260_648, 3_083_472, 2_753_604,
-    3_807_888, 617_988,
+    7_525_812, 2_865_912, 924_924, 2_394_924, 174_048, 2_130_324, 1_541_736, 1_376_802, 1_903_944,
+    308_994,
 ];
 
 const STEP_TABLE: [i32; 89] = [
@@ -71,41 +71,50 @@ fn encode_nibble(sample: i16, predictor: &mut i32, index: &mut i32) -> u8 {
     nibble
 }
 
+fn mono_sample(pair: &[u8]) -> i16 {
+    let sum = i16::from_le_bytes(pair[0..2].try_into().unwrap()) as i32
+        + i16::from_le_bytes(pair[2..4].try_into().unwrap()) as i32
+        + i16::from_le_bytes(pair[4..6].try_into().unwrap()) as i32
+        + i16::from_le_bytes(pair[6..8].try_into().unwrap()) as i32;
+    (sum / 4).clamp(i16::MIN as i32, i16::MAX as i32) as i16
+}
+
 fn encode_track<R: Read>(source: &mut R, target: &mut File, frames: u32) -> Result<u32> {
     let mut remaining = frames as usize;
     let mut written = 0_u32;
     while remaining != 0 {
         let count = remaining.min(BLOCK_FRAMES);
-        let mut pcm = vec![0_u8; count * 4];
+        // Two 44.1 kHz stereo source frames become one 22.05 kHz mono frame.
+        let mut pcm = vec![0_u8; count * 8];
         source
             .read_exact(&mut pcm)
             .map_err(|error| format!("read source PCM: {error}"))?;
-        let first_l = i16::from_le_bytes(pcm[0..2].try_into().unwrap());
-        let first_r = i16::from_le_bytes(pcm[2..4].try_into().unwrap());
-        let mut block = Vec::with_capacity(count + 9);
+        let first = mono_sample(&pcm[..8]);
+        let mut block = Vec::with_capacity(6 + count.div_ceil(2));
         block.extend_from_slice(&(count as u16).to_le_bytes());
-        block.extend_from_slice(&first_l.to_le_bytes());
+        block.extend_from_slice(&first.to_le_bytes());
         block.extend_from_slice(&[0, 0]);
-        block.extend_from_slice(&first_r.to_le_bytes());
-        block.extend_from_slice(&[0, 0]);
-        let mut predictor_l = first_l as i32;
-        let mut predictor_r = first_r as i32;
-        let mut index_l = 0;
-        let mut index_r = 0;
+        let mut predictor = first as i32;
+        let mut step_index = 0;
+        let mut packed = 0_u8;
         for frame in 1..count {
-            let offset = frame * 4;
-            let left = i16::from_le_bytes(pcm[offset..offset + 2].try_into().unwrap());
-            let right = i16::from_le_bytes(pcm[offset + 2..offset + 4].try_into().unwrap());
-            let packed = encode_nibble(left, &mut predictor_l, &mut index_l)
-                | (encode_nibble(right, &mut predictor_r, &mut index_r) << 4);
+            let sample = mono_sample(&pcm[frame * 8..frame * 8 + 8]);
+            let nibble = encode_nibble(sample, &mut predictor, &mut step_index);
+            if frame & 1 == 1 {
+                packed = nibble;
+            } else {
+                block.push(packed | (nibble << 4));
+            }
+        }
+        if count & 1 == 0 {
             block.push(packed);
         }
         target
             .write_all(&block)
-            .map_err(|error| format!("write Music.dat block: {error}"))?;
+            .map_err(|error| format!("write BGM.dat block: {error}"))?;
         written = written
             .checked_add(block.len() as u32)
-            .ok_or("Music.dat track exceeds 4 GiB")?;
+            .ok_or("BGM.dat track exceeds 4 GiB")?;
         remaining -= count;
     }
     Ok(written)
@@ -113,7 +122,7 @@ fn encode_track<R: Read>(source: &mut R, target: &mut File, frames: u32) -> Resu
 
 fn encode_reader<R: Read>(source: &mut R, output: &Path, track_frames: &[u32]) -> Result<()> {
     if track_frames.len() != TRACK_COUNT {
-        return Err("Music.dat requires exactly ten tracks".into());
+        return Err("BGM.dat requires exactly ten tracks".into());
     }
     let temporary = output.with_extension("dat.dmpatch.tmp");
     let mut target =
@@ -134,7 +143,7 @@ fn encode_reader<R: Read>(source: &mut R, output: &Path, track_frames: &[u32]) -
     put_u32(&mut header, 8, 1);
     put_u32(&mut header, 12, TRACK_COUNT as u32);
     put_u32(&mut header, 16, SAMPLE_RATE);
-    put_u16(&mut header, 20, 2);
+    put_u16(&mut header, 20, 1);
     put_u16(&mut header, 22, 16);
     put_u32(&mut header, 24, BLOCK_FRAMES as u32);
     for (index, (id, offset, length, frames)) in entries.into_iter().enumerate() {
@@ -154,7 +163,7 @@ fn encode_reader<R: Read>(source: &mut R, output: &Path, track_frames: &[u32]) -
     drop(target);
     if !valid(&temporary) {
         let _ = fs::remove_file(&temporary);
-        return Err("generated Music.dat failed verification".into());
+        return Err("generated BGM.dat failed verification".into());
     }
     replace_file(&temporary, output)
 }
@@ -196,7 +205,7 @@ pub fn valid(path: &Path) -> bool {
         || get_u32(&header, 8) != 1
         || get_u32(&header, 12) != TRACK_COUNT as u32
         || get_u32(&header, 16) != SAMPLE_RATE
-        || get_u16(&header, 20) != 2
+        || get_u16(&header, 20) != 1
         || get_u16(&header, 22) != 16
         || get_u32(&header, 24) != BLOCK_FRAMES as u32
     {
@@ -224,24 +233,22 @@ pub fn valid(path: &Path) -> bool {
         let mut frames_left = frames as u64;
         while frames_left != 0 {
             let expected_frames = frames_left.min(BLOCK_FRAMES as u64);
-            let mut block = [0_u8; 10];
+            let mut block = [0_u8; 6];
             if encoded_left < block.len() as u64
                 || file.read_exact(&mut block).is_err()
                 || u16::from_le_bytes(block[..2].try_into().unwrap()) as u64 != expected_frames
                 || block[4] > 88
                 || block[5] != 0
-                || block[8] > 88
-                || block[9] != 0
             {
                 return false;
             }
-            let samples = expected_frames - 1;
-            if encoded_left < block.len() as u64 + samples
-                || file.seek(SeekFrom::Current(samples as i64)).is_err()
+            let packed = expected_frames / 2;
+            if encoded_left < block.len() as u64 + packed
+                || file.seek(SeekFrom::Current(packed as i64)).is_err()
             {
                 return false;
             }
-            encoded_left -= block.len() as u64 + samples;
+            encoded_left -= block.len() as u64 + packed;
             frames_left -= expected_frames;
         }
         if encoded_left != 0 {
@@ -256,6 +263,44 @@ pub fn valid(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    fn synthetic_valid_file(path: &Path) {
+        let mut bytes = vec![0_u8; HEADER_SIZE];
+        bytes[..8].copy_from_slice(MAGIC);
+        put_u32(&mut bytes, 8, 1);
+        put_u32(&mut bytes, 12, TRACK_COUNT as u32);
+        put_u32(&mut bytes, 16, SAMPLE_RATE);
+        put_u16(&mut bytes, 20, 1);
+        put_u16(&mut bytes, 22, 16);
+        put_u32(&mut bytes, 24, BLOCK_FRAMES as u32);
+        for (index, frames) in TRACK_FRAMES.into_iter().enumerate() {
+            let offset = bytes.len();
+            let mut left = frames as usize;
+            while left != 0 {
+                let count = left.min(BLOCK_FRAMES);
+                bytes.extend_from_slice(&(count as u16).to_le_bytes());
+                bytes.extend_from_slice(&0_i16.to_le_bytes());
+                bytes.extend_from_slice(&[0, 0]);
+                bytes.resize(bytes.len() + count / 2, 0);
+                left -= count;
+            }
+            let at = 32 + index * 16;
+            let length = bytes.len() - offset;
+            put_u32(&mut bytes, at, index as u32 + 2);
+            put_u32(&mut bytes, at + 4, offset as u32);
+            put_u32(&mut bytes, at + 8, length as u32);
+            put_u32(&mut bytes, at + 12, frames);
+        }
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn synthetic_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "doraemon-bgm-{label}-{}-{}.dat",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ))
+    }
+
     #[test]
     fn ima_encoder_is_deterministic() {
         let mut predictor = 0;
@@ -269,17 +314,79 @@ mod tests {
     }
 
     #[test]
+    fn stereo_pairs_downsample_deterministically() {
+        let mut bytes = Vec::new();
+        for sample in [1000_i16, -1000, 3000, 1000] {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        assert_eq!(mono_sample(&bytes), 1000);
+    }
+
+    #[test]
+    fn all_track_durations_match_the_verified_disc() {
+        let seconds: Vec<_> = TRACK_FRAMES
+            .into_iter()
+            .map(|frames| (frames + SAMPLE_RATE - 1) / SAMPLE_RATE)
+            .collect();
+        assert_eq!(seconds, [342, 130, 42, 109, 8, 97, 70, 63, 87, 15]);
+    }
+
+    #[test]
+    fn validates_all_tracks_and_rejects_corruption() {
+        let path = synthetic_path("validation");
+        synthetic_valid_file(&path);
+        assert!(valid(&path));
+
+        let original = std::fs::read(&path).unwrap();
+        for (label, offset, value) in [
+            ("magic", 0, b'X'),
+            ("version", 8, 2),
+            ("track-id", 32, 3),
+            ("frame-count", 44, 0),
+        ] {
+            let damaged = synthetic_path(label);
+            let mut bytes = original.clone();
+            bytes[offset] = value;
+            std::fs::write(&damaged, bytes).unwrap();
+            assert!(!valid(&damaged), "accepted corrupted {label}");
+            std::fs::remove_file(damaged).unwrap();
+        }
+
+        let first_block = HEADER_SIZE;
+        let damaged = synthetic_path("index");
+        let mut bytes = original.clone();
+        bytes[first_block + 4] = 89;
+        std::fs::write(&damaged, bytes).unwrap();
+        assert!(!valid(&damaged));
+        std::fs::remove_file(damaged).unwrap();
+
+        let damaged = synthetic_path("truncated");
+        std::fs::write(&damaged, &original[..original.len() - 1]).unwrap();
+        assert!(!valid(&damaged));
+        std::fs::remove_file(damaged).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn real_disc_encodes_when_fixture_is_available() {
         let Ok(cue) = std::env::var("DORAEMON_TEST_CUE") else {
             return;
         };
-        let output =
-            std::env::temp_dir().join(format!("doraemon-music-test-{}.dat", std::process::id()));
-        let _ = std::fs::remove_file(&output);
+        let output = synthetic_path("cue-fixture");
+        let wav = synthetic_path("fixture").with_extension("wav");
+        let wav_output = synthetic_path("wav-fixture");
+        for path in [&output, &wav, &wav_output] {
+            let _ = std::fs::remove_file(path);
+        }
         encode_cue(Path::new(&cue), &output).unwrap();
-        assert!(valid(&output));
+        crate::cue::extract(Path::new(&cue), &wav).unwrap();
+        encode_wav(&wav, &wav_output).unwrap();
+        assert!(valid(&output) && valid(&wav_output));
+        assert_eq!(std::fs::read(&output).unwrap(), std::fs::read(&wav_output).unwrap());
         let size = std::fs::metadata(&output).unwrap().len();
-        assert!((35_000_000..50_000_000).contains(&size));
+        assert!((8_000_000..15_000_000).contains(&size));
         std::fs::remove_file(output).unwrap();
+        std::fs::remove_file(wav_output).unwrap();
+        std::fs::remove_file(wav).unwrap();
     }
 }

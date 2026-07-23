@@ -196,10 +196,10 @@ mod windows_app {
     }
 
     fn music_text(game: &std::path::Path) -> String {
-        if music::valid(&game.join("Music.dat")) {
-            "♪ Local music is ready: Music.dat found.".into()
+        let mut message = if music::valid(&game.join("BGM.dat")) {
+            "♪ Local music is ready: BGM.dat found.".into()
         } else if cue::valid_wav(&game.join("DoraemonMusic.wav")) {
-            "♪ DoraemonMusic.wav found. I'll compress it into Music.dat when you apply.".into()
+            "♪ DoraemonMusic.wav found. I'll compress it into BGM.dat when you apply.".into()
         } else if let Some(path) = find_cue(game) {
             format!(
                 "♪ Disc music found: {}. I'll prepare it when you apply.",
@@ -212,7 +212,22 @@ mod windows_app {
             )
         } else {
             String::new()
+        };
+        let legacy: Vec<_> = ["Music.dat", "doraudio.dll"]
+            .into_iter()
+            .filter(|name| game.join(name).exists())
+            .collect();
+        if !legacy.is_empty() {
+            if !message.is_empty() {
+                message.push_str("  ");
+            }
+            message.push_str(&format!(
+                "Unused legacy {} found; this patcher will leave {} untouched.",
+                legacy.join(" and "),
+                if legacy.len() == 1 { "it" } else { "them" }
+            ));
         }
+        message
     }
 
     fn append_log(ui: &Ui, state: TaskState, message: &str) {
@@ -470,7 +485,7 @@ mod windows_app {
                 .parent(&ui.window)
                 .build(&mut ui.no_reg)?;
 
-            let has_music = music::valid(&game.join("Music.dat"))
+            let has_music = music::valid(&game.join("BGM.dat"))
                 || find_cue(game).is_some()
                 || cue::valid_wav(&game.join("DoraemonMusic.wav"));
             nwg::CheckBox::builder()
@@ -721,7 +736,7 @@ mod windows_app {
                                 ui.restore.set_enabled(events_game.join("backup").is_dir());
                                 ui.music.set_text(&music_text(&events_game));
                                 ui.local_audio.set_enabled(
-                                    music::valid(&events_game.join("Music.dat"))
+                                    music::valid(&events_game.join("BGM.dat"))
                                         || find_cue(&events_game).is_some()
                                         || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
                                 );
@@ -765,7 +780,7 @@ mod windows_app {
                                     .set_enabled(events_game.join("Doraemon.exe").is_file());
                                 ui.music.set_text(&music_text(&events_game));
                                 ui.local_audio.set_enabled(
-                                    music::valid(&events_game.join("Music.dat"))
+                                    music::valid(&events_game.join("BGM.dat"))
                                         || find_cue(&events_game).is_some()
                                         || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
                                 );
@@ -833,7 +848,7 @@ mod windows_app {
                     }
                 } else if event == nwg::Event::OnButtonClick && handle == ui.refresh_music.handle {
                     ui.music.set_text(&music_text(&events_game));
-                    let has_music = music::valid(&events_game.join("Music.dat"))
+                    let has_music = music::valid(&events_game.join("BGM.dat"))
                         || find_cue(&events_game).is_some()
                         || cue::valid_wav(&events_game.join("DoraemonMusic.wav"));
                     ui.local_audio.set_enabled(has_music);

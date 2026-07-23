@@ -36,10 +36,10 @@ The executable imports `mciSendCommandA` at IAT address `0x004B929C` and opens d
 
 | Address      | Original responsibility               | Local-music behavior                         |
 | ------------ | ------------------------------------- | -------------------------------------------- |
-| `0x00485043` | Open CD-audio device and select TMSF  | Load `doraudio.dll` and open `Music.dat`     |
-| `0x00485288` | Play a numbered CD track              | Start the matching DirectSound stream        |
-| `0x00485366` | Stop CD playback                      | Stop the local DirectSound buffer             |
-| `0x0048545F` | Query a CD track's duration           | Read duration from the `Music.dat` directory |
+| `0x00485043` | Open CD-audio device and select TMSF  | Open and validate `BGM.dat`                  |
+| `0x00485288` | Play a numbered CD track              | Start the matching injected DirectSound stream |
+| `0x00485366` | Stop CD playback                      | Stop the local DirectSound buffer            |
+| `0x0048545F` | Query a CD track's duration           | Read duration from the `BGM.dat` directory  |
 | `0x004855F3` | Query the physical disc's track count | Report the original 11-track numbering       |
 
 `0x00485043` is inside the constructor that begins at `0x00485020`, not a normal function entry.
@@ -48,17 +48,18 @@ helper that clobbers `ECX`. The injected continuation must therefore reload the 
 and return with the constructor’s original `mov esp,ebp; pop ebp; ret 4` convention. Treating `ECX` as
 the object here produces a null write at `.port+0xAD` during startup.
 
-`Music.dat` contains ten independently seekable stereo IMA ADPCM streams at 44.1 kHz. The helper decodes
-them into a four-second DirectSound circular buffer. It imports only Kernel32 and reuses the game’s existing
-`IDirectSound` object, which keeps the backend suitable for Windows 7 through 11 and Wine/CrossOver without
-depending on a system MP3 or ACM codec. The helper loops the active track itself because the local constructor
-does not create the original WinMM one-second replay timer. `0x004851D9` is also redirected so shutdown stops
-the worker and releases the DirectSound buffer without issuing legacy MCI or mixer calls.
+`BGM.dat` contains ten independently decodable mono IMA ADPCM streams at 22.05 kHz, matching the format
+used by the original `Sfx.dat` records. Injected code reserves a temporary SFX slot and calls the game's
+memory-WAV routine at `0x00489041`, which creates the DirectSound buffer through the original, proven path.
+It then takes ownership of that buffer, clears the temporary slot, and releases the reservation, so all eight
+normal SFX slots remain available. A WinMM one-second periodic timer maintains a four-second looping buffer in
+two halves. `0x004851D9` is redirected so shutdown kills the timer and releases the buffer and file without
+issuing legacy MCI or mixer calls.
 
 The original BGM slider targeted the Compact Disc mixer control. For local playback only, its calculated
 0–65535 value is forwarded to `IDirectSoundBuffer::SetVolume`. If **Use local music** is not
-selected, the helper is not installed, no music file is generated, and all original CD/MCI music and slider
-instructions remain untouched. If local music is selected but no valid `Music.dat`, WAV, or CUE/BIN source
+selected, no local stream is installed, no music file is generated, and all original CD/MCI music and slider
+instructions remain untouched. If local music is selected but no valid `BGM.dat`, WAV, or CUE/BIN source
 exists, the patcher warns and likewise leaves the original music code untouched.
 
 The patcher also offers an opt-in **Fix volume control** mode for systems that ignore the old mixer API.
@@ -90,8 +91,10 @@ The extracted payload is 169,179,360 bytes and has SHA-256
 ## Portable PE section
 
 The patch appends `.port` at RVA `0x000D6000`/VA `0x004D6000`. It contains the startup bypasses,
-local-music dispatch stubs, optional volume hooks, and title credit. The helper resolves `Music.dat` beside
-the executable with `GetModuleFileNameA`, so playback does not depend on the working directory.
+local-music dispatch stubs, the embedded decoder and streamer, optional volume hooks, and title credit. The
+runtime resolves `BGM.dat` beside the executable with `GetModuleFileNameA`, so playback does not depend on the
+working directory. It calls only Win95-era Kernel32/WinMM imports already present in the executable and the
+game's own DirectSound/SFX routines; there is no helper DLL or additional DirectSound device.
 
 The patch addresses only disc detection and music transport. DirectDraw, DirectInput, codecs, and other
 Windows 95 compatibility concerns are unchanged.

@@ -13,13 +13,19 @@ use crate::Result;
 mod assembler;
 use assembler::{patch_call, patch_cseg_jump, patch_jump, Asm, Target, IMAGE_BASE};
 
+mod bgm_symbols {
+    include!(concat!(env!("OUT_DIR"), "/bgm_symbols.rs"));
+}
+const BGM_RUNTIME: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bgm_runtime.bin"));
+
 const CSEG_VA: u32 = 0x004d_1000;
 const CSEG_RAW: usize = 0x000c_c000;
 const PORT_VA: u32 = 0x004d_6000;
-const PORT_SIZE: usize = 0x2000;
+const PORT_SIZE: usize = 0x4000;
 const PORT_TITLE_OFFSET: usize = 0x0c00;
 const PORT_VOLUME_OFFSET: usize = 0x0d00;
 const PORT_SFX_OFFSET: usize = 0x0f00;
+const PORT_BGM_OFFSET: usize = 0x2000;
 const TITLE_PREFIX: &[u8] = b"Version ";
 const TITLE_SUFFIX: &[u8] = b" - Patched by Thang\0";
 
@@ -441,8 +447,6 @@ fn portable_section(
 ) -> Result<(Vec<u8>, HashMap<&'static str, u32>)> {
     let mut a = Asm::new(PORT_VA);
     const IAT_MODULE: u32 = 0x004b_90d0;
-    const IAT_GET_PROC: u32 = 0x004b_9108;
-    const IAT_LOAD_LIBRARY: u32 = 0x004b_9138;
     const SOUND_MANAGER: u32 = 0x004c_c83c;
     const CD_ROOT: u32 = 0x004c_cdf8;
     a.label("no_disc");
@@ -476,17 +480,6 @@ fn portable_section(
 
     a.label("ensure_audio_dispatch");
     a.absolute(&[0xa1], "audio_dispatch");
-    a.emit(&[0x85, 0xc0]);
-    a.jne(Target::Label("audio_dispatch_ready"));
-    a.absolute(&[0x68], "audio_dll_name");
-    a.call_iat(IAT_LOAD_LIBRARY);
-    a.emit(&[0x85, 0xc0]);
-    a.je(Target::Label("audio_dispatch_ready"));
-    a.absolute(&[0x68], "audio_export_name");
-    a.emit(&[0x50]);
-    a.call_iat(IAT_GET_PROC);
-    a.absolute(&[0xa3], "audio_dispatch");
-    a.label("audio_dispatch_ready");
     a.emit(&[0xc3]);
 
     a.label("open_music");
@@ -558,11 +551,7 @@ fn portable_section(
     a.label("track_count");
     a.emit(&[0xb8, 0x0b, 0, 0, 0, 0xc3]);
     a.label("audio_dispatch");
-    a.u32(0);
-    a.label("audio_dll_name");
-    a.emit(b"doraudio.dll\0");
-    a.label("audio_export_name");
-    a.emit(b"DoraAudioDispatch\0");
+    a.u32(bgm_symbols::BGMDISPATCH);
     a.label("title_credit");
     a.emit(credit);
     a.label("path_buffer");
@@ -596,13 +585,23 @@ fn portable_section(
         a.labels.extend(sfx_labels);
         a.emit(&sfx);
     }
+    if a.bytes.len() > PORT_BGM_OFFSET {
+        return Err("portable hooks overlap the embedded BGM runtime".into());
+    }
+    while a.bytes.len() < PORT_BGM_OFFSET {
+        a.emit(&[0]);
+    }
+    if BGM_RUNTIME.len() > PORT_SIZE - PORT_BGM_OFFSET {
+        return Err("embedded BGM runtime does not fit in .port".into());
+    }
+    a.emit(BGM_RUNTIME);
     a.finish()
 }
 
-/// For local music only, forwards the game's BGM slider value to the helper's
+/// For local music only, forwards the game's BGM slider value to the embedded
 /// DirectSound stream. The normal CD/MCI path never points at this block.
 /// Emits the Music-slider bridge. It forwards the game's 0..65535 value to
-/// DoraAudioDispatch command 5 and reports full width when no legacy mixer exists.
+/// BgmDispatch command 5 and reports full width when no legacy mixer exists.
 fn local_music_volume_block(
     base: u32,
     dispatch_pointer: u32,
@@ -795,7 +794,8 @@ fn add_section(input: &[u8], section: &[u8]) -> Result<Vec<u8>> {
         output[header + offset..header + offset + 4].copy_from_slice(&value.to_le_bytes());
     }
     output[pe + 6..pe + 8].copy_from_slice(&((count + 1) as u16).to_le_bytes());
-    output[pe + 24 + 56..pe + 24 + 60].copy_from_slice(&0x000d_8000_u32.to_le_bytes());
+    output[pe + 24 + 56..pe + 24 + 60]
+        .copy_from_slice(&(PORT_VA - IMAGE_BASE + PORT_SIZE as u32).to_le_bytes());
     output[pe + 24 + 64..pe + 24 + 68].fill(0);
     Ok(output)
 }
@@ -959,8 +959,8 @@ fn install_modern_sfx_volume_hook(
 
 /// The original options screen sends BGM changes to the Compact Disc mixer
 /// control. The local-music build keeps its value calculation but forwards the
-/// result to the helper's DirectSound buffer. These hooks are installed only
-/// for local Music.dat playback; normal CD-audio builds retain the exact
+/// result to the injected runtime's DirectSound buffer. These hooks are installed only
+/// for local BGM.dat playback; normal CD-audio builds retain the exact
 /// original calls.
 /// Redirects the legacy Music mixer calls to local DirectSound volume control,
 /// including the constructor fallback that controls the initial Music bell.
@@ -1059,8 +1059,16 @@ fn install_local_music_bgm_volume_hook(
     Ok(changed)
 }
 
-/// Upgrades an older `.port` patch with the current Music volume hook in place.
+/// Upgrades an older `.port` patch with the current BGM volume hook in place.
 fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
+    if find_bytes(output, b"BGMRT3\0").is_some() {
+        let (_, labels) = portable_section(false, b"\0")?;
+        return install_local_music_bgm_volume_hook(
+            output,
+            labels["wave_bgm_volume"],
+            labels["wave_bgm_get_volume"],
+        );
+    }
     let section = find_section(output, b".port")?;
     let raw_size =
         u32::from_le_bytes(output[section + 16..section + 20].try_into().unwrap()) as usize;
@@ -1089,10 +1097,13 @@ fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     )
 }
 
-/// Upgrades an already portable executable to local Music.dat playback.
+/// Upgrades an already portable executable to local BGM.dat playback.
 fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"doraudio.dll\0").is_none() {
-        return Err("this older portable build predates the DirectSound Music.dat backend; restore the original executable before enabling local music".into());
+    if find_bytes(output, b"doraudio.dll\0").is_some() {
+        return Err("this executable uses the retired doraudio.dll/Music.dat backend; restore the original executable before enabling BGM.dat".into());
+    }
+    if find_bytes(output, b"BGMRT3\0").is_none() {
+        return Err("this older portable build predates embedded BGM.dat streaming; restore the original executable before enabling local music".into());
     }
     let (_, labels) = portable_section(false, b"\0")?;
     let mut changed = false;
@@ -1157,7 +1168,7 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
 
 /// Restores the original CD/MCI Music routines and constructor fallback.
 fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"doraudio.dll\0").is_none() || output.get(0x85043) != Some(&0xe9) {
+    if find_bytes(output, b"BGMRT3\0").is_none() || output.get(0x85043) != Some(&0xe9) {
         return Ok(false);
     }
     let (_, labels) = portable_section(false, b"\0")?;
@@ -1344,8 +1355,9 @@ pub fn patch_compatible(
             actions.push("added the title-screen patch credit".into());
         }
         if upgraded_local_music {
-            actions
-                .push("enabled local Music.dat playback and its DirectSound volume control".into());
+            actions.push(
+                "enabled embedded BGM.dat streaming and its DirectSound volume control".into(),
+            );
         }
         if disabled_local_music {
             actions.push("restored the original CD/MCI music and volume routines".into());
@@ -1376,7 +1388,7 @@ pub fn patch_compatible(
                 actions.push("bypassed the original CD check".into());
             }
             if local_audio_requested {
-                actions.push("enabled local Music.dat DirectSound playback".into());
+                actions.push("enabled Win95-safe BGM.dat streaming".into());
                 actions.push("patched the BGM slider for local DirectSound audio".into());
             }
             if modern_volume {
@@ -1413,7 +1425,7 @@ pub fn patch_compatible(
         && input.get(0x83da3..0x83da8) == Some(&[0x8b, 0x55, 0x08, 0x89, 0x55]);
     if alternate {
         if local_audio_requested {
-            return Err("this recognized v1.26 layout already bypasses the CD, but its music functions differ; local Music.dat playback is not yet safe for this layout".into());
+            return Err("this recognized v1.26 layout already bypasses the CD, but its music functions differ; local BGM.dat playback is not yet safe for this layout".into());
         }
         let (bytes, changed) = if no_disc {
             (patch_alternate_portable(input)?, true)
@@ -1474,6 +1486,22 @@ mod tests {
     #[test]
     fn portable_hook_labels_point_to_instruction_boundaries() {
         let (section, labels) = portable_section(true, b"\0").unwrap();
+        assert_eq!(
+            &section[PORT_BGM_OFFSET..PORT_BGM_OFFSET + BGM_RUNTIME.len()],
+            BGM_RUNTIME
+        );
+        assert!(
+            (PORT_VA + PORT_BGM_OFFSET as u32..PORT_VA + PORT_SIZE as u32)
+                .contains(&bgm_symbols::BGMDISPATCH)
+        );
+        let dispatch = (labels["audio_dispatch"] - PORT_VA) as usize;
+        assert_eq!(
+            u32::from_le_bytes(section[dispatch..dispatch + 4].try_into().unwrap()),
+            bgm_symbols::BGMDISPATCH
+        );
+        assert!(find_bytes(&section, b"BGM.dat\0").is_some());
+        assert!(find_bytes(&section, b"BGMRT3\0").is_some());
+        assert!(find_bytes(&section, b"doraudio.dll\0").is_none());
         let open = (labels["open_music"] - PORT_VA) as usize;
         let play = (labels["play"] - PORT_VA) as usize;
         assert!(section[open..play]

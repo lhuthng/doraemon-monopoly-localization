@@ -61,7 +61,7 @@ help:
 	  '  loc-gian.dmpatch     : strings group 008 (Gian dialogues + voice)' \
 	  '  loc-others.dmpatch   : groups 000,001,002 + shared action text/voice + menu/misc voice' \
 	  '  sprites.dmpatch      : sysfont.dat, Sprite1.dat, sprite2.dat, bitmaps.dat deltas' \
-	  '  runtime.dmpatch      : Doraemon.exe changes, bundled cnc-ddraw + doraudio.dll' \
+	  '  runtime.dmpatch      : Doraemon.exe changes and optional bundled cnc-ddraw files' \
 	  '' \
 	  'Tracked: patches/*.dmpatch patches/*/ (shareable resource changes only)' \
 	  'Ignored: tmp/base/ (your game), resource-studio/local-game/, tmp/patches/, tmp/release/'
