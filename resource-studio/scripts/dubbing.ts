@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   DUBBING_FORMAT,
   DUBBING_OWNERS,
+  compareRecordIds,
+  gadgetMetadataForStringId,
   isDubbingLanguage,
   normalizeDialogueFile,
   ownerForStringId,
@@ -278,29 +280,36 @@ async function organizeLanguage(language: DubbingLanguage) {
 }
 
 async function writeCatalogue() {
-  const languages = {} as Record<DubbingLanguage, { records: object[] }>;
+  const languages = {} as Record<
+    DubbingLanguage,
+    { records: object[]; voiceIds: string[]; dubbedVoiceIds: string[] }
+  >;
   for (const language of ['english', 'vietnamese'] as const) {
-    const [bytes, voiceBytes] = await Promise.all([
+    const [bytes, voiceBytes, dubbedVoices] = await Promise.all([
       readFile(originPath('strings.dat')),
-      readFile(originPath('voice.dat'))
+      readFile(originPath('voice.dat')),
+      voiceFiles(language)
     ]);
     const voice = parseVoiceArchive(voiceBytes);
     const translations = await readDialogue(language);
     languages[language] = {
-      records: parseStrings(bytes).map((record) => ({
-        id: record.id,
-        owner: ownerForStringId(record.id)!,
-        ...(translations.get(record.id) ? { translation: translations.get(record.id) } : {}),
-        maxLines: record.path[0] >= 3 ? 2 : 3,
-        maxWidth: record.path[0] >= 3 ? 220 : 260,
-        ...(dialogueVoicePath(record.path[0], record.path[1], voice.bankCounts)
-          ? {
-              voiceId: dialogueVoicePath(record.path[0], record.path[1], voice.bankCounts)!
-                .map((part) => String(part).padStart(3, '0'))
-                .join('/')
-            }
-          : {})
-      }))
+      voiceIds: voice.records
+        .filter((record) => record.storage !== 'empty' && record.path[1] !== 3)
+        .map((record) => record.id),
+      dubbedVoiceIds: [...dubbedVoices.keys()].sort(compareRecordIds),
+      records: parseStrings(bytes).map((record) => {
+        const gadget = gadgetMetadataForStringId(record.id);
+        const dialogueVoice = dialogueVoicePath(record.path[0], record.path[1], voice.bankCounts);
+        return {
+          id: record.id,
+          owner: ownerForStringId(record.id)!,
+          ...(translations.get(record.id) ? { translation: translations.get(record.id) } : {}),
+          ...(dialogueVoice
+            ? { voiceId: dialogueVoice.map((part) => String(part).padStart(3, '0')).join('/') }
+            : {}),
+          ...(gadget ? { gadgetAssetId: gadget.assetId, gadgetVoiceSlot: gadget.voiceSlot } : {})
+        };
+      })
     };
   }
   const catalogue = {

@@ -1,6 +1,8 @@
 export const DUBBING_FORMAT = 'doraemon-monopoly-dubbing/v1';
 
 export const DUBBING_OWNERS = ['doraemon', 'nobita', 'dorami', 'shizuka', 'suneo', 'gian', 'others'] as const;
+export const GADGET_RECORD_GROUP = 1;
+export const GADGET_RECORD_COUNT = 42;
 
 export type DubbingOwner = (typeof DUBBING_OWNERS)[number];
 export type DubbingLanguage = 'english' | 'vietnamese';
@@ -24,15 +26,18 @@ export type ContributionRecord = {
   owner: DubbingOwner;
   source?: string;
   translation?: string;
-  maxLines: number;
-  maxWidth?: number;
   voiceId?: string;
+  gadgetAssetId?: number;
+  gadgetVoiceSlot?: number;
 };
 
 export type ContributionCatalogue = {
   format: typeof DUBBING_FORMAT;
   generatedAt: string;
-  languages: Record<DubbingLanguage, { records: ContributionRecord[] }>;
+  languages: Record<
+    DubbingLanguage,
+    { records: ContributionRecord[]; voiceIds: string[]; dubbedVoiceIds: string[] }
+  >;
 };
 
 const stringId = /^(\d{3})\/(\d{3})$/;
@@ -58,6 +63,22 @@ export function ownerForVoiceId(id: string): DubbingOwner | undefined {
   if (!match) return undefined;
   const character = Number(match[1]);
   return character >= 0 && character < 6 ? DUBBING_OWNERS[character] : undefined;
+}
+
+export function gadgetMetadataForStringId(id: string) {
+  const match = stringId.exec(id);
+  if (!match || Number(match[1]) !== GADGET_RECORD_GROUP) return undefined;
+  const slot = Number(match[2]);
+  if (slot < 0 || slot >= GADGET_RECORD_COUNT) return undefined;
+  return { assetId: slot, voiceSlot: slot };
+}
+
+export function gadgetVoiceId(character: number, slot: number) {
+  if (!Number.isInteger(character) || character < 0 || character >= 6)
+    throw new Error(`Invalid gadget character slot ${character}.`);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= GADGET_RECORD_COUNT)
+    throw new Error(`Invalid gadget voice slot ${slot}.`);
+  return `${String(character).padStart(3, '0')}/002/${String(slot).padStart(3, '0')}`;
 }
 
 export function compareRecordIds(left: string, right: string) {

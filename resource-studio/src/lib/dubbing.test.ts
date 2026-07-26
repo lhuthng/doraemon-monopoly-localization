@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { compareRecordIds, normalizeDialogueFile, ownerForStringId, voiceIdFromFilename } from './dubbing';
+import {
+  compareRecordIds,
+  gadgetMetadataForStringId,
+  gadgetVoiceId,
+  normalizeDialogueFile,
+  ownerForStringId,
+  voiceIdFromFilename
+} from './dubbing';
 
 describe('dubbing source format', () => {
   test('assigns dialogue groups to their fixed owners', () => {
@@ -30,5 +37,18 @@ describe('dubbing source format', () => {
     ).toThrow();
     expect(voiceIdFromFilename('003-001-011.wav')).toBe('003/001/011');
     expect(voiceIdFromFilename('voice.wav')).toBeUndefined();
+  });
+
+  test('maps all gadget records and their six character voice slots canonically', () => {
+    for (let slot = 0; slot <= 41; slot += 1) {
+      const id = `001/${String(slot).padStart(3, '0')}`;
+      expect(gadgetMetadataForStringId(id)).toEqual({ assetId: slot, voiceSlot: slot });
+      for (let character = 0; character < 6; character += 1)
+        expect(gadgetVoiceId(character, slot)).toBe(
+          `${String(character).padStart(3, '0')}/002/${String(slot).padStart(3, '0')}`
+        );
+    }
+    expect(gadgetMetadataForStringId('001/042')).toBeUndefined();
+    expect(gadgetMetadataForStringId('003/000')).toBeUndefined();
   });
 });
