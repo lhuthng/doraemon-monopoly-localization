@@ -14,7 +14,10 @@ export async function readLocalFile(name) {
   const db = await database();
   return new Promise((resolve, reject) => {
     const request = db.transaction(storeName).objectStore(storeName).get(name);
-    request.onsuccess = () => resolve(request.result ? new Uint8Array(request.result) : undefined);
+    request.onsuccess = () => {
+      const value = request.result;
+      resolve(value instanceof Uint8Array || value instanceof ArrayBuffer ? new Uint8Array(value) : value);
+    };
     request.onerror = () => reject(request.error);
   });
 }
