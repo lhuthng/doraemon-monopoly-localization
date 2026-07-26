@@ -1,0 +1,522 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "others",
+  "records": [
+    {
+      "id": "000/000",
+      "translation": "Kính gửi toàn thể đồng nghiệp từ Soft-World, xin chân thành\ncảm ơn mọi người đã dành thời gian quý báu để chơi thử game\n<Đô-rê-mon Đại Phú Gia>. Rất mong nhận được những ý kiến\nđóng góp của mọi người!"
+    },
+    {
+      "id": "000/001",
+      "translation": "Đây mới chỉ là phiên bản Alpha nên một số tính năng vẫn chưa được hoàn thiện. Rất mong các bạn thông cảm!"
+    },
+    {
+      "id": "000/002",
+      "translation": "Tốc độ chạy của trò chơi hiện vẫn chưa được tối ưu. Ở phiên bản chính thức, trò chơi sẽ vận hành nhanh và mượt hơn."
+    },
+    {
+      "id": "000/003",
+      "translation": "Được rồi! Bây giờ hãy cùng bước vào thế giới kỳ diệu của Đô-rê-mon!"
+    },
+    {
+      "id": "000/004",
+      "translation": "À! Chỉ cần "
+    },
+    {
+      "id": "000/005",
+      "translation": " cái bánh rán, quá rẻ! Mua nó thôi!"
+    },
+    {
+      "id": "000/006",
+      "translation": "Có thể nâng cấp nhà rồi!\nCần "
+    },
+    {
+      "id": "000/007",
+      "translation": " bánh rán để nâng cấp.\nNâng cấp hay đổi đất lấy bánh đây?"
+    },
+    {
+      "id": "000/008",
+      "translation": "Ta là Bụt máy đây! Mau gọi ta một tiếng ông đi!"
+    },
+    {
+      "id": "000/009",
+      "translation": "Gặp được ta là phúc ba đời! Ta ban cho ngươi một\nrương báu. Phúc hay hoạ thì tuỳ vào vận may của\nnhà ngươi."
+    },
+    {
+      "id": "000/010",
+      "translation": "Á à! Vận của ngươi cũng khá đó!"
+    },
+    {
+      "id": "000/011",
+      "translation": "Ha ha! Quá đã! Ngươi gặp xui rồi =))"
+    },
+    {
+      "id": "000/012",
+      "translation": "Ha ha! Quả là hên đó nha!"
+    },
+    {
+      "id": "000/013",
+      "translation": "Ô mài gót! Sao toàn gặp xui thế này!"
+    },
+    {
+      "id": "000/014",
+      "translation": "Xin lỗi! Tính năng này hiện chưa được hỗ trợ."
+    },
+    {
+      "id": "000/015",
+      "translation": "Robo-cô"
+    },
+    {
+      "id": "000/016",
+      "translation": "Huy hiệu Bắc-Nam"
+    },
+    {
+      "id": "000/017",
+      "translation": "Bút đảo ngược"
+    },
+    {
+      "id": "000/018",
+      "translation": "Dao chia đôi"
+    },
+    {
+      "id": "000/019",
+      "translation": "Chong chóng tre"
+    },
+    {
+      "id": "000/020",
+      "translation": "Quao! Trúng lớn rồi!"
+    },
+    {
+      "id": "000/021",
+      "translation": "Hu hu... Lại bị phạt rồi..."
+    },
+    {
+      "id": "000/022",
+      "translation": "Hôm nay hên quá ta!"
+    },
+    {
+      "id": "000/023",
+      "translation": "He he! Tiến lênnn!"
+    },
+    {
+      "id": "000/024",
+      "translation": "Ha Ha! Lấy lại hết số bánh rán bị phạt rồi!"
+    },
+    {
+      "id": "000/025",
+      "translation": "Muốn lấy bánh rán của ta? Mơ đi cưng! Đừng quên Robo-cô\ncủa ta!"
+    },
+    {
+      "id": "000/026",
+      "translation": "Robo-cô\n\nCô Robo sẽ trở thành người cậu đồng hành của bạn. Nếu\nchẳng may bị đối thủ phạt mất bánh rán, cô ấy sẽ đứng ra bảo\nvệ bạn.\n\nNguồn: Truyện tranh tập 2"
+    },
+    {
+      "id": "000/027",
+      "translation": "Huy hiệu Bắc-Nam\n\nNếu gặp người cũng đeo huy hiệu cùng cực, bạn sẽ lập tức\nquay đầu và đi theo hướng ngược lại.\n\nNguồn: Truyện tranh tập 2"
+    },
+    {
+      "id": "000/028",
+      "translation": "Bút đảo ngược\n\nSau khi sử dụng, ô phạt bánh rán sẽ biến thành ô thưởng\nbánh rán, còn ô thưởng bánh rán sẽ biến thành ô phạt bánh\nrán.\n\nNguồn: Truyện tranh tập 4"
+    },
+    {
+      "id": "000/029",
+      "translation": "Dao chia đôi\n\nSau khi sử dụng, bạn sẽ phân thân thành hai bản sao của\nchỉnh mình!\n\nNguồn: Truyện tranh tập 42"
+    },
+    {
+      "id": "000/030",
+      "translation": "Chong chóng tre\n\nĐội Chong chóng tre lên, bạn sẽ bay khỏi mặt đất để tránh mọi cạm bẫy. Tuy nhiên, bạn cũng sẽ không thể mua đất hoặc nâng cấp đất trong thời gian này."
+    },
+    {
+      "id": "000/031",
+      "translation": " Di Chuyển "
+    },
+    {
+      "id": "000/032",
+      "translation": " Bảo Bối "
+    },
+    {
+      "id": "000/033",
+      "translation": " Hệ Thống "
+    },
+    {
+      "id": "000/034",
+      "translation": " Bản Đồ "
+    },
+    {
+      "id": "000/035",
+      "translation": " Chỉ số "
+    },
+    {
+      "id": "001/000",
+      "translation": "Đèn phục hồi\n\nGiảm 1 cấp công\ntrình. Nếu là Tên\nlửa tự chế hoặc\nỤ pháo vô địch\n, chúng sẽ trở lại \nthành ô đất của\nchủ nhà."
+    },
+    {
+      "id": "001/001",
+      "translation": "Robo-cô\n\n[5 ngày] Khi bạn\ngiẫm lên đất của\nđối thủ, Cô\nRô-bốt sẽ đứng\nra bảo vệ, giúp\nbạn khỏi phải trả\ntiền thuê!"
+    },
+    {
+      "id": "001/002",
+      "translation": "Khăn trùm thời gian\n\nBiến ô hiện tại\ntrở lại thành ô\nđất trống để có\nthể mua lại từ\nđầu."
+    },
+    {
+      "id": "001/003",
+      "translation": "Huy hiệu nam châm\n\nAi đeo Nam châm\nN-S cùng cực với\nbạn sẽ bị đẩy ra,\nkhông thể chạm\nmặt trong \n[5 ngày]."
+    },
+    {
+      "id": "001/004",
+      "translation": "Điện thoại lây cảm\n\nGọi cho đối thủ\nđể lây cảm, khiến\nhọ phải nằm nghỉ\nsuốt [3 ngày]!"
+    },
+    {
+      "id": "001/005",
+      "translation": "Máy tua ngày\n\nLập tức đưa thời\ngian đến cuối\ntháng để nhận\nngay số bánh rán\nđược phát vào kỳ\ntổng kết!"
+    },
+    {
+      "id": "001/006",
+      "translation": "Đường hầm thu nhỏ\n\nĐi qua Đường\nhầm thu nhỏ sẽ\nkhiến bạn bị teo\nnhỏ, quãng\nđường di chuyển\ncũng giảm một\nnửa. Chui qua\nlần nữa là trở lại\nbình thường.\nHiệu quả kéo dài\n[5 ngày]."
+    },
+    {
+      "id": "001/007",
+      "translation": "Máy ảnh thế mạng\n\nChụp một người\nbằng Máy ảnh\nnguyền rủa để \nmọi đòn tấn công\nnhằm vào bạn sẽ\nchuyển sang\nngười đó. Chỉ có\nhiệu lực [1 lần]."
+    },
+    {
+      "id": "001/008",
+      "translation": "Đội quân đồ chơi\n\nNếu bị phạt tiền\nthuê, Đội quân\nđồ chơi sẽ xông\nra tấn công chủ\nđất, khiến họ\nphải ngủ li bì\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/009",
+      "translation": "Bút đảo ngược\n\nTrong [5 ngày],\nkhi bước vào đất\ncủa đối thủ, bạn\nsẽ thu tiền thuê\ntừ họ thay vì\nphải trả!"
+    },
+    {
+      "id": "001/010",
+      "translation": "Túi thuốc tình bạn\n\nTrong [5 ngày],\nbạn sẽ được miễn\ntiền thuê và cũng\nkhông bị đối thủ\ntấn công!"
+    },
+    {
+      "id": "001/011",
+      "translation": "Mũ đá cuội\n\nĐội Mũ đá cuội\nlên để chẳng ai\nbuồn để ý đến\nbạn! Trong\n[8 ngày], bạn\nkhông phải trả\ntiền thuê, nhưng\ncũng không thể\nthu tiền thuê."
+    },
+    {
+      "id": "001/012",
+      "translation": "Súng may rủi\n\nMang theo Súng\nmay mắn, bạn sẽ\ncó 3/4 cơ hội gặp\nvận may và chỉ\n1/4 cơ hội gặp\nvận rủi trong \n[8 ngày]."
+    },
+    {
+      "id": "001/013",
+      "translation": "Đại bác đi mọi nơi\n\nBắn mình đến bất\nkỳ ô nào trên\nbản đồ, ngoại trừ\ncác ô địa hình đặc\nbiệt."
+    },
+    {
+      "id": "001/014",
+      "translation": "Robot tí hon giúp việc\n\nNếu bạn [ngủ],\nNgười máy tí hon\nsẽ thay bạn tiếp\ntục chơi. Chúng\nchỉ có thể mua\nđất hoặc nâng\ncấp công trình\ncho đến khi bạn\ntỉnh dậy."
+    },
+    {
+      "id": "001/015",
+      "translation": "Bộ đồ Chồn Lừa\n\nNgười bị dùng Bộ\nđồ Chồn Lừa sẽ\nbị lừa, đi đến đâu\ncũng tự động nộp\ntiền thuê cho bạn\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/016",
+      "translation": "Đồng hồ điên khùng\n\nThời gian sẽ trôi\nchậm lại, cả bản\nđồ phải mất 2\nlượt mới tính là 1\nngày trong \n[5 ngày]."
+    },
+    {
+      "id": "001/017",
+      "translation": "Kim cương xui xẻo\n\nMọi vận rủi xảy\nđến với bạn sẽ\nđược chuyển\nsang người đang\ngiữ Kim cương xui\nxẻo trong\n[8 ngày]."
+    },
+    {
+      "id": "001/018",
+      "translation": "Thuốc nhỏ mắt tàng hình\n\nNhỏ Thuốc nhỏ\nmắt tàng hình để\nbiến mất khỏi\ntầm mắt đối thủ,\nkhông phải trả\ntiền thuê trong\n[5 ngày]."
+    },
+    {
+      "id": "001/019",
+      "translation": "Thuốc ai cũng mê\n\nUống Viên thuốc\nai cũng mến để ai\ngặp cũng quý!\nĐối thủ sẽ không\ndùng các bảo bối\ntấn công bạn\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/020",
+      "translation": "Ong giữ của\n\nTrong [5 ngày],\nOng tiết kiệm sẽ\ngiúp bạn lấy lại\ntoàn bộ số bánh\nrán đã bị ô phạt\nthu mất."
+    },
+    {
+      "id": "001/021",
+      "translation": "Bản đồ đổi chỗ\n\nĐổi chỗ hai công\ntrình bất kỳ trên\nbản đồ, ngoại trừ\ncác công trình\nđặc biệt."
+    },
+    {
+      "id": "001/022",
+      "translation": "Nhà ốc sên\n\nTrốn vào Nhà ốc\nsên để không bị\ncác sự kiện của\nVòng Tiên Nhân\nảnh hưởng trong\n[5 ngày]."
+    },
+    {
+      "id": "001/023",
+      "translation": "Hồn ma hộ vệ\n\nHộ vệ linh hồn\nsẽ bảo vệ bạn\nkhỏi mọi đòn tấn\ncông, sự kiện\nTiên Nhân và ô\nphạt. Đổi lại,\nbạn sẽ không thể\nvào cửa hàng\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/024",
+      "translation": "Thuốc phân thân\n\nUống Thuốc phân\nthân rồi nhổ một\nsợi tóc để tạo ra\n3 phân thân đồng\nhành cùng bạn\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/025",
+      "translation": "Gậy mất trí\n\nĐối thủ sẽ quên\nthu bánh rán\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/026",
+      "translation": "Súng chuyền ngủ\n\nDùng Súng buồn\nngủ để hút cơn\nbuồn ngủ từ một\nngười rồi truyền\nsang đối thủ\nkhác trong \n[5 ngày]."
+    },
+    {
+      "id": "001/027",
+      "translation": "Vòng kết bạn\n\nKết bạn với một\nđối thủ để họ\nkhông thể dùng\ncác bảo bối tấn\ncông bạn trong\n[5 ngày]."
+    },
+    {
+      "id": "001/028",
+      "translation": "Bùa hộ mệnh\n\nMang theo Bùa\nhộ mệnh để mỗi\nlần bước vào\nVòng Tiên Nhân,\nbạn chỉ gặp toàn\nchuyện may mắn\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/029",
+      "translation": "Sao tàng hình\n\nẨn mình vào\nđiểm mù của mọi\nngười để chẳng ai\nnhìn thấy bạn!\nTrong [8 ngày],\nbạn không phải\ntrả tiền thuê,\nnhưng cũng\nkhông thể thu\ntiền thuê."
+    },
+    {
+      "id": "001/030",
+      "translation": "Khăn hoán đổi\n\nDùng Khăn hoán\nđổi để lập tức đổi\nvị trí với một đối\nthủ."
+    },
+    {
+      "id": "001/031",
+      "translation": "Máy gọi đồ về\n\nTrong [5 ngày],\nsố bánh rán bị ô\nphạt lấy mất sẽ\ntự động quay trở\nvề với bạn."
+    },
+    {
+      "id": "001/032",
+      "translation": "Dao chia đôi\n\nDùng Dao chẻ đôi\nđể tách mình\nthành hai, tạo\nthêm một bản\nsao đồng hành\ntrong [5 ngày]."
+    },
+    {
+      "id": "001/033",
+      "translation": "Súng đổi đời\n\nHoán đổi toàn bộ\ntài sản với một\nđối thủ, từ bánh\nrán, bánh rán\ntrong mỏ, bảo\nbối cho đến cả\nđất đai!"
+    },
+    {
+      "id": "001/034",
+      "translation": "Đồng hồ bù xui\n\nMỗi lần gặp vận\nrủi, Đồng hồ bù\nxui sẽ đền cho\nbạn bằng bánh\nrán trong \n[8 ngày]."
+    },
+    {
+      "id": "001/035",
+      "translation": "Băng đô hờn dỗi\n\nBiến oán hận\nthành một hồn\nma bám theo đối\nthủ, khiến họ\nliên tục gặp vận\nrủi trong \n[8 ngày]."
+    },
+    {
+      "id": "001/036",
+      "translation": "Đại bác không khí\n\nNén không khí\nrồi bắn hạ đối\nthủ, khiến họ ngủ\nmê suốt \n[3 ngày]."
+    },
+    {
+      "id": "001/037",
+      "translation": "Cánh cửa thần kỳ\n\nĐặt Cánh cửa\nthần kỳ để dịch\nchuyển đến nơi\nkhác bất cứ khi\nnào bước qua.\nCánh cửa sẽ tồn\ntại trong \n[5 ngày]."
+    },
+    {
+      "id": "001/038",
+      "translation": "Chong chóng tre\n\nĐội Chong chóng\ntre để bay khỏi\nmặt đất, tránh\nmọi ảnh hưởng\ndưới đất. Trong\n[5 ngày], bạn sẽ\nkhông thể mua\nđất hoặc nâng\ncấp công trình."
+    },
+    {
+      "id": "001/039",
+      "translation": "Đèn pin thu nhỏ\n\nChiếu Đèn pin\nthu nhỏ vào đối\nthủ để làm họ\nteo nhỏ. Trong\n[5 ngày], quãng\nđường di chuyển\ncủa họ sẽ giảm\ncòn một nửa."
+    },
+    {
+      "id": "001/040",
+      "translation": "Ụ súng vô địch\n\nĐặt trên đất của\nbạn. Kẻ nào dẫm\nlên sẽ bị pháo\nbắn thẳng đến\nvùng xui xẻo!"
+    },
+    {
+      "id": "001/041",
+      "translation": "Tên lửa tự chế\n\nĐặt trên đất của\nbạn. Khi bạn\nbước lên ô đó,\ntên lửa sẽ được\nphóng đi, bắn đối\nthủ bay thẳng\nđến vùng xui\nxẻo!"
+    },
+    {
+      "id": "002/000",
+      "translation": "Ha! Hôm nay ngươi gặp may đấy! Ta sẽ tặng nó cho ngươi ["
+    },
+    {
+      "id": "002/001",
+      "translation": "]! Mau cảm ơn ta đi!"
+    },
+    {
+      "id": "002/002",
+      "translation": "Ha! Ngươi thật may mắn! Ta sẽ cho ngươi làm việc đó hai lần một ngày!"
+    },
+    {
+      "id": "002/003",
+      "translation": "Ha! Ta sẽ ban cho ngươi khả năng thu tiền thuê gấp đôi!"
+    },
+    {
+      "id": "002/004",
+      "translation": "Haha! Ta sẽ cho ngươi một mảnh đất!"
+    },
+    {
+      "id": "002/005",
+      "translation": "Ha! Hãy để ta nâng cấp một trong những mảnh đất của ngươi!"
+    },
+    {
+      "id": "002/006",
+      "translation": "Ha! Hôm nay ta rất khoan dung! Chúc tất cả các ngươi gặp may mắn!"
+    },
+    {
+      "id": "002/007",
+      "translation": "Ha! May mắn đã đến với các ngươi!"
+    },
+    {
+      "id": "002/008",
+      "translation": "Ha! Ta đã ban cho các ngươi khả năng không phải trả tiền thuê!"
+    },
+    {
+      "id": "002/009",
+      "translation": "Ha! Ta sẽ bảo vệ các ngươi khỏi các cuộc tấn công!"
+    },
+    {
+      "id": "002/010",
+      "translation": "Ta tặng mỗi người "
+    },
+    {
+      "id": "002/011",
+      "translation": "cái bánh rán nhé!"
+    },
+    {
+      "id": "002/012",
+      "translation": "Bây giờ ta tặng ngươi "
+    },
+    {
+      "id": "002/013",
+      "translation": "cái bánh rán!"
+    },
+    {
+      "id": "002/014",
+      "translation": "Ta đã tăng mức sinh lời của mỏ rồi!"
+    },
+    {
+      "id": "002/015",
+      "translation": "Mọi người dậy ngay lập tức!"
+    },
+    {
+      "id": "002/016",
+      "translation": "Cùng chơi một trò chơi nhỏ nào!"
+    },
+    {
+      "id": "002/017",
+      "translation": "Ta tặng mỗi công trình của ngươi "
+    },
+    {
+      "id": "002/018",
+      "translation": "cái bánh rán nhé!"
+    },
+    {
+      "id": "002/019",
+      "translation": "Nhanh lên mua đồ! Giảm giá 60% đấy!"
+    },
+    {
+      "id": "002/020",
+      "translation": "Ugh! Tôi cần các bạn tạm thời vô hiệu hóa bảo bối!"
+    },
+    {
+      "id": "002/021",
+      "translation": "Ugh! Tôi cần các bạn tạm thời vô hiệu hóa bảo bối!"
+    },
+    {
+      "id": "002/022",
+      "translation": "Ugh! Ta cần các ngươi tạm dừng trong bốn lượt!"
+    },
+    {
+      "id": "002/023",
+      "translation": "Nè! Các ngươi không thể thu tiền thuê bây giờ!"
+    },
+    {
+      "id": "002/024",
+      "translation": "Ha! Các ngươi không thể mua đất bây giờ!"
+    },
+    {
+      "id": "002/025",
+      "translation": "Này! Các ngươi không thể lên cấp bây giờ!"
+    },
+    {
+      "id": "002/026",
+      "translation": "Nè! Các ngươi không thể mua bảo bối bây giờ!"
+    },
+    {
+      "id": "002/027",
+      "translation": "Này! Ta sẽ trừng phạt các ngươi bằng cách không\ncho các bạn chơi minigame!"
+    },
+    {
+      "id": "002/028",
+      "translation": "Ngủ đi con! "
+    },
+    {
+      "id": "002/029",
+      "translation": "Ta sẽ thu nhỏ tất cả các ngươi lại!"
+    },
+    {
+      "id": "002/030",
+      "translation": "Ta sẽ thu nhỏ ngươi lại!"
+    },
+    {
+      "id": "002/031",
+      "translation": "Tất cả các ngươi gặp vận xui đi!"
+    },
+    {
+      "id": "002/032",
+      "translation": "Vận xui sẽ bao trùm ngươi!"
+    },
+    {
+      "id": "002/033",
+      "translation": "Tất cả các ngươi phải trả tiền thuê gấp đôi!"
+    },
+    {
+      "id": "002/034",
+      "translation": "Ta sẽ trừng phạt các ngươi bằng cách bắt các\nngươi trả tiền thuê gấp đôi cho người khác!"
+    },
+    {
+      "id": "002/035",
+      "translation": "Ta phạt mỗi người các ngươi "
+    },
+    {
+      "id": "002/036",
+      "translation": " cái bánh rán! Hê hê!"
+    },
+    {
+      "id": "002/037",
+      "translation": "Ta phạt ngươi "
+    },
+    {
+      "id": "002/038",
+      "translation": " cái bánh rán! Hê hê!"
+    },
+    {
+      "id": "002/039",
+      "translation": "Ta sẽ lấy một trong những bảo bối của các ngươi!"
+    },
+    {
+      "id": "002/040",
+      "translation": "Ta sẽ lấy một trong những bảo bối của các ngươi!"
+    },
+    {
+      "id": "002/041",
+      "translation": "Một trận động đất lớn..."
+    },
+    {
+      "id": "002/042",
+      "translation": "Giờ ta đã làm giảm giá trị tăng trưởng của mỏ!"
+    },
+    {
+      "id": "002/043",
+      "translation": "Mỗi pháo đài phạt ngươi "
+    },
+    {
+      "id": "002/044",
+      "translation": " cái bánh rán!"
+    },
+    {
+      "id": "002/045",
+      "translation": "Mọi người, hãy đi chịu khổ ở một Vùng xui xẻo nào đó!"
+    },
+    {
+      "id": "002/046",
+      "translation": "Ngươi hãy đi chịu khổ ở một Vùng xui xẻo nào đó! "
+    },
+    {
+      "id": "002/047",
+      "translation": "Mỏ sẽ đóng cửa trong mười ngày! Hừ! Hừ!"
+    },
+    {
+      "id": "002/048",
+      "translation": "Mỗi tòa nhà các ngươi xây dựng phải tặng ta bánh rán!"
+    },
+    {
+      "id": "002/049",
+      "translation": "Cỗ máy thời gian đã mất kiểm soát...!"
+    },
+    {
+      "id": "002/050",
+      "translation": "Mọi người, hãy chia đều bánh rán!"
+    }
+  ]
+}

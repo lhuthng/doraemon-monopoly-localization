@@ -1,0 +1,12 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "language": "vietnamese",
+  "stringsSha256": [
+    "9ecce72afcef20e472d70d5d3b642887202ea85fc05e2e22aa05694de972dcec",
+    "2cab5b50a88b6ddaba1a2829d555ad5c0d296b9a6d7ad20af7604745341ad38e"
+  ],
+  "voiceSha256": [
+    "e1493bad6c543fc5888f4524c166df55fa8a095c9390d646b60e314fd8c89a85",
+    "4cf31414b732d523432c36d410523e5cac4fde2b3e7ad5f367e4d7216a00e9e2"
+  ]
+}

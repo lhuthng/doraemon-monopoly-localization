@@ -75,8 +75,28 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build vi-font --input SYSFONT.DAT --output SYSFONT.DAT\n  patch-build extract-audio --cue DORAEMON.CUE --output DoraemonMusic.wav\n  patch-build release --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|doraemon|nobita|dorami|shizuka|suneo|gian|others|sprites|runtime] [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu] [--payload-only]\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|doraemon|nobita|dorami|shizuka|suneo|gian|others|sprites|runtime] [--cnc-ddraw-dir DIR]\n  patch-build materialize --payload PATCH.dmpatch --base-dir DIR --output-dir DIR\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload PATCH.dmpatch] [--vietnamese-payload PATCH.dmpatch] [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]\n  patch-build package --payload PATCH.dmpatch --output-dir DIR [--cnc-ddraw-dir DIR] [--target x86_64-pc-windows-gnu]");
+    eprintln!("Usage:\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload-dir DIR] [--vietnamese-payload-dir DIR] [--cnc-ddraw-dir DIR]\n  (legacy monolithic and multipart inputs remain supported for migration)");
     std::process::exit(2)
+}
+
+fn merge_parts(arguments: &[String]) -> Result<(), String> {
+    let parts_dir = PathBuf::from(value(arguments, "--parts-dir").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    let mut parts = Vec::new();
+    let targets = if parts_dir.join(TargetName::Dubbing.filename()).exists() {
+        TargetName::all()
+    } else {
+        TargetName::legacy()
+    };
+    for target in targets {
+        let path = parts_dir.join(target.filename());
+        let bytes = fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        parts.push(payload::decode_part(&bytes).map_err(|error| format!("{}: {error}", path.display()))?);
+    }
+    let merged = doraemon_game_patch::merge_parts(&parts)?;
+    fs::write(&output, payload::encode(&merged)?).map_err(|error| error.to_string())?;
+    println!("Merged {} into {}.", parts_dir.display(), output.display());
+    Ok(())
 }
 
 fn materialize(arguments: &[String]) -> Result<(), String> {
@@ -146,13 +166,65 @@ fn materialize(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Rebuild one resource from a language payload. This is intentionally narrow:
+/// it restores a missing ignored Studio file without touching the rest of a
+/// contributor's local graphics workspace.
+fn materialize_file(arguments: &[String]) -> Result<(), String> {
+    let payload_path = PathBuf::from(value(arguments, "--payload").unwrap_or_else(|| usage()));
+    let base = PathBuf::from(value(arguments, "--base-dir").unwrap_or_else(|| usage()));
+    let name = value(arguments, "--file").unwrap_or_else(|| usage());
+    let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    if !RESOURCE_FILES.contains(&name.as_str()) {
+        return Err(format!("{name} is not a materializable resource file"));
+    }
+    let payload = payload::decode(&fs::read(&payload_path).map_err(|error| error.to_string())?)?;
+    let profile = payload
+        .profiles
+        .iter()
+        .find(|profile| {
+            profile.required.iter().all(|required| {
+                read(&base, &required.name)
+                    .map(|bytes| bytes.len() as u64 == required.len && hash::bytes(&bytes) == required.hash)
+                    .unwrap_or(false)
+            })
+        })
+        .ok_or("the supplied folder does not contain a supported original resource set")?;
+    let source = read(&base, &name)?;
+    let rebuilt = match name.as_str() {
+        "strings.dat" => payload
+            .strings
+            .as_ref()
+            .map(|patch| strings::apply_patch(&source, patch))
+            .transpose()?
+            .unwrap_or(source),
+        "voice.dat" => payload
+            .voice
+            .as_ref()
+            .map(|patch| voice::apply_patch(&source, patch))
+            .transpose()?
+            .unwrap_or(source),
+        _ => match profile.files.iter().find(|patch| patch.name == name) {
+            Some(patch) => patch.apply(&source)?,
+            None => source,
+        },
+    };
+    fs::write(&output, rebuilt).map_err(|error| format!("{}: {error}", output.display()))?;
+    println!("Materialized {name} in {}.", output.display());
+    Ok(())
+}
+
 fn materialize_parts(arguments: &[String]) -> Result<(), String> {
     let parts_dir = PathBuf::from(value(arguments, "--parts-dir").unwrap_or_else(|| usage()));
     let base = PathBuf::from(value(arguments, "--base-dir").unwrap_or_else(|| usage()));
     let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
 
     let mut parts = Vec::new();
-    for target in TargetName::all() {
+    let targets = if parts_dir.join(TargetName::Dubbing.filename()).exists() {
+        TargetName::all()
+    } else {
+        TargetName::legacy()
+    };
+    for target in targets {
         let part_path = parts_dir.join(target.filename());
         if !part_path.exists() {
             return Err(format!(
@@ -189,12 +261,15 @@ fn materialize_parts(arguments: &[String]) -> Result<(), String> {
 
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
 
-    if let Some(strings_patch) = &merged.strings {
-        let source_strings = read(&base, "strings.dat")?;
-        let rebuilt_strings = strings::apply_patch(&source_strings, strings_patch)?;
-        fs::write(output.join("strings.dat"), rebuilt_strings)
-            .map_err(|error| format!("write strings.dat: {error}"))?;
-    }
+    let source_strings = read(&base, "strings.dat")?;
+    let rebuilt_strings = merged
+        .strings
+        .as_ref()
+        .map(|patch| strings::apply_patch(&source_strings, patch))
+        .transpose()?
+        .unwrap_or(source_strings);
+    fs::write(output.join("strings.dat"), rebuilt_strings)
+        .map_err(|error| format!("write strings.dat: {error}"))?;
 
     for name in RESOURCE_FILES
         .iter()
@@ -209,12 +284,15 @@ fn materialize_parts(arguments: &[String]) -> Result<(), String> {
         fs::write(output.join(name), rebuilt).map_err(|error| format!("write {name}: {error}"))?;
     }
 
-    if let Some(voice_patch) = &merged.voice {
-        let source_voice = read(&base, "voice.dat")?;
-        let rebuilt_voice = voice::apply_patch(&source_voice, voice_patch)?;
-        fs::write(output.join("voice.dat"), rebuilt_voice)
-            .map_err(|error| format!("write voice.dat: {error}"))?;
-    }
+    let source_voice = read(&base, "voice.dat")?;
+    let rebuilt_voice = merged
+        .voice
+        .as_ref()
+        .map(|patch| voice::apply_patch(&source_voice, patch))
+        .transpose()?
+        .unwrap_or(source_voice);
+    fs::write(output.join("voice.dat"), rebuilt_voice)
+        .map_err(|error| format!("write voice.dat: {error}"))?;
 
     // Copy map files (read-only, not in payload)
     if let Ok(entries) = fs::read_dir(&base) {
@@ -231,7 +309,8 @@ fn materialize_parts(arguments: &[String]) -> Result<(), String> {
     }
 
     println!(
-        "Materialized resources from 9 parts in {} to {}.",
+        "Materialized resources from {} components in {} to {}.",
+        parts.len(),
         parts_dir.display(),
         output.display()
     );
@@ -335,17 +414,15 @@ fn universal(arguments: &[String]) -> Result<(), String> {
     // Load from parts directory (multipart) or monolithic payload
     fn load_from_parts_dir(dir: &Path) -> Result<Payload, String> {
         let mut parts = Vec::new();
-        let targets = [
-            "loc-doraemon.dmpatch",
-            "loc-nobita.dmpatch",
-            "loc-dorami.dmpatch",
-            "loc-shizuka.dmpatch",
-            "loc-suneo.dmpatch",
-            "loc-gian.dmpatch",
-            "loc-others.dmpatch",
-            "sprites.dmpatch",
-            "runtime.dmpatch",
-        ];
+        let targets = if dir.join("dubbing.dmpatch").exists() {
+            vec!["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"]
+        } else {
+            vec![
+                "loc-doraemon.dmpatch", "loc-nobita.dmpatch", "loc-dorami.dmpatch",
+                "loc-shizuka.dmpatch", "loc-suneo.dmpatch", "loc-gian.dmpatch",
+                "loc-others.dmpatch", "sprites.dmpatch", "runtime.dmpatch",
+            ]
+        };
         for target in &targets {
             let part_path = dir.join(target);
             if part_path.exists() {
@@ -390,32 +467,8 @@ fn universal(arguments: &[String]) -> Result<(), String> {
         return Err("universal payload language does not match its option".into());
     }
 
-    // For multipart, use directory-based env vars
+    // For component payloads, use directory-based env vars.
     if english_dir.is_some() || vietnamese_dir.is_some() {
-        // Inject the optional cnc-ddraw wrapper into each runtime.dmpatch.
-        // These files are not bundled at release-parts time (which runs without
-        // --cnc-ddraw-dir for contributor builds), so we patch them in here.
-        if !wrapper.is_empty() {
-            for dir in [&english_dir, &vietnamese_dir].iter().flat_map(|o| o.as_ref()) {
-                let runtime_path = dir.join("runtime.dmpatch");
-                if runtime_path.exists() {
-                    let bytes = fs::read(&runtime_path)
-                        .map_err(|e| format!("{}: {e}", runtime_path.display()))?;
-                    let mut part = payload::decode_part(&bytes)
-                        .map_err(|e| format!("{}: {e}", runtime_path.display()))?;
-                    part.bundled = wrapper.clone();
-                    part.is_empty = false;
-                    fs::write(&runtime_path, payload::encode_part(&part)?)
-                        .map_err(|e| format!("{}: {e}", runtime_path.display()))?;
-                    eprintln!(
-                        "DIAG: injected {} bundled files into {}",
-                        wrapper.len(),
-                        runtime_path.display()
-                    );
-                }
-            }
-        }
-
         let en_dir = english_dir.map(|d| {
             let canon = fs::canonicalize(&d).unwrap_or(d);
             canon.to_string_lossy().to_string()
@@ -778,7 +831,9 @@ fn build_part(
                     }
                 };
                 let voice = if all_voice_patch.replacements.is_empty()
-                    || (target != TargetName::Others && target.character_index().is_none())
+            || (target != TargetName::Others
+                && target != TargetName::Dubbing
+                && target.character_index().is_none())
                 {
                     None
                 } else {
@@ -828,7 +883,7 @@ fn release_parts(arguments: &[String]) -> Result<(), String> {
             Some(t) => vec![t],
             None => {
                 eprintln!(
-                    "Error: unknown target '{target_spec}'. Valid: all, doraemon, nobita, dorami, shizuka, suneo, gian, others, sprites, runtime"
+                    "Error: unknown target '{target_spec}'. Valid: all, dubbing, sprites, runtime (legacy targets remain available for migration)"
                 );
                 std::process::exit(2);
             }
@@ -892,7 +947,8 @@ fn release_parts(arguments: &[String]) -> Result<(), String> {
         );
     }
 
-    // Also generate the monolithic .dmpatch for backward compatibility
+    // A monolithic payload is a disposable release artifact, never a tracked
+    // collaboration component.
     if target_spec == "all" {
         let full_payload = Payload {
             language,
@@ -1096,7 +1152,9 @@ fn main() {
         Some("vi-font") => vi_font(&arguments[1..]),
         Some("extract-audio") => extract_audio(&arguments[1..]),
         Some("release") => release(&arguments[1..]),
+        Some("merge-parts") => merge_parts(&arguments[1..]),
         Some("materialize") => materialize(&arguments[1..]),
+        Some("materialize-file") => materialize_file(&arguments[1..]),
         Some("materialize-parts") => materialize_parts(&arguments[1..]),
         Some("release-parts") => release_parts(&arguments[1..]),
         Some("package") => package(&arguments[1..]),

@@ -3,7 +3,8 @@ fn main() {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
     // Multipart format (new): read a directory of .dmpatch part files
-    let part_targets = [
+    let component_targets = ["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"];
+    let legacy_targets = [
         "loc-doraemon.dmpatch",
         "loc-nobita.dmpatch",
         "loc-dorami.dmpatch",
@@ -24,7 +25,12 @@ fn main() {
         println!("cargo:rerun-if-env-changed={variable}");
         if let Some(source) = env::var_os(variable) {
             let dir = PathBuf::from(&source);
-            for target in &part_targets {
+            let targets = if dir.join(component_targets[0]).exists() {
+                &component_targets[..]
+            } else {
+                &legacy_targets[..]
+            };
+            for target in targets {
                 let part_path = dir.join(target);
                 if part_path.exists() {
                     println!("cargo:rerun-if-changed={}", part_path.display());
@@ -49,7 +55,12 @@ fn main() {
             let dir = PathBuf::from(&source);
             let mut parts: Vec<Vec<u8>> = Vec::new();
             let mut found = 0u16;
-            for target in &part_targets {
+            let targets = if dir.join(component_targets[0]).exists() {
+                &component_targets[..]
+            } else {
+                &legacy_targets[..]
+            };
+            for target in targets {
                 let part_path = dir.join(target);
                 if part_path.exists() {
                     let bytes = fs::read(&part_path).expect("read part file");
@@ -76,8 +87,8 @@ fn main() {
                 blob.extend_from_slice(bytes);
             }
             fs::write(&output, &blob).expect("write parts blob");
-            println!("cargo:warning=Wrote {name}: {found}/{count} parts, {blob_size} bytes blob", count = part_targets.len(), blob_size = blob.len());
-            eprintln!("DIAG: build.rs {name}: dir={dir:?} parts={found}/{count} blob={blob_size}B", count = part_targets.len(), blob_size = blob.len());
+            println!("cargo:warning=Wrote {name}: {found}/{count} components, {blob_size} bytes blob", count = targets.len(), blob_size = blob.len());
+            eprintln!("DIAG: build.rs {name}: dir={dir:?} components={found}/{count} blob={blob_size}B", count = targets.len(), blob_size = blob.len());
         } else {
             fs::write(output, []).expect("write empty parts blob");
             eprintln!("DIAG: build.rs {name}: env var NOT SET, wrote empty blob");

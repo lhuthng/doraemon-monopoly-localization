@@ -1,0 +1,502 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "shizuka",
+  "records": [
+    {
+      "id": "006/000",
+      "translation": "Everyone knows how lovable I am!"
+    },
+    {
+      "id": "006/001",
+      "translation": "Yeah!"
+    },
+    {
+      "id": "006/002",
+      "translation": "It looks like luck is on my side today!"
+    },
+    {
+      "id": "006/003",
+      "translation": "How wonderful! Everything's going my way!"
+    },
+    {
+      "id": "006/004",
+      "translation": "La! La! La! La!"
+    },
+    {
+      "id": "006/005",
+      "translation": "I'll just have to try a little harder!"
+    },
+    {
+      "id": "006/006",
+      "translation": "I'm sure everything will work out somehow!"
+    },
+    {
+      "id": "006/007",
+      "translation": "Why is it going down like this!"
+    },
+    {
+      "id": "006/008",
+      "translation": "Maybe being beautiful really does come with a price..."
+    },
+    {
+      "id": "006/009",
+      "translation": "Oh! That's not fair - you're picking on me!"
+    },
+    {
+      "id": "006/010",
+      "translation": "Why am I being punished too!"
+    },
+    {
+      "id": "006/011",
+      "translation": "Why is Heaven punishing me like this!"
+    },
+    {
+      "id": "006/012",
+      "translation": "I can take another step forward!"
+    },
+    {
+      "id": "006/013",
+      "translation": "I wonder if they have any cute clothes."
+    },
+    {
+      "id": "006/014",
+      "translation": "There are new props!"
+    },
+    {
+      "id": "006/015",
+      "translation": "There aren't any pretty clothes!"
+    },
+    {
+      "id": "006/016",
+      "translation": "I'm so glad we can all play together again!"
+    },
+    {
+      "id": "006/017",
+      "translation": "Don't underestimate us girls!"
+    },
+    {
+      "id": "006/018",
+      "translation": "Aww... I really wanted to win!"
+    },
+    {
+      "id": "006/019",
+      "translation": "Don't peek at me!"
+    },
+    {
+      "id": "006/020",
+      "translation": "That feels so good!"
+    },
+    {
+      "id": "006/025",
+      "translation": "Why did I lose?"
+    },
+    {
+      "id": "006/027",
+      "translation": "There are no buildings here!"
+    },
+    {
+      "id": "006/028",
+      "translation": "There's not a single empty space nearby!"
+    },
+    {
+      "id": "006/029",
+      "translation": "There's an item following me!"
+    },
+    {
+      "id": "006/030",
+      "translation": "This isn't an ordinary building!"
+    },
+    {
+      "id": "006/031",
+      "translation": "All the land around here is mine; there's no need to use an item!"
+    },
+    {
+      "id": "006/032",
+      "translation": "Unable to use! I'll have to choose something else!"
+    },
+    {
+      "id": "006/033",
+      "translation": "Oh! I used it this month!"
+    },
+    {
+      "id": "006/034",
+      "translation": "Why! I can't choose an opponent!"
+    },
+    {
+      "id": "006/035",
+      "translation": "Oh! Can't I use it again?"
+    },
+    {
+      "id": "006/036",
+      "translation": "Why are there no buildings?"
+    },
+    {
+      "id": "006/037",
+      "translation": "Oh! There's no space!"
+    },
+    {
+      "id": "006/038",
+      "translation": "Why is no one sleeping?"
+    },
+    {
+      "id": "006/039",
+      "translation": "There's no worthy opponent to deal with!"
+    },
+    {
+      "id": "006/040",
+      "translation": "Choose an opponent!"
+    },
+    {
+      "id": "006/041",
+      "translation": "Oh! There are buildings!"
+    },
+    {
+      "id": "006/042",
+      "translation": "No! This land isn't mine!"
+    },
+    {
+      "id": "006/043",
+      "translation": "No buildings!"
+    },
+    {
+      "id": "006/044",
+      "translation": "How about spending some Dorayaki to buy land?"
+    },
+    {
+      "id": "006/045",
+      "translation": "How about buying land to increase the chances of winning?"
+    },
+    {
+      "id": "006/046",
+      "translation": "How about buying new land to build houses?"
+    },
+    {
+      "id": "006/047",
+      "translation": "New land again!"
+    },
+    {
+      "id": "006/048",
+      "translation": "Not buying land doesn't mean we'll lose!"
+    },
+    {
+      "id": "006/049",
+      "translation": "Upgrading or selling land, is it better?"
+    },
+    {
+      "id": "006/050",
+      "translation": "Upgrading or selling land, it's such a difficult decision!"
+    },
+    {
+      "id": "006/051",
+      "translation": "I'm so happy I can upgrade!"
+    },
+    {
+      "id": "006/052",
+      "translation": "We can go back to normal!"
+    },
+    {
+      "id": "006/053",
+      "translation": "Ouch! Ouch! How tragic! Another land sale!"
+    },
+    {
+      "id": "006/054",
+      "translation": "Oh dear!"
+    },
+    {
+      "id": "006/055",
+      "translation": "It's time for the monthly settlement again!"
+    },
+    {
+      "id": "006/056",
+      "translation": "Hope the next monthly settlement comes soon!"
+    },
+    {
+      "id": "006/057",
+      "translation": "Should I share some Dorayaki with you?"
+    },
+    {
+      "id": "006/058",
+      "translation": "Oh! Don't be discouraged, try harder next time!"
+    },
+    {
+      "id": "006/059",
+      "translation": "Thank you for choosing me!"
+    },
+    {
+      "id": "006/060",
+      "translation": "Who lost it? I'll keep it for them for now!"
+    },
+    {
+      "id": "006/061",
+      "translation": "I'm so happy! I won!"
+    },
+    {
+      "id": "006/062",
+      "translation": "Oops! It's not open today!"
+    },
+    {
+      "id": "006/063",
+      "translation": "Roboko is so mean!"
+    },
+    {
+      "id": "006/064",
+      "translation": "Paying rent has turned into collecting rent! How wonderful!"
+    },
+    {
+      "id": "006/065",
+      "translation": "Ha! Ha! Ha!"
+    },
+    {
+      "id": "006/066",
+      "translation": "I'm here, can't you see me?"
+    },
+    {
+      "id": "006/067",
+      "translation": "With the little bee, you can't punish me with Dorayaki!"
+    },
+    {
+      "id": "006/068",
+      "translation": "I'm protected by the snail house!"
+    },
+    {
+      "id": "006/069",
+      "translation": "Luckily, I'm protected by the soul guardian!"
+    },
+    {
+      "id": "006/070",
+      "translation": "Oops! What did I forget to do?!"
+    },
+    {
+      "id": "006/071",
+      "translation": "You can't see me, can you?!"
+    },
+    {
+      "id": "006/072",
+      "translation": "You can't punish me with Dorayaki!"
+    },
+    {
+      "id": "006/073",
+      "translation": "I never thought even bad luck could turn into Dorayaki!"
+    },
+    {
+      "id": "006/074",
+      "translation": "Oh dear! I don't have enough Dorayaki to buy props!"
+    },
+    {
+      "id": "006/075",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "006/076",
+      "translation": "Ouch! Not enough Dorayaki to buy!"
+    },
+    {
+      "id": "006/077",
+      "translation": "Oops! No opponents to choose from!"
+    },
+    {
+      "id": "006/078",
+      "translation": "No rent to pay, how wonderful!"
+    },
+    {
+      "id": "006/079",
+      "translation": "No save file here!"
+    },
+    {
+      "id": "006/080",
+      "translation": "Saved!"
+    },
+    {
+      "id": "006/081",
+      "translation": "Save error!"
+    },
+    {
+      "id": "006/082",
+      "translation": "This item can't be used!"
+    },
+    {
+      "id": "006/083",
+      "translation": "You're kidding!"
+    },
+    {
+      "id": "006/084",
+      "translation": "File already exists, do you want to overwrite?"
+    },
+    {
+      "id": "006/085",
+      "translation": "Are you sure?"
+    },
+    {
+      "id": "006/086",
+      "translation": "Do you want to print the certificate?"
+    },
+    {
+      "id": "006/087",
+      "translation": "Is the printed certificate correct?"
+    },
+    {
+      "id": "006/088",
+      "translation": "Should I print again?"
+    },
+    {
+      "id": "006/089",
+      "translation": "Wow! Thank you for the props!"
+    },
+    {
+      "id": "006/090",
+      "translation": "Haha! I can go one more time!"
+    },
+    {
+      "id": "006/091",
+      "translation": "I'll go one more time!"
+    },
+    {
+      "id": "006/092",
+      "translation": "Wow! I can collect more Dorayaki! I'm so happy!"
+    },
+    {
+      "id": "006/093",
+      "translation": "Thank you!"
+    },
+    {
+      "id": "006/094",
+      "translation": "It's free!"
+    },
+    {
+      "id": "006/095",
+      "translation": "Free upgrade!"
+    },
+    {
+      "id": "006/096",
+      "translation": "Ah! That's great!"
+    },
+    {
+      "id": "006/097",
+      "translation": "Ah! No rent to pay!"
+    },
+    {
+      "id": "006/098",
+      "translation": "Haha! It's useless!"
+    },
+    {
+      "id": "006/099",
+      "translation": "You can't attack me!"
+    },
+    {
+      "id": "006/100",
+      "translation": "Ah! Thank you so much for the Dorayaki!"
+    },
+    {
+      "id": "006/102",
+      "translation": "Ah... Good morning, everyone!"
+    },
+    {
+      "id": "006/104",
+      "translation": "So many Dorayaki! That's great!"
+    },
+    {
+      "id": "006/105",
+      "translation": "Sale! I need to buy more items!"
+    },
+    {
+      "id": "006/106",
+      "translation": "Oops... I can't use any fun items!"
+    },
+    {
+      "id": "006/107",
+      "translation": "Ah! I need to rest for a while!"
+    },
+    {
+      "id": "006/108",
+      "translation": "Oops... I can't collect rent!"
+    },
+    {
+      "id": "006/109",
+      "translation": "Oh! I can't collect Dorayaki!"
+    },
+    {
+      "id": "006/110",
+      "translation": "Ah! I can't buy land!"
+    },
+    {
+      "id": "006/111",
+      "translation": "Oh! I really want to buy some!"
+    },
+    {
+      "id": "006/112",
+      "translation": "It's so sad I can't upgrade!"
+    },
+    {
+      "id": "006/113",
+      "translation": "Oops... I have Dorayaki but...!"
+    },
+    {
+      "id": "006/114",
+      "translation": "Oh! I can't buy items!"
+    },
+    {
+      "id": "006/115",
+      "translation": "Open the door! Open the door! I want to buy things!"
+    },
+    {
+      "id": "006/116",
+      "translation": "Ugh... No playing games!"
+    },
+    {
+      "id": "006/117",
+      "translation": "Ugh... I want to play too..."
+    },
+    {
+      "id": "006/118",
+      "translation": "zzz..."
+    },
+    {
+      "id": "006/119",
+      "translation": "Ah..."
+    },
+    {
+      "id": "006/120",
+      "translation": "Ah! What bad luck!"
+    },
+    {
+      "id": "006/121",
+      "translation": "Ugh... This is terrible!"
+    },
+    {
+      "id": "006/122",
+      "translation": "Ah! Misfortunes never come singly!"
+    },
+    {
+      "id": "006/123",
+      "translation": "Ugh... Why am I being punished?!"
+    },
+    {
+      "id": "006/124",
+      "translation": "Oh no! My props are gone!"
+    },
+    {
+      "id": "006/127",
+      "translation": "Ugh... This is terrible!"
+    },
+    {
+      "id": "006/128",
+      "translation": "Ah..."
+    },
+    {
+      "id": "006/130",
+      "translation": "Ah! What bad luck!"
+    },
+    {
+      "id": "006/133",
+      "translation": "Gained ["
+    },
+    {
+      "id": "006/134",
+      "translation": "Lost ["
+    },
+    {
+      "id": "006/135",
+      "translation": "]!"
+    }
+  ]
+}

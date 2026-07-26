@@ -11,7 +11,12 @@
     onExportSource,
     onExportProject,
     onExportStrings,
-    onExportVoice
+    onExportVoice,
+    dubbingAvailable = false,
+    dubbingStatus = '',
+    onSyncDubbing = () => undefined,
+    onSaveDubbing = () => undefined,
+    onCheckDubbing = () => undefined
   }: {
     hasRecords: boolean;
     hasArchive: boolean;
@@ -25,6 +30,11 @@
     onExportProject: () => void;
     onExportStrings: () => void;
     onExportVoice: () => void;
+    dubbingAvailable?: boolean;
+    dubbingStatus?: string;
+    onSyncDubbing?: () => void;
+    onSaveDubbing?: () => void;
+    onCheckDubbing?: () => void;
   } = $props();
 </script>
 
@@ -77,6 +87,13 @@
       <button type="button" class="primary" disabled={!hasVoice} onclick={onExportVoice}
         >Export voice.dat</button
       >
+      {#if dubbingAvailable}
+        <hr />
+        <button type="button" disabled={!hasRecords} onclick={onSyncDubbing}>Sync from dubbing</button>
+        <button type="button" disabled={!hasRecords} onclick={onSaveDubbing}>Save to dubbing</button>
+        <button type="button" onclick={onCheckDubbing}>Check dubbing</button>
+        {#if dubbingStatus}<small>{dubbingStatus}</small>{/if}
+      {/if}
     </div>
   </details>
 </section>

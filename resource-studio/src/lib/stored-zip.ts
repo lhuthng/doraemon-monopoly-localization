@@ -84,3 +84,36 @@ export function storedZip(entries: { name: string; bytes: Uint8Array }[]) {
   ]);
   return new Blob([join([...locals, directory, ending])], { type: 'application/zip' });
 }
+
+function readU16(bytes: Uint8Array, offset: number) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readU32(bytes: Uint8Array, offset: number) {
+  return (
+    (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0
+  );
+}
+
+/** Reads ZIPs written by storedZip. Compressed ZIPs are intentionally rejected. */
+export function readStoredZip(bytes: Uint8Array) {
+  const entries: { name: string; bytes: Uint8Array }[] = [];
+  let offset = 0;
+  while (offset + 4 <= bytes.length && readU32(bytes, offset) === 0x04034b50) {
+    if (offset + 30 > bytes.length) throw new Error('Truncated ZIP local header.');
+    const flags = readU16(bytes, offset + 6);
+    const compression = readU16(bytes, offset + 8);
+    const length = readU32(bytes, offset + 18);
+    const nameLength = readU16(bytes, offset + 26);
+    const extraLength = readU16(bytes, offset + 28);
+    if (flags & 8 || compression !== 0) throw new Error('Only uncompressed contributor ZIPs are supported.');
+    const start = offset + 30 + nameLength + extraLength;
+    const end = start + length;
+    if (end > bytes.length) throw new Error('ZIP entry extends beyond the file.');
+    const name = new TextDecoder().decode(bytes.subarray(offset + 30, offset + 30 + nameLength));
+    entries.push({ name, bytes: bytes.slice(start, end) });
+    offset = end;
+  }
+  if (!entries.length) throw new Error('ZIP has no readable contributor files.');
+  return entries;
+}

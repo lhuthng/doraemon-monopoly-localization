@@ -1,0 +1,510 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "gian",
+  "records": [
+    {
+      "id": "008/000",
+      "translation": "Hey! Get over here and play!"
+    },
+    {
+      "id": "008/001",
+      "translation": "Ha ha ha! I feel great! Time for a song!"
+    },
+    {
+      "id": "008/002",
+      "translation": "Hahahaha!"
+    },
+    {
+      "id": "008/003",
+      "translation": "Ha! Everything's going my way today!"
+    },
+    {
+      "id": "008/004",
+      "translation": "Ha! Everyone hopes to achieve their goals, my happiness is higher than the sky..."
+    },
+    {
+      "id": "008/005",
+      "translation": "Grr! You've gotta be kidding me!"
+    },
+    {
+      "id": "008/006",
+      "translation": "This makes me so mad!"
+    },
+    {
+      "id": "008/007",
+      "translation": "Ugh! So annoying!"
+    },
+    {
+      "id": "008/008",
+      "translation": "I need someone to take this anger out on!"
+    },
+    {
+      "id": "008/009",
+      "translation": "Hey! Who said you could take my Dorayaki?!"
+    },
+    {
+      "id": "008/010",
+      "translation": "Ugh! My Dorayaki!"
+    },
+    {
+      "id": "008/011",
+      "translation": "Grr! I'm mad! Really mad!"
+    },
+    {
+      "id": "008/012",
+      "translation": "Ugh! So tired!"
+    },
+    {
+      "id": "008/013",
+      "translation": "Wow! So many props to buy!"
+    },
+    {
+      "id": "008/014",
+      "translation": "I need to try them out quickly!"
+    },
+    {
+      "id": "008/015",
+      "translation": "Why buy anything when I can just borrow yours?"
+    },
+    {
+      "id": "008/016",
+      "translation": "Hey, everybody! Watch me show you how it's done!"
+    },
+    {
+      "id": "008/017",
+      "translation": "Bwahaha! None of you can beat me!"
+    },
+    {
+      "id": "008/018",
+      "translation": "Grr! That one didn't count! We're doing it again!"
+    },
+    {
+      "id": "008/021",
+      "translation": "Hey! Lend me some Dorayaki!"
+    },
+    {
+      "id": "008/022",
+      "translation": "Hey! You know what to do!"
+    },
+    {
+      "id": "008/023",
+      "translation": "Haha! Thanks!"
+    },
+    {
+      "id": "008/024",
+      "translation": "Ha! I'm leaving now!"
+    },
+    {
+      "id": "008/025",
+      "translation": "Whoa! No!"
+    },
+    {
+      "id": "008/027",
+      "translation": "Ah! There are no buildings here!"
+    },
+    {
+      "id": "008/028",
+      "translation": "There's no empty space here!"
+    },
+    {
+      "id": "008/029",
+      "translation": "There are props with me! So I don't need them!"
+    },
+    {
+      "id": "008/030",
+      "translation": "This isn't an ordinary building!"
+    },
+    {
+      "id": "008/031",
+      "translation": "Ha! This land is mine."
+    },
+    {
+      "id": "008/032",
+      "translation": "Ah! I can't use it on them!"
+    },
+    {
+      "id": "008/033",
+      "translation": "Frustrating! I can't use it again this month!"
+    },
+    {
+      "id": "008/034",
+      "translation": "Hey! There's no one available!"
+    },
+    {
+      "id": "008/035",
+      "translation": "Ah! There are already some!"
+    },
+    {
+      "id": "008/036",
+      "translation": "Ah! There are too few buildings!"
+    },
+    {
+      "id": "008/037",
+      "translation": "Hey! Make way for me!"
+    },
+    {
+      "id": "008/038",
+      "translation": "Ah! Nobody's sleeping!"
+    },
+    {
+      "id": "008/039",
+      "translation": "This won't work!"
+    },
+    {
+      "id": "008/040",
+      "translation": "Let's find someone else!"
+    },
+    {
+      "id": "008/041",
+      "translation": "Ah! This is so frustrating! This item can't be used if there's a building!"
+    },
+    {
+      "id": "008/042",
+      "translation": "This place isn't mine!"
+    },
+    {
+      "id": "008/043",
+      "translation": "Damn it! There are no buildings!"
+    },
+    {
+      "id": "008/044",
+      "translation": "Should I buy this place?"
+    },
+    {
+      "id": "008/045",
+      "translation": "Ah! I can buy land now!"
+    },
+    {
+      "id": "008/046",
+      "translation": "Ha! Ha! I can buy land again!"
+    },
+    {
+      "id": "008/047",
+      "translation": "Hey! I want this place!"
+    },
+    {
+      "id": "008/048",
+      "translation": "No! I won't buy it!"
+    },
+    {
+      "id": "008/049",
+      "translation": "Hehehe! Should I upgrade or sell the land?"
+    },
+    {
+      "id": "008/050",
+      "translation": "Hahaha! Finally, I can come back here to upgrade!"
+    },
+    {
+      "id": "008/051",
+      "translation": "Hahaha! I upgraded!"
+    },
+    {
+      "id": "008/052",
+      "translation": "I don't want this place anymore!"
+    },
+    {
+      "id": "008/053",
+      "translation": "Ah! Should I sell it?"
+    },
+    {
+      "id": "008/054",
+      "translation": "Oh dear!"
+    },
+    {
+      "id": "008/055",
+      "translation": "Ah! It's finally the end of the month!"
+    },
+    {
+      "id": "008/056",
+      "translation": "Time to show off my skills again!"
+    },
+    {
+      "id": "008/057",
+      "translation": "Haha! You can't compete with me!"
+    },
+    {
+      "id": "008/058",
+      "translation": "Ha! Useless people, disappear!"
+    },
+    {
+      "id": "008/059",
+      "translation": "Ha! It's time to show off my skills!"
+    },
+    {
+      "id": "008/060",
+      "translation": "Who dropped something? Ha! But now it's mine!"
+    },
+    {
+      "id": "008/061",
+      "translation": "Hahaha! I am always the ultimate victor!"
+    },
+    {
+      "id": "008/062",
+      "translation": "Hey! Is anyone there?! Ah! It's closed!"
+    },
+    {
+      "id": "008/063",
+      "translation": "Ah! Roboko is in a bad mood!"
+    },
+    {
+      "id": "008/064",
+      "translation": "Ha! Great! From paying rent to collecting rent!"
+    },
+    {
+      "id": "008/065",
+      "translation": "Haha! Give it to me!"
+    },
+    {
+      "id": "008/066",
+      "translation": "Ha! You can't see me!"
+    },
+    {
+      "id": "008/067",
+      "translation": "Who's going to take my Dorayaki!"
+    },
+    {
+      "id": "008/068",
+      "translation": "These things are useless to me!"
+    },
+    {
+      "id": "008/069",
+      "translation": "Look! I'm invincible!"
+    },
+    {
+      "id": "008/070",
+      "translation": "Ah! I seem to have forgotten something!?"
+    },
+    {
+      "id": "008/071",
+      "translation": "You can't see me! Hahaha!"
+    },
+    {
+      "id": "008/072",
+      "translation": "Haha! I found my Dorayaki!"
+    },
+    {
+      "id": "008/073",
+      "translation": "Hahaha! Bad luck turned into good luck!"
+    },
+    {
+      "id": "008/074",
+      "translation": "Ah! So expensive! I can't buy it!"
+    },
+    {
+      "id": "008/075",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "008/076",
+      "translation": "Wow! It's really expensive!"
+    },
+    {
+      "id": "008/077",
+      "translation": "Ah! Forget it! Let them go today!"
+    },
+    {
+      "id": "008/078",
+      "translation": "Ha! No rent to pay!"
+    },
+    {
+      "id": "008/079",
+      "translation": "No save file here!"
+    },
+    {
+      "id": "008/080",
+      "translation": "Saved!"
+    },
+    {
+      "id": "008/081",
+      "translation": "Save file error!"
+    },
+    {
+      "id": "008/082",
+      "translation": "Ah! Annoying! Cannot be used!"
+    },
+    {
+      "id": "008/083",
+      "translation": "Damn it! Nobody put down the Dorayaki!"
+    },
+    {
+      "id": "008/084",
+      "translation": "File already exists, do you want to overwrite?"
+    },
+    {
+      "id": "008/085",
+      "translation": "Are you sure?"
+    },
+    {
+      "id": "008/086",
+      "translation": "Do you want to print the certificate?"
+    },
+    {
+      "id": "008/087",
+      "translation": "Is the printed certificate correct?"
+    },
+    {
+      "id": "008/088",
+      "translation": "Do you want to print it again?"
+    },
+    {
+      "id": "008/089",
+      "translation": "This is mine!"
+    },
+    {
+      "id": "008/090",
+      "translation": "Do it twice! Haha! You're in trouble!"
+    },
+    {
+      "id": "008/091",
+      "translation": "My skills have improved!"
+    },
+    {
+      "id": "008/092",
+      "translation": "Give me double the amount of Dorayaki!"
+    },
+    {
+      "id": "008/093",
+      "translation": "Your Dorayaki are mine!"
+    },
+    {
+      "id": "008/094",
+      "translation": "Why only one plot of land?!"
+    },
+    {
+      "id": "008/095",
+      "translation": "Upgrade it more!"
+    },
+    {
+      "id": "008/096",
+      "translation": "I'm always this lucky!"
+    },
+    {
+      "id": "008/097",
+      "translation": "Who dares to take my Dorayaki!"
+    },
+    {
+      "id": "008/098",
+      "translation": "Of course I don't have to pay rent!"
+    },
+    {
+      "id": "008/099",
+      "translation": "Who dares to attack me!"
+    },
+    {
+      "id": "008/100",
+      "translation": "The Dorayaki are mine!"
+    },
+    {
+      "id": "008/102",
+      "translation": "Ah...asleep?"
+    },
+    {
+      "id": "008/104",
+      "translation": "These are the Dorayaki I deserve!"
+    },
+    {
+      "id": "008/105",
+      "translation": "You can't buy props! They're all mine!"
+    },
+    {
+      "id": "008/106",
+      "translation": "I'm forbidden from using props!"
+    },
+    {
+      "id": "008/107",
+      "translation": "Am I too fat?"
+    },
+    {
+      "id": "008/108",
+      "translation": "You won't give me Dorayaki!"
+    },
+    {
+      "id": "008/109",
+      "translation": "Damn it! The Dorayaki should be mine!"
+    },
+    {
+      "id": "008/110",
+      "translation": "I have Dorayaki! Why won't you let me buy them!"
+    },
+    {
+      "id": "008/111",
+      "translation": "Damn it! I won't buy them!"
+    },
+    {
+      "id": "008/112",
+      "translation": "How awful! I can't level up even with Dorayaki!"
+    },
+    {
+      "id": "008/113",
+      "translation": "Why can't I level up?!"
+    },
+    {
+      "id": "008/114",
+      "translation": "You won't sell me Dorayaki even though you have them!"
+    },
+    {
+      "id": "008/115",
+      "translation": "I have Dorayaki! Why won't you sell them to me?!"
+    },
+    {
+      "id": "008/116",
+      "translation": "How dare you not let me play!"
+    },
+    {
+      "id": "008/117",
+      "translation": "I'm not playing!"
+    },
+    {
+      "id": "008/118",
+      "translation": "Hmph... Hmph..."
+    },
+    {
+      "id": "008/119",
+      "translation": "Oh! I don't want to shrink!"
+    },
+    {
+      "id": "008/120",
+      "translation": "Damn it! So unlucky!"
+    },
+    {
+      "id": "008/121",
+      "translation": "I'm not afraid of bad luck!"
+    },
+    {
+      "id": "008/122",
+      "translation": "The penalty is too much!"
+    },
+    {
+      "id": "008/123",
+      "translation": "Wow! My Dorayaki is gone!"
+    },
+    {
+      "id": "008/124",
+      "translation": "Huh? Who took my prop?"
+    },
+    {
+      "id": "008/127",
+      "translation": "Ah!"
+    },
+    {
+      "id": "008/128",
+      "translation": "Ahhh..."
+    },
+    {
+      "id": "008/130",
+      "translation": "Ah! No way!"
+    },
+    {
+      "id": "008/133",
+      "translation": "Gained ["
+    },
+    {
+      "id": "008/134",
+      "translation": "Lost ["
+    },
+    {
+      "id": "008/135",
+      "translation": "]!"
+    }
+  ]
+}

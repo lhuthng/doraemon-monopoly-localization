@@ -1,0 +1,494 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "suneo",
+  "records": [
+    {
+      "id": "007/000",
+      "translation": "A game like this is nothing for someone like me!"
+    },
+    {
+      "id": "007/001",
+      "translation": "Lucky! Lucky!"
+    },
+    {
+      "id": "007/002",
+      "translation": "What a lucky day!"
+    },
+    {
+      "id": "007/003",
+      "translation": "Hooray! Hooray!"
+    },
+    {
+      "id": "007/004",
+      "translation": "With luck like mine, how could I possibly lose?"
+    },
+    {
+      "id": "007/005",
+      "translation": "W-Wait! This isn't supposed to happen to me!"
+    },
+    {
+      "id": "007/006",
+      "translation": "Oh my god!"
+    },
+    {
+      "id": "007/007",
+      "translation": "Nooo! This is terrible!"
+    },
+    {
+      "id": "007/008",
+      "translation": "Oh! What bad luck!"
+    },
+    {
+      "id": "007/009",
+      "translation": "Oh! What bad luck!"
+    },
+    {
+      "id": "007/010",
+      "translation": "I'm finished! It's all over!"
+    },
+    {
+      "id": "007/011",
+      "translation": "Come on! Show me a little mercy!"
+    },
+    {
+      "id": "007/012",
+      "translation": "Forward! Forward!"
+    },
+    {
+      "id": "007/013",
+      "translation": "Let's buy some items!"
+    },
+    {
+      "id": "007/014",
+      "translation": "Now watch a real expert at work!"
+    },
+    {
+      "id": "007/015",
+      "translation": "Hmph! Nothing here is good enough for me."
+    },
+    {
+      "id": "007/016",
+      "translation": "Nobody's better at games than I am!"
+    },
+    {
+      "id": "007/017",
+      "translation": "Please - this little game is far too easy for me."
+    },
+    {
+      "id": "007/018",
+      "translation": "I'll let you enjoy your little victory - for now."
+    },
+    {
+      "id": "007/025",
+      "translation": "Next time I will definitely..."
+    },
+    {
+      "id": "007/027",
+      "translation": "Where is the building?"
+    },
+    {
+      "id": "007/028",
+      "translation": "There's nowhere to use it!"
+    },
+    {
+      "id": "007/029",
+      "translation": "There are people behind me!"
+    },
+    {
+      "id": "007/030",
+      "translation": "This isn't an ordinary building!"
+    },
+    {
+      "id": "007/031",
+      "translation": "This place is mine!"
+    },
+    {
+      "id": "007/032",
+      "translation": "There are no characters available!"
+    },
+    {
+      "id": "007/033",
+      "translation": "I've already used it this month!"
+    },
+    {
+      "id": "007/034",
+      "translation": "There are no characters to choose from!"
+    },
+    {
+      "id": "007/035",
+      "translation": "I already have one!"
+    },
+    {
+      "id": "007/036",
+      "translation": "You need two buildings to activate it!"
+    },
+    {
+      "id": "007/037",
+      "translation": "No place to stand!"
+    },
+    {
+      "id": "007/038",
+      "translation": "No one is sleeping!"
+    },
+    {
+      "id": "007/039",
+      "translation": "This won't work!"
+    },
+    {
+      "id": "007/040",
+      "translation": "There's one more person to choose from!"
+    },
+    {
+      "id": "007/041",
+      "translation": "There's already a building here!"
+    },
+    {
+      "id": "007/042",
+      "translation": "This isn't mine!"
+    },
+    {
+      "id": "007/043",
+      "translation": "There's no building for me!"
+    },
+    {
+      "id": "007/044",
+      "translation": "Very cheap!"
+    },
+    {
+      "id": "007/045",
+      "translation": "Not bad! Not bad!"
+    },
+    {
+      "id": "007/046",
+      "translation": "Ah...!"
+    },
+    {
+      "id": "007/047",
+      "translation": "Okay!"
+    },
+    {
+      "id": "007/048",
+      "translation": "Next time!"
+    },
+    {
+      "id": "007/049",
+      "translation": "Should I upgrade it or sell it?"
+    },
+    {
+      "id": "007/050",
+      "translation": "Ah...?! ...!?"
+    },
+    {
+      "id": "007/051",
+      "translation": "Upgrade!"
+    },
+    {
+      "id": "007/052",
+      "translation": "Reluctant, aren't you!"
+    },
+    {
+      "id": "007/053",
+      "translation": "How about selling it?"
+    },
+    {
+      "id": "007/054",
+      "translation": "Oh...!"
+    },
+    {
+      "id": "007/055",
+      "translation": "Oh... it's time for the monthly settlement!"
+    },
+    {
+      "id": "007/056",
+      "translation": "Ah... another month has passed!"
+    },
+    {
+      "id": "007/057",
+      "translation": "I told you this wouldn't be difficult for me! Hahaha..."
+    },
+    {
+      "id": "007/058",
+      "translation": "Haha... one less!"
+    },
+    {
+      "id": "007/059",
+      "translation": "You have a good eye!"
+    },
+    {
+      "id": "007/060",
+      "translation": "You found something good!"
+    },
+    {
+      "id": "007/061",
+      "translation": "Victory! Victory!"
+    },
+    {
+      "id": "007/062",
+      "translation": "Ah! Is it a landslide?"
+    },
+    {
+      "id": "007/063",
+      "translation": "Roboko is wicked!"
+    },
+    {
+      "id": "007/064",
+      "translation": "Upside down the pen! Upside down the pen! Paying rent becomes collecting rent!"
+    },
+    {
+      "id": "007/065",
+      "translation": "Thank you for the Dorayaki!"
+    },
+    {
+      "id": "007/066",
+      "translation": "Haha! You can't see me!"
+    },
+    {
+      "id": "007/067",
+      "translation": "Little bee! Little bee!"
+    },
+    {
+      "id": "007/068",
+      "translation": "I am a big snail!"
+    },
+    {
+      "id": "007/069",
+      "translation": "The Soul Guardian is truly invincible!"
+    },
+    {
+      "id": "007/070",
+      "translation": "Ah! Me? You? What? What? ? ?"
+    },
+    {
+      "id": "007/071",
+      "translation": "Haha! You can't see me!"
+    },
+    {
+      "id": "007/072",
+      "translation": "You can't punish me! Haha!"
+    },
+    {
+      "id": "007/073",
+      "translation": "Bad luck turned into Dorayaki!"
+    },
+    {
+      "id": "007/074",
+      "translation": "Oh! Not enough Dorayaki to buy props!"
+    },
+    {
+      "id": "007/075",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "007/076",
+      "translation": "Not enough Dorayaki!"
+    },
+    {
+      "id": "007/077",
+      "translation": "Ah! Can't find the target!"
+    },
+    {
+      "id": "007/078",
+      "translation": "Lucky you! No rent to pay!"
+    },
+    {
+      "id": "007/079",
+      "translation": "No save file here!"
+    },
+    {
+      "id": "007/080",
+      "translation": "Saved!"
+    },
+    {
+      "id": "007/081",
+      "translation": "Save file error!"
+    },
+    {
+      "id": "007/082",
+      "translation": "I don't need this item!"
+    },
+    {
+      "id": "007/083",
+      "translation": "Ah! Too late!"
+    },
+    {
+      "id": "007/084",
+      "translation": "File already exists, do you want to overwrite?"
+    },
+    {
+      "id": "007/085",
+      "translation": "Are you sure?"
+    },
+    {
+      "id": "007/086",
+      "translation": "Do you want to print the certificate?"
+    },
+    {
+      "id": "007/087",
+      "translation": "Is the printed certificate correct?"
+    },
+    {
+      "id": "007/088",
+      "translation": "Should we print it again?"
+    },
+    {
+      "id": "007/089",
+      "translation": "Good luck! Another prop!"
+    },
+    {
+      "id": "007/090",
+      "translation": "Wow! It can be done twice!"
+    },
+    {
+      "id": "007/091",
+      "translation": "Haha! One more time!"
+    },
+    {
+      "id": "007/092",
+      "translation": "I'm rich!"
+    },
+    {
+      "id": "007/093",
+      "translation": "I'm rich!"
+    },
+    {
+      "id": "007/094",
+      "translation": "Another piece of land! Thank you!"
+    },
+    {
+      "id": "007/095",
+      "translation": "Great! Upgraded!"
+    },
+    {
+      "id": "007/096",
+      "translation": "Ho! Good Luck!"
+    },
+    {
+      "id": "007/097",
+      "translation": "Great! No rent to pay!"
+    },
+    {
+      "id": "007/098",
+      "translation": "Haha! They can't punish me!"
+    },
+    {
+      "id": "007/099",
+      "translation": "Ah! You can relax now!"
+    },
+    {
+      "id": "007/100",
+      "translation": "Great! More Dorayaki!"
+    },
+    {
+      "id": "007/102",
+      "translation": "Ah... Good morning!"
+    },
+    {
+      "id": "007/104",
+      "translation": "Ah! What good luck!"
+    },
+    {
+      "id": "007/105",
+      "translation": "It's time to buy more items!"
+    },
+    {
+      "id": "007/106",
+      "translation": "What...!? I can't use items!"
+    },
+    {
+      "id": "007/107",
+      "translation": "Ah! I can't move?"
+    },
+    {
+      "id": "007/108",
+      "translation": "What...!? I can't collect rent!"
+    },
+    {
+      "id": "007/109",
+      "translation": "Oh! My Dorayaki!"
+    },
+    {
+      "id": "007/110",
+      "translation": "Ah! Why me!"
+    },
+    {
+      "id": "007/111",
+      "translation": "Oh! My land!"
+    },
+    {
+      "id": "007/112",
+      "translation": "What...!? Can't upgrade!"
+    },
+    {
+      "id": "007/113",
+      "translation": "Why!? Why!? Can't upgrade!"
+    },
+    {
+      "id": "007/114",
+      "translation": "Oh! Can't buy items!? Open the door! Open the door!"
+    },
+    {
+      "id": "007/115",
+      "translation": "I want to buy something!"
+    },
+    {
+      "id": "007/116",
+      "translation": "What...!? Can't play mini-games!"
+    },
+    {
+      "id": "007/117",
+      "translation": "Oh! Open the door! Open the door!"
+    },
+    {
+      "id": "007/118",
+      "translation": "zzz..."
+    },
+    {
+      "id": "007/119",
+      "translation": "Ah..."
+    },
+    {
+      "id": "007/120",
+      "translation": "Ah! What bad luck!"
+    },
+    {
+      "id": "007/121",
+      "translation": "Ah! What bad luck!"
+    },
+    {
+      "id": "007/122",
+      "translation": "A few Dorayaki, I won't care!"
+    },
+    {
+      "id": "007/123",
+      "translation": "Why did you take my Dorayaki?!"
+    },
+    {
+      "id": "007/124",
+      "translation": "Give me back my props!"
+    },
+    {
+      "id": "007/127",
+      "translation": "Hmph! No big deal!"
+    },
+    {
+      "id": "007/128",
+      "translation": "Ah..."
+    },
+    {
+      "id": "007/130",
+      "translation": "Ah! What bad luck!"
+    },
+    {
+      "id": "007/133",
+      "translation": "Gained ["
+    },
+    {
+      "id": "007/134",
+      "translation": "Lost ["
+    },
+    {
+      "id": "007/135",
+      "translation": "]!"
+    }
+  ]
+}

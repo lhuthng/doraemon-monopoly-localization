@@ -1,0 +1,502 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "shizuka",
+  "records": [
+    {
+      "id": "006/000",
+      "translation": "Mình là cô gái được mọi người yêu mến!"
+    },
+    {
+      "id": "006/001",
+      "translation": "Yeah!"
+    },
+    {
+      "id": "006/002",
+      "translation": "Thần may mắn đang mỉm cười với mình!"
+    },
+    {
+      "id": "006/003",
+      "translation": "Thật hạnh phúc! Trời đang giúp mình!"
+    },
+    {
+      "id": "006/004",
+      "translation": "La! La! La! La!"
+    },
+    {
+      "id": "006/005",
+      "translation": "Mình cần phải cố gắng hơn nữa!"
+    },
+    {
+      "id": "006/006",
+      "translation": "Luôn luôn có lối thoát!"
+    },
+    {
+      "id": "006/007",
+      "translation": "Tại sao lại có sự suy thoái như vậy!"
+    },
+    {
+      "id": "006/008",
+      "translation": "Có lẽ đúng là phụ nữ xinh đẹp thường có số phận bi thảm!"
+    },
+    {
+      "id": "006/009",
+      "translation": "Hic! Hic! Cậu đang bắt nạt mình!"
+    },
+    {
+      "id": "006/010",
+      "translation": "Tại sao mình cũng bị trừng phạt!"
+    },
+    {
+      "id": "006/011",
+      "translation": "Tại sao Trời lại trừng phạt mình như thế này!"
+    },
+    {
+      "id": "006/012",
+      "translation": "Mình có thể tiến thêm một bước nữa!"
+    },
+    {
+      "id": "006/013",
+      "translation": "Xem nào, có quần áo đẹp không nào!"
+    },
+    {
+      "id": "006/014",
+      "translation": "Có bảo bối mới!"
+    },
+    {
+      "id": "006/015",
+      "translation": "Không có quần áo đẹp nào cả!"
+    },
+    {
+      "id": "006/016",
+      "translation": "Vui quá! Mình lại có thể chơi với mọi người rồi!"
+    },
+    {
+      "id": "006/017",
+      "translation": "Đừng đánh giá thấp sức mạnh của con gái!"
+    },
+    {
+      "id": "006/018",
+      "translation": "Sao cậu không để mình thắng chứ!"
+    },
+    {
+      "id": "006/019",
+      "translation": "Đừng nhìn trộm mình!"
+    },
+    {
+      "id": "006/020",
+      "translation": "Thoải mái quá!"
+    },
+    {
+      "id": "006/025",
+      "translation": "Sao mình lại thua?"
+    },
+    {
+      "id": "006/027",
+      "translation": "Ở đây không có tòa nhà nào cả!"
+    },
+    {
+      "id": "006/028",
+      "translation": "Thậm chí không có cả khoảng trống nào gần đó!"
+    },
+    {
+      "id": "006/029",
+      "translation": "Mình có một bảo bối!"
+    },
+    {
+      "id": "006/030",
+      "translation": "Đây không phải là một tòa nhà bình thường!"
+    },
+    {
+      "id": "006/031",
+      "translation": "Toàn bộ đất đai xung quanh đây là của mình, không cần dùng bảo bối!"
+    },
+    {
+      "id": "006/032",
+      "translation": "Không thể dùng! Mình phải chọn thứ khác thôi!"
+    },
+    {
+      "id": "006/033",
+      "translation": "Hừ! Mình đã dùng nó tháng này rồi!"
+    },
+    {
+      "id": "006/034",
+      "translation": "Sao vậy! Mình không thể chọn đối thủ!"
+    },
+    {
+      "id": "006/035",
+      "translation": "Ôi! Mình không thể dùng lại được sao?"
+    },
+    {
+      "id": "006/036",
+      "translation": "Sao không có tòa nhà nào?"
+    },
+    {
+      "id": "006/037",
+      "translation": "Ôi! Không còn chỗ trống nào nữa!"
+    },
+    {
+      "id": "006/038",
+      "translation": "Sao không ai ngủ?"
+    },
+    {
+      "id": "006/039",
+      "translation": "Không có đối thủ nào xứng tầm để đối phó!"
+    },
+    {
+      "id": "006/040",
+      "translation": "Chọn đối thủ đi!"
+    },
+    {
+      "id": "006/041",
+      "translation": "Ôi! Có tòa nhà!"
+    },
+    {
+      "id": "006/042",
+      "translation": "Không! Mảnh đất này không phải của mình!"
+    },
+    {
+      "id": "006/043",
+      "translation": "Không có tòa nhà nào cả!"
+    },
+    {
+      "id": "006/044",
+      "translation": "Hay là dùng một ít bánh rán để mua đất nhỉ?"
+    },
+    {
+      "id": "006/045",
+      "translation": "Hay là mua đất để tăng cơ hội chiến thắng nhỉ?"
+    },
+    {
+      "id": "006/046",
+      "translation": "Chúng ta có nên mua đất mới để xây nhà không?"
+    },
+    {
+      "id": "006/047",
+      "translation": "Lại mua đất mới nữa!"
+    },
+    {
+      "id": "006/048",
+      "translation": "Không mua đất không có nghĩa là chúng ta sẽ thua!"
+    },
+    {
+      "id": "006/049",
+      "translation": "Nâng cấp hay bán đất thì tốt hơn?"
+    },
+    {
+      "id": "006/050",
+      "translation": "Nâng cấp hay bán đất là một quyết định khó khăn quá!"
+    },
+    {
+      "id": "006/051",
+      "translation": "Mình vui quá vì cuối cùng cũng được nâng cấp rồi!"
+    },
+    {
+      "id": "006/052",
+      "translation": "Chúng ta có thể trở lại bình thường rồi!"
+    },
+    {
+      "id": "006/053",
+      "translation": "Ái chà! Ái chà! Ôi không! Chúng ta lại phải bán đất nữa rồi!"
+    },
+    {
+      "id": "006/054",
+      "translation": "Ôi trời ơi!"
+    },
+    {
+      "id": "006/055",
+      "translation": "Lại đến kỳ quyết toán hàng tháng rồi!"
+    },
+    {
+      "id": "006/056",
+      "translation": "Mình hy vọng kỳ quyết toán hàng tháng tiếp theo sẽ sớm đến!"
+    },
+    {
+      "id": "006/057",
+      "translation": "Chúng ta cùng chia sẻ vài chiếc bánh rán nhé?"
+    },
+    {
+      "id": "006/058",
+      "translation": "Ồ! Đừng nản lòng, lần sau cố gắng hơn nhé!"
+    },
+    {
+      "id": "006/059",
+      "translation": "Cảm ơn vì đã chọn mình!"
+    },
+    {
+      "id": "006/060",
+      "translation": "Ai làm mất vậy? Mình giữ hộ nhé!"
+    },
+    {
+      "id": "006/061",
+      "translation": "Mình vui quá! Mình thắng rồi!"
+    },
+    {
+      "id": "006/062",
+      "translation": "Ôi! Hôm nay không mở cửa!"
+    },
+    {
+      "id": "006/063",
+      "translation": "Cô Robot thật là xấu tính!"
+    },
+    {
+      "id": "006/064",
+      "translation": "Trả tiền thuê giờ thành thu tiền thuê! Tuyệt vời quá!"
+    },
+    {
+      "id": "006/065",
+      "translation": "Ha! Ha! Ha!"
+    },
+    {
+      "id": "006/066",
+      "translation": "Mình ở đây, mọi người không thấy mình sao?"
+    },
+    {
+      "id": "006/067",
+      "translation": "Với con ong nhỏ này, mọi người không thể trừng phạt mình bằng bánh rán của mình được!"
+    },
+    {
+      "id": "006/068",
+      "translation": "Được bảo vệ bởi ngôi nhà ốc sên!"
+    },
+    {
+      "id": "006/069",
+      "translation": "May mắn thay được bảo vệ bởi người bảo vệ linh hồn!"
+    },
+    {
+      "id": "006/070",
+      "translation": "Ôi! Mình quên làm gì thế này?!"
+    },
+    {
+      "id": "006/071",
+      "translation": "Cậu không thể nhìn thấy mình!"
+    },
+    {
+      "id": "006/072",
+      "translation": "Cậu không thể trừng phạt mình bằng bánh rán!"
+    },
+    {
+      "id": "006/073",
+      "translation": "Mình không ngờ ngay cả vận rủi cũng có thể biến thành bánh rán!"
+    },
+    {
+      "id": "006/074",
+      "translation": "Ôi trời! Không đủ bánh rán để mua đồ!"
+    },
+    {
+      "id": "006/075",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "006/076",
+      "translation": "Ôi trời! Không đủ bánh rán để mua!"
+    },
+    {
+      "id": "006/077",
+      "translation": "Ôi! Không có đối thủ để lựa chọn!"
+    },
+    {
+      "id": "006/078",
+      "translation": "Không phải trả tiền thuê, vui quá!"
+    },
+    {
+      "id": "006/079",
+      "translation": "Không có tệp lưu ở đây!"
+    },
+    {
+      "id": "006/080",
+      "translation": "Đã lưu!"
+    },
+    {
+      "id": "006/081",
+      "translation": "Lưu nhầm!"
+    },
+    {
+      "id": "006/082",
+      "translation": "Mục này không hoạt động!"
+    },
+    {
+      "id": "006/083",
+      "translation": "Cậu đang đùa à!"
+    },
+    {
+      "id": "006/084",
+      "translation": "Tệp đã tồn tại, cậu có muốn ghi đè không?"
+    },
+    {
+      "id": "006/085",
+      "translation": "Cậu chắc chắn chứ?"
+    },
+    {
+      "id": "006/086",
+      "translation": "Cậu có muốn in chứng chỉ không?"
+    },
+    {
+      "id": "006/087",
+      "translation": "Chứng chỉ đã in có đúng không?"
+    },
+    {
+      "id": "006/088",
+      "translation": "Cậu có muốn in lại không?"
+    },
+    {
+      "id": "006/089",
+      "translation": "Tuyệt vời! Cảm ơn vì món đồ!"
+    },
+    {
+      "id": "006/090",
+      "translation": "Haha! Mình có thể chơi thêm một lần nữa!"
+    },
+    {
+      "id": "006/091",
+      "translation": "Mình sẽ chơi thêm một lần nữa!"
+    },
+    {
+      "id": "006/092",
+      "translation": "Tuyệt vời! Mình có thể thu thập thêm bánh rán! Vui quá!"
+    },
+    {
+      "id": "006/093",
+      "translation": "Cảm ơn!"
+    },
+    {
+      "id": "006/094",
+      "translation": "Miễn phí!"
+    },
+    {
+      "id": "006/095",
+      "translation": "Nâng cấp miễn phí!"
+    },
+    {
+      "id": "006/096",
+      "translation": "À! Tuyệt vời!"
+    },
+    {
+      "id": "006/097",
+      "translation": "À! Không phải trả tiền thuê!"
+    },
+    {
+      "id": "006/098",
+      "translation": "Haha! Vô dụng!"
+    },
+    {
+      "id": "006/099",
+      "translation": "Không thể tấn công mình!"
+    },
+    {
+      "id": "006/100",
+      "translation": "À! Cảm ơn vì bánh rán!"
+    },
+    {
+      "id": "006/102",
+      "translation": "À... Chào buổi sáng mọi người!"
+    },
+    {
+      "id": "006/104",
+      "translation": "Nhiều bánh rán quá! Tuyệt vời!"
+    },
+    {
+      "id": "006/105",
+      "translation": "Giảm giá! Mình cần mua thêm đồ!"
+    },
+    {
+      "id": "006/106",
+      "translation": "Ôi... Mình không thể dùng đồ chơi nữa!"
+    },
+    {
+      "id": "006/107",
+      "translation": "À! Mình cần nghỉ ngơi một lát!"
+    },
+    {
+      "id": "006/108",
+      "translation": "Ôi... Mình không thể thu tiền thuê!"
+    },
+    {
+      "id": "006/109",
+      "translation": "Ô! Mình không thể thu thập bánh rán nữa!"
+    },
+    {
+      "id": "006/110",
+      "translation": "À! Mình không thể mua đất!"
+    },
+    {
+      "id": "006/111",
+      "translation": "Ô! Mình rất muốn mua đất!"
+    },
+    {
+      "id": "006/112",
+      "translation": "Thật tệ là mình không thể nâng cấp!"
+    },
+    {
+      "id": "006/113",
+      "translation": "Ôi... Mình có bánh rán nhưng...!"
+    },
+    {
+      "id": "006/114",
+      "translation": "Ôi! Mình không thể mua đồ!"
+    },
+    {
+      "id": "006/115",
+      "translation": "Mở cửa! Mở cửa! Mình muốn mua đồ!"
+    },
+    {
+      "id": "006/116",
+      "translation": "Ugh... Mình không thể chơi game!"
+    },
+    {
+      "id": "006/117",
+      "translation": "Ugh... Mình cũng muốn chơi..."
+    },
+    {
+      "id": "006/118",
+      "translation": "zzz..."
+    },
+    {
+      "id": "006/119",
+      "translation": "Ah..."
+    },
+    {
+      "id": "006/120",
+      "translation": "Ah! Thật không may!"
+    },
+    {
+      "id": "006/121",
+      "translation": "Ugh... Thật tệ!"
+    },
+    {
+      "id": "006/122",
+      "translation": "Ah! Vận rủi không bao giờ đến một mình!"
+    },
+    {
+      "id": "006/123",
+      "translation": "Ugh... Tại sao mình lại bị phạt?!"
+    },
+    {
+      "id": "006/124",
+      "translation": "Ôi không! Đồ của mình biến mất rồi!"
+    },
+    {
+      "id": "006/127",
+      "translation": "Ôi... Thật tệ!"
+    },
+    {
+      "id": "006/128",
+      "translation": "À..."
+    },
+    {
+      "id": "006/130",
+      "translation": "Á! Thật xui xẻo!"
+    },
+    {
+      "id": "006/133",
+      "translation": "*Đã nhận ["
+    },
+    {
+      "id": "006/134",
+      "translation": "*Đã mất ["
+    },
+    {
+      "id": "006/135",
+      "translation": "]!*"
+    }
+  ]
+}

@@ -88,11 +88,14 @@
   let voiceReplacementUrls = $state<Record<string, string>>({});
   let voiceReplacementDurations = $state<Record<string, number>>({});
   let voiceStatus = $state('');
+  let dubbingLanguage = $state<'english' | 'vietnamese' | null>(null);
+  let dubbingStatus = $state('');
 
   onMount(() => {
     void loadOptionalOriginal();
     void loadOptionalSysfont();
     void loadOptionalVoice();
+    void loadDubbingSession();
   });
 
   let selectedTarget = $derived(TARGET_LANGUAGES.find((language) => language.code === targetLanguage)!);
@@ -366,6 +369,66 @@
       if (response.ok) voiceManifest = await response.json();
     } catch {
       /* Voice files are optional outside a staged private workspace. */
+    }
+  }
+
+  async function loadDubbingSession() {
+    if (!import.meta.env.DEV) return;
+    try {
+      const response = await fetch('/game/.dubbing-language.json');
+      const session = (await response.json()) as { language?: string };
+      if (session.language === 'english' || session.language === 'vietnamese')
+        dubbingLanguage = session.language;
+    } catch {
+      /* The public static translator has no local filesystem bridge. */
+    }
+  }
+
+  function base64(bytes: Uint8Array) {
+    let output = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000)
+      output += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    return btoa(output);
+  }
+
+  async function dubbingRequest(action: 'sync' | 'save' | 'check', payload: Record<string, unknown> = {}) {
+    if (!dubbingLanguage) return;
+    const response = await fetch(`/__dubbing/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: dubbingLanguage, ...payload })
+    });
+    const result = (await response.json()) as { status?: string; error?: string };
+    if (!response.ok) throw new Error(result.error || 'Dubbing action failed.');
+    dubbingStatus = result.status || 'Completed.';
+  }
+
+  async function syncFromDubbing() {
+    try {
+      await dubbingRequest('sync');
+      window.location.reload();
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function saveToDubbing() {
+    try {
+      const voices = Object.entries(voiceReplacements).map(([id, wav]) => ({
+        id,
+        wav: wav ? base64(wav) : null
+      }));
+      await dubbingRequest('save', { translations, voices });
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function checkDubbing() {
+    try {
+      await dubbingRequest('check');
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -980,6 +1043,11 @@
     onExportProject={exportTranslations}
     onExportStrings={exportStringsDat}
     onExportVoice={exportVoiceDat}
+    dubbingAvailable={dubbingLanguage !== null}
+    {dubbingStatus}
+    onSyncDubbing={syncFromDubbing}
+    onSaveDubbing={saveToDubbing}
+    onCheckDubbing={checkDubbing}
   />
 
   {#if !records.length}

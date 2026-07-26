@@ -16,7 +16,7 @@ const PART_NAMES = [
   'loc-gian.dmpatch',
   'loc-others.dmpatch',
   'sprites.dmpatch',
-  'runtime.dmpatch',
+  'runtime.dmpatch'
 ];
 
 if (language !== 'english' && language !== 'vietnamese') {
@@ -60,16 +60,17 @@ for (const file of files) {
 }
 const mapFiles = mapPairs(new Set(await readdir(source)));
 
-// Check for either multipart directory or monolithic payload
-const hasParts = await exists(partsDir) && (await Promise.all(
-  PART_NAMES.map((name) => exists(resolve(partsDir, name)))
-)).every(Boolean);
+// Prefer the canonical monolithic payload. Multipart input remains readable so
+// maintainers can migrate an older checkout without losing its graphics state.
+const hasParts =
+  (await exists(partsDir)) &&
+  (await Promise.all(PART_NAMES.map((name) => exists(resolve(partsDir, name))))).every(Boolean);
 const hasMonolithic = await exists(monolithicPayload);
 
 if (!hasParts && !hasMonolithic) {
   throw new Error(
     `Missing ${hasParts ? '' : partsDir + ' parts '}${!hasParts && !hasMonolithic ? 'or ' : ''}${!hasMonolithic ? monolithicPayload : ''}. ` +
-    `This language has no tracked resource payload yet, so it cannot be prepared.`
+      `This language has no tracked resource payload yet, so it cannot be prepared.`
   );
 }
 
@@ -106,8 +107,26 @@ if (await exists(originalVoice)) {
 
 await mkdir(target, { recursive: true });
 
-let child;
-if (hasParts) {
+let child: ReturnType<typeof Bun.spawn>;
+if (hasMonolithic) {
+  child = Bun.spawn(
+    [
+      'cargo',
+      'run',
+      '-p',
+      'patch-build',
+      '--',
+      'materialize',
+      '--payload',
+      monolithicPayload,
+      '--base-dir',
+      source,
+      '--output-dir',
+      target
+    ],
+    { cwd: repository, stdout: 'inherit', stderr: 'inherit' }
+  );
+} else if (hasParts) {
   child = Bun.spawn(
     [
       'cargo',
@@ -126,23 +145,7 @@ if (hasParts) {
     { cwd: repository, stdout: 'inherit', stderr: 'inherit' }
   );
 } else {
-  child = Bun.spawn(
-    [
-      'cargo',
-      'run',
-      '-p',
-      'patch-build',
-      '--',
-      'materialize',
-      '--payload',
-      monolithicPayload,
-      '--base-dir',
-      source,
-      '--output-dir',
-      target
-    ],
-    { cwd: repository, stdout: 'inherit', stderr: 'inherit' }
-  );
+  throw new Error('No language payload was found.');
 }
 
 if ((await child.exited) !== 0) {
@@ -152,6 +155,19 @@ if ((await child.exited) !== 0) {
 // Map resources are presently inspect-only and are absent from translation
 // payloads, so materialization does not create them in the language workspace.
 await Promise.all(mapFiles.map((file) => copyFile(resolve(source, file), resolve(target, file))));
+
+// Dialogue and voices always come from the canonical dubbing tree, never the
+// release payload used above to restore graphics/font state.
+await Promise.all([
+  copyFile(sourceStrings, resolve(target, 'strings.dat')),
+  copyFile(sourceVoice, resolve(target, 'voice.dat'))
+]);
+const sync = Bun.spawn(['bun', 'scripts/dubbing.ts', 'sync', language], {
+  cwd: studio,
+  stdout: 'inherit',
+  stderr: 'inherit'
+});
+if ((await sync.exited) !== 0) throw new Error('Dubbing synchronization failed.');
 
 console.log(
   `Prepared ${language} resources in ${target}. Run bun run dev-${language === 'english' ? 'en' : 'vi'}.`

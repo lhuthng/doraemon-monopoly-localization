@@ -1,0 +1,522 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "others",
+  "records": [
+    {
+      "id": "000/000",
+      "translation": "Dear colleagues at Softstar Entertainment, thank you so much for taking the time to try out <Doraemon Monopoly>. Please provide your feedback!"
+    },
+    {
+      "id": "000/001",
+      "translation": "As this is only an alpha version, some features are not yet available. We apologize for the inconvenience!"
+    },
+    {
+      "id": "000/002",
+      "translation": "The game's execution speed has not been optimized; the official version will be faster."
+    },
+    {
+      "id": "000/003",
+      "translation": "Alright! Now let's officially enter Doraemon's wonderful world!"
+    },
+    {
+      "id": "000/004",
+      "translation": "Ah! Only "
+    },
+    {
+      "id": "000/005",
+      "translation": " Dorayaki! It's cheap! Let's buy it!"
+    },
+    {
+      "id": "000/006",
+      "translation": "There's a chance to upgrade! Upgrading requires "
+    },
+    {
+      "id": "000/007",
+      "translation": " Dorayaki.\nShould we upgrade or turn the land back into Dorayaki?"
+    },
+    {
+      "id": "000/008",
+      "translation": "I am a God Robot, call me Kami-sama!"
+    },
+    {
+      "id": "000/009",
+      "translation": "Meeting me is your good fortune. In return, I'll grant you a\ntreasure chest. What it holds depends on your luck!"
+    },
+    {
+      "id": "000/010",
+      "translation": "Ah! Your luck isn't bad!"
+    },
+    {
+      "id": "000/011",
+      "translation": "How happy! How happy! Someone has encountered bad luck!"
+    },
+    {
+      "id": "000/012",
+      "translation": "Haha! What good luck!"
+    },
+    {
+      "id": "000/013",
+      "translation": "Oh no! What to do! Always encountering bad luck!"
+    },
+    {
+      "id": "000/014",
+      "translation": "Sorry! This function is not yet available."
+    },
+    {
+      "id": "000/015",
+      "translation": "Roboko"
+    },
+    {
+      "id": "000/016",
+      "translation": "N-S Crest"
+    },
+    {
+      "id": "000/017",
+      "translation": "Reverse Pen"
+    },
+    {
+      "id": "000/018",
+      "translation": "Dividing Blade"
+    },
+    {
+      "id": "000/019",
+      "translation": "Take-copter"
+    },
+    {
+      "id": "000/020",
+      "translation": "Wow! I won the grand prize!"
+    },
+    {
+      "id": "000/021",
+      "translation": "Chirp... I got punished again!"
+    },
+    {
+      "id": "000/022",
+      "translation": "I'm so lucky today!"
+    },
+    {
+      "id": "000/023",
+      "translation": "Hehe! Keep going!"
+    },
+    {
+      "id": "000/024",
+      "translation": "Ha! I got my punishment back!"
+    },
+    {
+      "id": "000/025",
+      "translation": "Want my Dorayaki? Don't dream! Don't\nforget I have Roboko protecting me!"
+    },
+    {
+      "id": "000/026",
+      "translation": "Roboko\n\nRoboko becomes your good friend and will stand up for you if your opponent punishes you by taking your Dorayaki.\n\nFrom Volume 2"
+    },
+    {
+      "id": "000/027",
+      "translation": "N-S Crest\n\nAfter use, encountering someone with the same pole crest makes you immediately turn around and leave.\n\nFrom Volume 2"
+    },
+    {
+      "id": "000/028",
+      "translation": "Reverse Pen\n\nAfter use, the Dorayaki punishment and reward are swapped between the two people.\n\nFrom Volume 4"
+    },
+    {
+      "id": "000/029",
+      "translation": "Dividing Blade\n\nAfter use, you can have two versions of yourself! \n\nFrom Volume 42"
+    },
+    {
+      "id": "000/030",
+      "translation": "Take-copter\n\nThe copter allows you to fly over all traps, but prevents you from buying land or upgrading."
+    },
+    {
+      "id": "000/031",
+      "translation": " Move "
+    },
+    {
+      "id": "000/032",
+      "translation": " Gadgets "
+    },
+    {
+      "id": "000/033",
+      "translation": " System "
+    },
+    {
+      "id": "000/034",
+      "translation": " Map "
+    },
+    {
+      "id": "000/035",
+      "translation": " Statistics "
+    },
+    {
+      "id": "001/000",
+      "translation": "Restoring Beam\n\nDowngrades the\ncurrent building\nby one level and\nrestores\nturrets or\nmissiles."
+    },
+    {
+      "id": "001/001",
+      "translation": "Roboko\n\nSaves you from\npaying rent on\nopponents' land\nfor [5 days]."
+    },
+    {
+      "id": "001/002",
+      "translation": "Time Cloth\n\nTurns the\ncurrent location\nback into a\npurchasable\nempty plot of\nland."
+    },
+    {
+      "id": "001/003",
+      "translation": "N-S Crests\n\nPlaces a badge\nthat repels\npeople wearing\nthe same badge\nfor [5 days]."
+    },
+    {
+      "id": "001/004",
+      "translation": "Cold Transferer\n\nCan transfer a\ncold to another,\ncausing them to\nneed to sleep\nand rest for [3\ndays]."
+    },
+    {
+      "id": "001/005",
+      "translation": "Date Converter\n\nSkips straight\nto the end of the\nmonth and\ninstantly claims\nyour Dorayaki."
+    },
+    {
+      "id": "001/006",
+      "translation": "Gulliver Tunnel\n\nPlaces a tunnel\nthat halves a\nperson's size\nand movement\nfor [5 days].\nPassing through\nit again\nrestores them."
+    },
+    {
+      "id": "001/007",
+      "translation": "Cursed Camera\n\nPhotographs a\ntarget, causing\nall attacks to be\nredirected to\nthem."
+    },
+    {
+      "id": "001/008",
+      "translation": "Toy Army\n\nAfter paying\nrent, the Toy\nArmy attacks\nthe landlord and\nputs them to\nsleep for \n[5 days]."
+    },
+    {
+      "id": "001/009",
+      "translation": "Upside-Down Pen\n\nWalking on\nothers' land lets\nyou collect rent\ninstead of\npaying it for \n[5 days]."
+    },
+    {
+      "id": "001/010",
+      "translation": "The Buddy Beacon\n\nPlaces a beacon\nthat lets you\navoid rent and\nopponent\nattacks for \n[5 days]."
+    },
+    {
+      "id": "001/011",
+      "translation": "Stone Hat\n\nBecome invisible\nlike a pebble by\nthe roadside,\npreventing all\nrent from being\npaid or collected\nfor [8 days]."
+    },
+    {
+      "id": "001/012",
+      "translation": "Lucky Gun\n\nShoot your luck\nfor [8 days],\nwith a 75%\nchance of good\nluck and a 25%\nchance of bad\nluck."
+    },
+    {
+      "id": "001/013",
+      "translation": "Anywhere\nCannon\n\nLaunches you to\nany location,\nexcept special\nterrain."
+    },
+    {
+      "id": "001/014",
+      "translation": "Child Robot\n\nPlays for you\n[while asleep],\nbut only buys\nland and\nupgrades\nbuildings."
+    },
+    {
+      "id": "001/015",
+      "translation": "Tanuki Suit\n\nMakes the\ntarget believe\nthey owe you\nrent wherever\nthey go for \n[5 days]."
+    },
+    {
+      "id": "001/016",
+      "translation": "Mad Watch\n\nMakes each day\nlast two turns\nfor [5 days]."
+    },
+    {
+      "id": "001/017",
+      "translation": "Bad Luck Diamond\n\nPasses your bad\nluck to its\nholder for \n[8 days]."
+    },
+    {
+      "id": "001/018",
+      "translation": "Invisibility Eye Drop\n\nBecome invisible\nto opponents\nand avoid paying\nrent for \n[5 days]."
+    },
+    {
+      "id": "001/019",
+      "translation": "Lovable Pill\n\nBecome so\nlovable that\nopponents won't\nuse attack\ngadgets on you\nfor [5 days]."
+    },
+    {
+      "id": "001/020",
+      "translation": "Money-Saving Bee\n\nRecovers any\nDorayaki lost to\nrent penalties\nfor [5 days]."
+    },
+    {
+      "id": "001/021",
+      "translation": "Relocation Map\n\nSwaps the\npositions of any\ntwo buildings,\nexcept special\nbuildings."
+    },
+    {
+      "id": "001/022",
+      "translation": "Snail House\n\nProtects you\nfrom Hermit\nevents for \n[5 days]."
+    },
+    {
+      "id": "001/023",
+      "translation": "Spirit Robot\n\nBecome immune\nto attacks,\nHermit events,\nand penalty\nslots for \n[5 days], but\ncannot enter\nshops."
+    },
+    {
+      "id": "001/024",
+      "translation": "Clone Potion\n\nCreates three\nclones from a\nstrand of your\nhair for \n[5 days]."
+    },
+    {
+      "id": "001/025",
+      "translation": "Amnesia Stick\n\nMakes\nopponents\nforget to collect\nDorayaki for \n[5 days]."
+    },
+    {
+      "id": "001/026",
+      "translation": "Sleep Absorbing Gun\n\nTransfers sleep\nfrom one target\nto another for\n[5 days]."
+    },
+    {
+      "id": "001/027",
+      "translation": "Friends Circle\n\nMakes\nopponents your\nfriends,\npreventing them\nfrom using\nattack gadgets\non you for \n[5 days]."
+    },
+    {
+      "id": "001/028",
+      "translation": "Amulet\n\nTurns all Hermit\nevents in your\nfavor for \n[5 days]."
+    },
+    {
+      "id": "001/029",
+      "translation": "Blind Spot Star\n\nBecome\ninvisible to\nopponents for\n[8 days].You\ncan't pay or\ncollect rent."
+    },
+    {
+      "id": "001/030",
+      "translation": "Swap Cloth\n\nSwitches\npositions with an\nopponent."
+    },
+    {
+      "id": "001/031",
+      "translation": "Lost-Item Delivery Machine\n\nReturns\nDorayaki lost to\npenalty slots\nfor [5 days]."
+    },
+    {
+      "id": "001/032",
+      "translation": "Dividing Blade\n\nSplits you in\ntwo, creating a\nclone for \n[5 days]."
+    },
+    {
+      "id": "001/033",
+      "translation": "Situation Swap Gun\n\nSwaps all\nassets with an\nopponent,\nincluding\nDorayaki, items,\nand land."
+    },
+    {
+      "id": "001/034",
+      "translation": "Unlucky Meter\n\nConverts bad\nevents into\nDorayaki\ncompensation\nfor [8 days]."
+    },
+    {
+      "id": "001/035",
+      "translation": "Grudge Headband\n\nSummons a\ngrudge spirit to\nhaunt an\nopponent with\nmisfortune for\n[8 days]."
+    },
+    {
+      "id": "001/036",
+      "translation": "Air Gun\n\nKnocks an\nopponent\nunconscious with\na blast of\ncompressed air\nfor [3 days]."
+    },
+    {
+      "id": "001/037",
+      "translation": "Anywhere Door\n\nPlaces an\nAnywhere Door\n[5 days].\nPassing through\nit teleports you\nto a random\nlocation."
+    },
+    {
+      "id": "001/038",
+      "translation": "Take-copter\n\nFly above the\nground for\n[5 days],\nignoring\nterrain but\nunable to buy\nland or upgrade\nbuildings."
+    },
+    {
+      "id": "001/039",
+      "translation": "Shrink Flashlight\n\nShrinks an\nopponent for \n[5 days], halving\ntheir movement."
+    },
+    {
+      "id": "001/040",
+      "translation": "Invincible Turret\n\nPlaces an\nInvincible Turret\non your land\nthat launches\nopponents to a\nBad Luck Zone."
+    },
+    {
+      "id": "001/041",
+      "translation": "Homing Missile\n\nPlaces a Homing\nMissile on your\nland that blasts\nan opponent to a\nBad Luck Zone."
+    },
+    {
+      "id": "002/000",
+      "translation": "Ha! Today's your lucky day! I'll"
+    },
+    {
+      "id": "002/001",
+      "translation": "I'll give it to you! Now hurry up and thank me!"
+    },
+    {
+      "id": "002/002",
+      "translation": "Ha! You're really lucky! You can move twice a day!"
+    },
+    {
+      "id": "002/003",
+      "translation": "Ha! I'll grant you the power to collect double rent!"
+    },
+    {
+      "id": "002/004",
+      "translation": "Haha! A plot of land is yours!"
+    },
+    {
+      "id": "002/005",
+      "translation": "Ha! Enjoy a free property upgrade!"
+    },
+    {
+      "id": "002/006",
+      "translation": "Ha! I'm in a generous mood today! Good luck to everyone!"
+    },
+    {
+      "id": "002/007",
+      "translation": "Ha! Fortune has chosen you!"
+    },
+    {
+      "id": "002/008",
+      "translation": "Ha! I've granted you the power to ignore rent!"
+    },
+    {
+      "id": "002/009",
+      "translation": "Ha! I'll protect you from your opponents' attacks!"
+    },
+    {
+      "id": "002/010",
+      "translation": "I'll give each of you "
+    },
+    {
+      "id": "002/011",
+      "translation": " Dorayaki each!"
+    },
+    {
+      "id": "002/012",
+      "translation": "I'll grant you "
+    },
+    {
+      "id": "002/013",
+      "translation": " Dorayaki for you!"
+    },
+    {
+      "id": "002/014",
+      "translation": "The mine now produces more Dorayaki!"
+    },
+    {
+      "id": "002/015",
+      "translation": "Wake up, everyone!"
+    },
+    {
+      "id": "002/016",
+      "translation": "Everyone, let's play a minigame!"
+    },
+    {
+      "id": "002/017",
+      "translation": "Here's one Dorayaki for each of your buildings!"
+    },
+    {
+      "id": "002/018",
+      "translation": "One Dorayaki for you!"
+    },
+    {
+      "id": "002/019",
+      "translation": "Hurry up and buy the items! They're 60% off now!"
+    },
+    {
+      "id": "002/020",
+      "translation": "Hm! I forbid you from using gadgets for a while!"
+    },
+    {
+      "id": "002/021",
+      "translation": "Hm! No gadgets for you... for now!"
+    },
+    {
+      "id": "002/022",
+      "translation": "Hm! You're taking a four-turn break!"
+    },
+    {
+      "id": "002/023",
+      "translation": "Hey! You can't collect rent anymore!"
+    },
+    {
+      "id": "002/024",
+      "translation": "Hey! You can't buy land anymore!"
+    },
+    {
+      "id": "002/025",
+      "translation": "Hey! You can't upgrade anymore!"
+    },
+    {
+      "id": "002/026",
+      "translation": "Hey! You can't buy gadgets anymore!"
+    },
+    {
+      "id": "002/027",
+      "translation": "Hey! You're banned from playing\nminigames!"
+    },
+    {
+      "id": "002/028",
+      "translation": "Have a nice nap! Heh, heh!"
+    },
+    {
+      "id": "002/029",
+      "translation": "I'm shrinking you all! Heh, heh!"
+    },
+    {
+      "id": "002/030",
+      "translation": "I'm shrinking you! Heh, heh!"
+    },
+    {
+      "id": "002/031",
+      "translation": "You're all doomed to bad luck! Heh,\nheh!"
+    },
+    {
+      "id": "002/032",
+      "translation": "Bad luck has found you! Heh, heh!"
+    },
+    {
+      "id": "002/033",
+      "translation": "You'll all pay double rent! Heh, heh!"
+    },
+    {
+      "id": "002/034",
+      "translation": "You'll pay everyone double rent! Heh,\nheh!"
+    },
+    {
+      "id": "002/035",
+      "translation": "I'm fining each of you "
+    },
+    {
+      "id": "002/036",
+      "translation": " Dorayaki! Heh! Heh!"
+    },
+    {
+      "id": "002/037",
+      "translation": "I'm fining you "
+    },
+    {
+      "id": "002/038",
+      "translation": " Dorayaki! Heh! Heh!"
+    },
+    {
+      "id": "002/039",
+      "translation": "I'm taking one gadget from each of you! Heh, heh!"
+    },
+    {
+      "id": "002/040",
+      "translation": "I'm taking one of your gadgets! Heh,\nheh!"
+    },
+    {
+      "id": "002/041",
+      "translation": "A massive earthquake..."
+    },
+    {
+      "id": "002/042",
+      "translation": "I've reduced the mine's growth rate!"
+    },
+    {
+      "id": "002/043",
+      "translation": "For each turret, you'll pay "
+    },
+    {
+      "id": "002/044",
+      "translation": " Dorayaki!"
+    },
+    {
+      "id": "002/045",
+      "translation": "Off to the Bad Luck Zone with all of you! Heh, heh!"
+    },
+    {
+      "id": "002/046",
+      "translation": "Off to the Bad Luck Zone with you! Heh, heh!"
+    },
+    {
+      "id": "002/047",
+      "translation": "The mine will be closed for 10 days! Heh, heh!"
+    },
+    {
+      "id": "002/048",
+      "translation": "Every building you own owes me a Dorayaki! Heh, heh!"
+    },
+    {
+      "id": "002/049",
+      "translation": "The Time Machine is malfunctioning...!"
+    },
+    {
+      "id": "002/050",
+      "translation": "Let's evenly split the Dorayaki we're all carrying!"
+    }
+  ]
+}
