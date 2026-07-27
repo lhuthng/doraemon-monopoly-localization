@@ -1,0 +1,25 @@
+name: Dubbing contribution
+description: Submit a ZIP downloaded from the Translator website.
+title: "Dubbing contribution: "
+labels: [translation]
+body:
+  - type: markdown
+    attributes:
+      value: "Attach the contribution ZIP downloaded from the Translator site. Do not attach strings.dat, voice.dat, or other original game files."
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options: [English, Vietnamese]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Which character or scenes did you work on?
+  - type: input
+    id: zip
+    attributes:
+      label: Contribution ZIP attached
+      description: Drag the downloaded ZIP into the issue comment box before submitting.

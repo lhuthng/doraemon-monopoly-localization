@@ -173,35 +173,17 @@ map cells, objects, event classes, source offsets, and decoded resource
 records, which makes it useful for reverse engineering without changing map
 data.
 
-### Payload parts
+### Contributor source and payloads
 
-Every language release consists of nine multipart `.dmpatch` files instead of one
-monolithic payload. This split gives each character owner their own reviewable
-file and prevents accidental conflicts. Each part contains only the records
-owned by its target, a version header, base-resource fingerprints, and an
-intentional-empty flag.
+Dialogue translations and replacement voices live in the tracked [`dubbing/`](dubbing/README.md)
+tree. The public Translator site lets nontechnical contributors load their own `strings.dat`
+and optional `voice.dat` locally, keep drafts in their browser, and download a small ZIP for a
+GitHub Issue. Original game files are never uploaded or included in that ZIP. Sprites, fonts,
+bitmaps, and maps remain in Resource Studio.
 
-| File                   | Owner                  | Contents                                                                 |
-| ---------------------- | ---------------------- | ------------------------------------------------------------------------ |
-| `loc-doraemon.dmpatch` | Doraemon contributor   | Strings group `003`; Doraemon dialogue records and voice replacements.   |
-| `loc-nobita.dmpatch`   | Nobita contributor     | Strings group `004`; Nobita dialogue records and voice replacements.     |
-| `loc-dorami.dmpatch`   | Dorami contributor     | Strings group `005`; Dorami dialogue records and voice replacements.     |
-| `loc-shizuka.dmpatch`  | Shizuka contributor    | Strings group `006`; Shizuka dialogue records and voice replacements.    |
-| `loc-suneo.dmpatch`    | Suneo contributor      | Strings group `007`; Suneo dialogue records and voice replacements.      |
-| `loc-gian.dmpatch`     | Gian contributor       | Strings group `008`; Gian dialogue records and voice replacements.       |
-| `loc-others.dmpatch`   | Global/gadget/events   | Strings groups `000`, `001`, `002`; menu/misc voice records; shared action text `000/031`–`000/035`; shared action voice `00*/001/011`–`00*/001/015`. |
-| `sprites.dmpatch`      | Sprite maintainer      | Binary deltas for `sysfont.dat`, `Sprite1.dat`, `sprite2.dat`, `bitmaps.dat`. No strings, voice, or executable changes. |
-| `runtime.dmpatch`      | Runtime maintainer     | Executable patches (language, no-disc, no-reg, embedded BGM streaming, modern-volume) and optional cnc-ddraw files.     |
-
-Validation rules:
-- A Doraemon string record inside `loc-nobita.dmpatch` is rejected.
-- No string or voice record may be owned by two targets.
-- Sprite changes cannot appear in character localization files.
-- Missing required part metadata causes a build failure.
-- Part names are fixed and validated at build time.
-
-Existing monolithic `.dmpatch` files remain readable for migration. New
-releases use the multipart format exclusively.
+Release components are independently reviewable: `patches/<language>/dubbing.dmpatch`,
+`sprites.dmpatch`, and `runtime.dmpatch`. The patcher assembles them only for release; nobody
+edits `.dmpatch` files directly.
 
 ### Build workflow
 
@@ -209,8 +191,9 @@ The workflow is based on differences:
 
 ```text
 private original game + private edited workspace
-                    -> reviewed multipart .dmpatch payload
-                    -> Windows patcher with embedded nine parts
+                    -> canonical dubbing/ dialogue and voice source
+                    -> reviewed dubbing/sprites/runtime components
+                    -> Windows patcher with embedded language payloads
                     -> user's own game installation
 ```
 
@@ -219,16 +202,13 @@ Useful commands:
 | Command                                                | Purpose                                                       |
 | ------------------------------------------------------ | ------------------------------------------------------------- |
 | `make setup`                                           | Prepare private English and Vietnamese Studio workspaces.     |
-| `make build-patch LANGUAGE=english TARGET=all`         | Build nine-part multipart payload in `tmp/patches/english/`.  |
-| `make build-patch LANGUAGE=english TARGET=doraemon`    | Build only the Doraemon part file.                            |
-| `make build-patch LANGUAGE=vietnamese TARGET=others`   | Build only the global/gadget/events part file.                |
-| `make build-patch LANGUAGE=english PUBLISH=1`          | Write reviewed payloads to tracked `patches/english/`.        |
-| `make build-patch LANGUAGE=english PATCHER=1`          | Build a local Windows patcher in `tmp/release/`.              |
-| `make build-patcher`                                   | Build one configurable patcher from tracked `patches/` dirs.  |
+| `make build-dubbing LANGUAGE=english PUBLISH=1`        | Validate and sync `dubbing/`, then write only `dubbing.dmpatch`. |
+| `make build-sprites LANGUAGE=english PUBLISH=1`        | Write only the graphics component.                            |
+| `make build-runtime LANGUAGE=english PUBLISH=1`        | Write only the runtime component.                             |
+| `make build-patch LANGUAGE=english PUBLISH=1`          | Build all three components for a language.                    |
+| `make build-patcher`                                   | Build one configurable patcher from tracked language payloads. |
+| `make translator-build`                                 | Build the static contributor site into `tmp/contributor-kit/`. |
 | `make help`                                            | Show the current command summary.                             |
-
-Valid `TARGET` values: `all`, `doraemon`, `nobita`, `dorami`, `shizuka`, `suneo`,
-`gian`, `others`, `sprites`, `runtime`.
 
 The Rust workspace contains the archive formats, semantic string and voice patches,
 binary deltas, executable patches, backup/restore logic, font extension, and

@@ -10,7 +10,10 @@
     "dev-en": "bun scripts/stage-game.ts english && vite",
     "dev-vi": "bun scripts/stage-game.ts vietnamese && vite",
     "dubbing:export": "bun scripts/dubbing.ts export",
+<<<<<<< HEAD
     "dubbing:import": "bun scripts/dubbing.ts import",
+=======
+>>>>>>> main
     "dubbing:sync": "bun scripts/dubbing.ts sync",
     "dubbing:organize": "bun scripts/dubbing.ts organize",
     "dubbing:check": "bun scripts/dubbing.ts check",

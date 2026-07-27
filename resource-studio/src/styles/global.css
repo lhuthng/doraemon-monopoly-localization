@@ -344,7 +344,7 @@ textarea:disabled {
 .translation-list {
   border-top: 1px solid #d6dee7;
 }
-.translation-list>article {
+.translation-list > article {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
   gap: 11px 20px;
@@ -880,7 +880,7 @@ button:focus-visible,
   border-top: 0;
 }
 
-.translation-list>article {
+.translation-list > article {
   grid-template-columns: minmax(280px, 0.85fr) minmax(390px, 1.15fr);
   gap: 10px 18px;
   margin-bottom: 12px;
@@ -891,21 +891,21 @@ button:focus-visible,
   box-shadow: 0 7px 20px rgb(24 73 118 / 0.055);
 }
 
-.translation-list>article>section {
+.translation-list > article > section {
   grid-column: span 2;
 }
 
-.translation-list>article.translating {
+.translation-list > article.translating {
   border-left: 5px solid #1684df;
   background: #e9f7ff;
 }
 
-.translation-list>article.generated:not(.translating):not(.queued) {
+.translation-list > article.generated:not(.translating):not(.queued) {
   border-color: #bfe2d1;
   background: #f6fffa;
 }
 
-.translation-list>article.manual:not(.translating):not(.queued) {
+.translation-list > article.manual:not(.translating):not(.queued) {
   border-color: #efd986;
   background: #fffdf5;
 }
@@ -1115,7 +1115,7 @@ button:focus-visible,
     right: auto;
   }
 
-  .translation-list>article {
+  .translation-list > article {
     grid-template-columns: 1fr;
   }
 

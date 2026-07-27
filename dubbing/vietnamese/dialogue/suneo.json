@@ -1,0 +1,494 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "suneo",
+  "records": [
+    {
+      "id": "007/000",
+      "translation": "Đại Phú Gia sao? Không thành vấn đề với tớ!"
+    },
+    {
+      "id": "007/001",
+      "translation": "May mắn! May mắn!"
+    },
+    {
+      "id": "007/002",
+      "translation": "Thật là một ngày may mắn!"
+    },
+    {
+      "id": "007/003",
+      "translation": "Hoan hô! Hoan hô!"
+    },
+    {
+      "id": "007/004",
+      "translation": "Vận may không thể ngăn cản!"
+    },
+    {
+      "id": "007/005",
+      "translation": "Tại sao chuyện này lại xảy ra!"
+    },
+    {
+      "id": "007/006",
+      "translation": "Ôi trời ơi!"
+    },
+    {
+      "id": "007/007",
+      "translation": "Á! Oa..."
+    },
+    {
+      "id": "007/008",
+      "translation": "Ôi! Thật là xui xẻo!"
+    },
+    {
+      "id": "007/009",
+      "translation": "Ôi! Thật là xui xẻo!"
+    },
+    {
+      "id": "007/010",
+      "translation": "Hết rồi! Hết rồi!"
+    },
+    {
+      "id": "007/011",
+      "translation": "Xin hãy tử tế với tớ!"
+    },
+    {
+      "id": "007/012",
+      "translation": "Tiến lên! Tiến lên!"
+    },
+    {
+      "id": "007/013",
+      "translation": "Hãy mua một vài bảo bối nào!"
+    },
+    {
+      "id": "007/014",
+      "translation": "Đến lượt tớ thể hiện kỹ năng rồi!"
+    },
+    {
+      "id": "007/015",
+      "translation": "Không có món đồ nào tốt cả!"
+    },
+    {
+      "id": "007/016",
+      "translation": "Tớ là người chơi game giỏi nhất!"
+    },
+    {
+      "id": "007/017",
+      "translation": "Trò chơi đơn giản này chẳng là gì đối với tớ!"
+    },
+    {
+      "id": "007/018",
+      "translation": "Để cậu tự mãn một lát nhé!"
+    },
+    {
+      "id": "007/025",
+      "translation": "Lần sau tớ nhất định sẽ..."
+    },
+    {
+      "id": "007/027",
+      "translation": "Các tòa nhà ở đâu?"
+    },
+    {
+      "id": "007/028",
+      "translation": "Chẳng có chỗ nào để dùng chúng cả!"
+    },
+    {
+      "id": "007/029",
+      "translation": "Có người phía sau tớ!"
+    },
+    {
+      "id": "007/030",
+      "translation": "Đây không phải là một tòa nhà bình thường!"
+    },
+    {
+      "id": "007/031",
+      "translation": "Nơi này là của tớ!"
+    },
+    {
+      "id": "007/032",
+      "translation": "Không có ký tự nào khả dụng!"
+    },
+    {
+      "id": "007/033",
+      "translation": "Đã sử dụng trong tháng này!"
+    },
+    {
+      "id": "007/034",
+      "translation": "Không có nhân vật nào để chọn!"
+    },
+    {
+      "id": "007/035",
+      "translation": "Đã có một người rồi!"
+    },
+    {
+      "id": "007/036",
+      "translation": "Cần hai tòa nhà!"
+    },
+    {
+      "id": "007/037",
+      "translation": "Không còn chỗ đứng!"
+    },
+    {
+      "id": "007/038",
+      "translation": "Không ai đang ngủ!"
+    },
+    {
+      "id": "007/039",
+      "translation": "Cái này không được!"
+    },
+    {
+      "id": "007/040",
+      "translation": "Cần chọn thêm một người nữa!"
+    },
+    {
+      "id": "007/041",
+      "translation": "Đã có một tòa nhà ở đây rồi!"
+    },
+    {
+      "id": "007/042",
+      "translation": "Cái này không phải của tớ!"
+    },
+    {
+      "id": "007/043",
+      "translation": "Không có tòa nhà nào cho tớ!"
+    },
+    {
+      "id": "007/044",
+      "translation": "Rất rẻ!"
+    },
+    {
+      "id": "007/045",
+      "translation": "Không tệ! Không tệ!"
+    },
+    {
+      "id": "007/046",
+      "translation": "À...!"
+    },
+    {
+      "id": "007/047",
+      "translation": "Được rồi!"
+    },
+    {
+      "id": "007/048",
+      "translation": "Lần sau nhé!"
+    },
+    {
+      "id": "007/049",
+      "translation": "Nâng cấp hay bán đi?"
+    },
+    {
+      "id": "007/050",
+      "translation": "Hả...?! ...!?"
+    },
+    {
+      "id": "007/051",
+      "translation": "Nâng cấp đi!"
+    },
+    {
+      "id": "007/052",
+      "translation": "Không muốn lắm nhỉ?"
+    },
+    {
+      "id": "007/053",
+      "translation": "Hay là bán đi nhỉ?"
+    },
+    {
+      "id": "007/054",
+      "translation": "Ồ...!"
+    },
+    {
+      "id": "007/055",
+      "translation": "Ồ... đến lúc thanh toán hàng tháng rồi!"
+    },
+    {
+      "id": "007/056",
+      "translation": "À... lại một tháng nữa trôi qua rồi!"
+    },
+    {
+      "id": "007/057",
+      "translation": "Tớ đã bảo rồi, việc này không khó với tớ đâu! Hahaha..."
+    },
+    {
+      "id": "007/058",
+      "translation": "Haha... bớt đi một cái!"
+    },
+    {
+      "id": "007/059",
+      "translation": "Cậu có mắt nhìn tốt đấy!"
+    },
+    {
+      "id": "007/060",
+      "translation": "Tìm được thứ hay ho rồi!"
+    },
+    {
+      "id": "007/061",
+      "translation": "Chiến thắng! Chiến thắng!"
+    },
+    {
+      "id": "007/062",
+      "translation": "À! Có phải là thắng áp đảo không?"
+    },
+    {
+      "id": "007/063",
+      "translation": "Cô Robot thật xấu xa!"
+    },
+    {
+      "id": "007/064",
+      "translation": "Lật ngược cái bút! Lật ngược cái bút! Trả tiền thuê trở thành thu tiền thuê!"
+    },
+    {
+      "id": "007/065",
+      "translation": "Cảm ơn vì bánh rán!"
+    },
+    {
+      "id": "007/066",
+      "translation": "Haha! Cậu không nhìn thấy tớ!"
+    },
+    {
+      "id": "007/067",
+      "translation": "Ong nhỏ! Ong nhỏ!"
+    },
+    {
+      "id": "007/068",
+      "translation": "Tớ là một con ốc sên khổng lồ!"
+    },
+    {
+      "id": "007/069",
+      "translation": "Người bảo vệ linh hồn thực sự bất khả chiến bại!"
+    },
+    {
+      "id": "007/070",
+      "translation": "Á! Tớ ư? Anh ư? Cái gì? Cái gì???"
+    },
+    {
+      "id": "007/071",
+      "translation": "Haha! Anh không thể nhìn thấy tớ!"
+    },
+    {
+      "id": "007/072",
+      "translation": "Anh không thể trừng phạt tớ! Haha!"
+    },
+    {
+      "id": "007/073",
+      "translation": "Vận rủi biến thành bánh rán!"
+    },
+    {
+      "id": "007/074",
+      "translation": "Ô! Không đủ bánh rán để mua đồ!"
+    },
+    {
+      "id": "007/075",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "007/076",
+      "translation": "Không đủ bánh rán!"
+    },
+    {
+      "id": "007/077",
+      "translation": "Á! Không tìm thấy mục tiêu!"
+    },
+    {
+      "id": "007/078",
+      "translation": "May quá! Không phải trả tiền thuê!"
+    },
+    {
+      "id": "007/079",
+      "translation": "Không có tệp lưu ở đây!"
+    },
+    {
+      "id": "007/080",
+      "translation": "Đã lưu!"
+    },
+    {
+      "id": "007/081",
+      "translation": "Lưu nhầm!"
+    },
+    {
+      "id": "007/082",
+      "translation": "Tớ không cần mục này!"
+    },
+    {
+      "id": "007/083",
+      "translation": "À! Tớ đến muộn rồi!"
+    },
+    {
+      "id": "007/084",
+      "translation": "Tệp đã tồn tại, cậu có muốn ghi đè lên không?"
+    },
+    {
+      "id": "007/085",
+      "translation": "Cậu chắc chắn chứ?"
+    },
+    {
+      "id": "007/086",
+      "translation": "Cậu có muốn in chứng chỉ không?"
+    },
+    {
+      "id": "007/087",
+      "translation": "Chứng chỉ đã in có đúng không?"
+    },
+    {
+      "id": "007/088",
+      "translation": "Cậu có muốn in lại không?"
+    },
+    {
+      "id": "007/089",
+      "translation": "May mắn quá! Thêm một mục nữa!"
+    },
+    {
+      "id": "007/090",
+      "translation": "Tuyệt vời! Có thể làm hai lần!"
+    },
+    {
+      "id": "007/091",
+      "translation": "Haha! Thêm một lần nữa!"
+    },
+    {
+      "id": "007/092",
+      "translation": "Tớ giàu rồi!"
+    },
+    {
+      "id": "007/093",
+      "translation": "Tớ giàu rồi!"
+    },
+    {
+      "id": "007/094",
+      "translation": "Thêm một mảnh đất nữa! Cảm ơn!"
+    },
+    {
+      "id": "007/095",
+      "translation": "Tuyệt vời! Được nâng cấp rồi!"
+    },
+    {
+      "id": "007/096",
+      "translation": "Hooray! Chúc may mắn!"
+    },
+    {
+      "id": "007/097",
+      "translation": "Tuyệt vời! Không phải trả tiền thuê nữa!"
+    },
+    {
+      "id": "007/098",
+      "translation": "Haha! Họ không thể phạt tớ nữa!"
+    },
+    {
+      "id": "007/099",
+      "translation": "Ah! Giờ tớ có thể thư giãn rồi!"
+    },
+    {
+      "id": "007/100",
+      "translation": "Tuyệt vời! Thêm bánh rán nữa!"
+    },
+    {
+      "id": "007/102",
+      "translation": "À... Chào buổi sáng!"
+    },
+    {
+      "id": "007/104",
+      "translation": "À! May quá!"
+    },
+    {
+      "id": "007/105",
+      "translation": "Đến lúc mua thêm đồ rồi!"
+    },
+    {
+      "id": "007/106",
+      "translation": "Cái gì...!? Không dùng được đồ!"
+    },
+    {
+      "id": "007/107",
+      "translation": "À! Mình không di chuyển được à?"
+    },
+    {
+      "id": "007/108",
+      "translation": "Cái gì...!? Không thu tiền thuê được!"
+    },
+    {
+      "id": "007/109",
+      "translation": "Ôi! bánh rán của mình!"
+    },
+    {
+      "id": "007/110",
+      "translation": "À! Sao lại là mình!"
+    },
+    {
+      "id": "007/111",
+      "translation": "Ôi! Đất của mình!"
+    },
+    {
+      "id": "007/112",
+      "translation": "Cái gì...!? Không nâng cấp được!"
+    },
+    {
+      "id": "007/113",
+      "translation": "Tại sao!? Tại sao!? Không nâng cấp được!"
+    },
+    {
+      "id": "007/114",
+      "translation": "Ôi! Không mua đồ trang trí được!? Mở cửa! Mở cửa!"
+    },
+    {
+      "id": "007/115",
+      "translation": "Tớ muốn mua thứ gì đó!"
+    },
+    {
+      "id": "007/116",
+      "translation": "Cái gì...!? Không chơi được trò chơi nhỏ!"
+    },
+    {
+      "id": "007/117",
+      "translation": "Ô! Mở cửa! Mở cửa!"
+    },
+    {
+      "id": "007/118",
+      "translation": "zzz..."
+    },
+    {
+      "id": "007/119",
+      "translation": "Ah..."
+    },
+    {
+      "id": "007/120",
+      "translation": "Ah! Thật không may!"
+    },
+    {
+      "id": "007/121",
+      "translation": "Ah! Thật không may!"
+    },
+    {
+      "id": "007/122",
+      "translation": "Vài cái bánh rán, tớ không phiền đâu!"
+    },
+    {
+      "id": "007/123",
+      "translation": "Sao cậu lại lấy bánh rán của tớ!"
+    },
+    {
+      "id": "007/124",
+      "translation": "Trả lại bảo bối của tớ!"
+    },
+    {
+      "id": "007/127",
+      "translation": "Hừ! Không có gì đâu!"
+    },
+    {
+      "id": "007/128",
+      "translation": "À..."
+    },
+    {
+      "id": "007/130",
+      "translation": "À! Thật không may!"
+    },
+    {
+      "id": "007/133",
+      "translation": "*Nhận được ["
+    },
+    {
+      "id": "007/134",
+      "translation": "*Mất đi ["
+    },
+    {
+      "id": "007/135",
+      "translation": "]!*"
+    }
+  ]
+}

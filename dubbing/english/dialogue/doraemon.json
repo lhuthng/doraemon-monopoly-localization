@@ -1,0 +1,494 @@
+{
+  "format": "doraemon-monopoly-dubbing/v1",
+  "owner": "doraemon",
+  "records": [
+    {
+      "id": "003/000",
+      "translation": "Here we go! The game's starting!"
+    },
+    {
+      "id": "003/001",
+      "translation": "Hooray for the Dorayaki!"
+    },
+    {
+      "id": "003/002",
+      "translation": "Dorayaki! Dorayaki! Dorayaki..."
+    },
+    {
+      "id": "003/003",
+      "translation": "Haha! Great!"
+    },
+    {
+      "id": "003/004",
+      "translation": "I'm so happy today!"
+    },
+    {
+      "id": "003/005",
+      "translation": "Oh no... THis doesn't look good."
+    },
+    {
+      "id": "003/006",
+      "translation": "W-Why?!"
+    },
+    {
+      "id": "003/007",
+      "translation": "Oh!"
+    },
+    {
+      "id": "003/008",
+      "translation": "Why me!"
+    },
+    {
+      "id": "003/009",
+      "translation": "Oh no! My Dorayaki!"
+    },
+    {
+      "id": "003/010",
+      "translation": "Come one, don't do that!"
+    },
+    {
+      "id": "003/011",
+      "translation": "No, my Dorayakiiiiii"
+    },
+    {
+      "id": "003/012",
+      "translation": "All right! Full speed ahead - to the Dorayaki"
+    },
+    {
+      "id": "003/013",
+      "translation": "Let's pick up some gadgets for my 4D Pocket!"
+    },
+    {
+      "id": "003/014",
+      "translation": "Trade my Dorayaki for gadgets...?\nThat's a tough choice."
+    },
+    {
+      "id": "003/015",
+      "translation": "Maybe I should save the Dorayaki for later!"
+    },
+    {
+      "id": "003/016",
+      "translation": "Let's all play together!"
+    },
+    {
+      "id": "003/017",
+      "translation": "Great!"
+    },
+    {
+      "id": "003/018",
+      "translation": "Hmm..."
+    },
+    {
+      "id": "003/025",
+      "translation": "Aww! How did I lose?!"
+    },
+    {
+      "id": "003/027",
+      "translation": "There are no buildings here!"
+    },
+    {
+      "id": "003/028",
+      "translation": "There's nowhere to use!"
+    },
+    {
+      "id": "003/029",
+      "translation": "There's an item with me!"
+    },
+    {
+      "id": "003/030",
+      "translation": "This isn't an ordinary building!"
+    },
+    {
+      "id": "003/031",
+      "translation": "This is my place!"
+    },
+    {
+      "id": "003/032",
+      "translation": "This item can't be used!"
+    },
+    {
+      "id": "003/033",
+      "translation": "Wasn't this used this month?"
+    },
+    {
+      "id": "003/034",
+      "translation": "You can't choose!"
+    },
+    {
+      "id": "003/035",
+      "translation": "It's already taken!"
+    },
+    {
+      "id": "003/036",
+      "translation": "There need to be at least two buildings!"
+    },
+    {
+      "id": "003/037",
+      "translation": "There's nowhere to stand!"
+    },
+    {
+      "id": "003/038",
+      "translation": "Everyone looks energetic!"
+    },
+    {
+      "id": "003/039",
+      "translation": "This one's been used!"
+    },
+    {
+      "id": "003/040",
+      "translation": "Who should I choose next?"
+    },
+    {
+      "id": "003/041",
+      "translation": "There are already buildings here!"
+    },
+    {
+      "id": "003/042",
+      "translation": "This land isn't mine!"
+    },
+    {
+      "id": "003/043",
+      "translation": "It seems there's no building here!"
+    },
+    {
+      "id": "003/044",
+      "translation": "Will there be rats here?"
+    },
+    {
+      "id": "003/045",
+      "translation": "Huh! Has no one been here before?"
+    },
+    {
+      "id": "003/046",
+      "translation": "Hmmm... Should I buy this place?"
+    },
+    {
+      "id": "003/047",
+      "translation": "Another place!"
+    },
+    {
+      "id": "003/048",
+      "translation": "Let's keep the Dorayaki!"
+    },
+    {
+      "id": "003/049",
+      "translation": "Should we upgrade it or sell it?"
+    },
+    {
+      "id": "003/050",
+      "translation": "Upgrading is better than selling!"
+    },
+    {
+      "id": "003/051",
+      "translation": "Upgrading is also good!"
+    },
+    {
+      "id": "003/052",
+      "translation": "What a pity!"
+    },
+    {
+      "id": "003/053",
+      "translation": "Should we keep it or sell it?"
+    },
+    {
+      "id": "003/054",
+      "translation": "Oh..."
+    },
+    {
+      "id": "003/055",
+      "translation": "Phew... We finally made it to the end of the month!"
+    },
+    {
+      "id": "003/056",
+      "translation": "Let's work hard this month too!"
+    },
+    {
+      "id": "003/057",
+      "translation": "I love Dorayaki the most!"
+    },
+    {
+      "id": "003/058",
+      "translation": "Aren't you playing anymore...?"
+    },
+    {
+      "id": "003/059",
+      "translation": "Let's play Monopoly together!"
+    },
+    {
+      "id": "003/060",
+      "translation": "Wow! What good luck!"
+    },
+    {
+      "id": "003/061",
+      "translation": "I'm so happy!"
+    },
+    {
+      "id": "003/062",
+      "translation": "Ah! Can't I take the Dorayaki?"
+    },
+    {
+      "id": "003/063",
+      "translation": "Roboko's protecting me! Nobody's taking my\nDorayaki now!"
+    },
+    {
+      "id": "003/064",
+      "translation": "Give me my Dorayaki!"
+    },
+    {
+      "id": "003/065",
+      "translation": "Give me my Dorayaki!"
+    },
+    {
+      "id": "003/066",
+      "translation": "Guess where I am?"
+    },
+    {
+      "id": "003/067",
+      "translation": "Huh! Isn't that the Dorayaki I just dropped?"
+    },
+    {
+      "id": "003/068",
+      "translation": "The snail house is so safe!"
+    },
+    {
+      "id": "003/069",
+      "translation": "The soul guardian is so reliable!"
+    },
+    {
+      "id": "003/070",
+      "translation": "Hmm... What is it?"
+    },
+    {
+      "id": "003/071",
+      "translation": "Can't you see me?"
+    },
+    {
+      "id": "003/072",
+      "translation": "Dorayaki, come back!"
+    },
+    {
+      "id": "003/073",
+      "translation": "Bad luck is no big deal!"
+    },
+    {
+      "id": "003/074",
+      "translation": "Oh! No more Dorayaki!"
+    },
+    {
+      "id": "003/075",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "003/076",
+      "translation": "No... not enough Dorayaki..."
+    },
+    {
+      "id": "003/077",
+      "translation": "Homemade missile can't find its target!"
+    },
+    {
+      "id": "003/078",
+      "translation": "Ha! My previous Dorayaki are safe!\n"
+    },
+    {
+      "id": "003/079",
+      "translation": "No save file here."
+    },
+    {
+      "id": "003/080",
+      "translation": "Saved!"
+    },
+    {
+      "id": "003/081",
+      "translation": "Save error!"
+    },
+    {
+      "id": "003/082",
+      "translation": "This prop can't be used!"
+    },
+    {
+      "id": "003/083",
+      "translation": "Ah! There aren't any Dorayaki here!"
+    },
+    {
+      "id": "003/084",
+      "translation": "The file already exists, do you want to overwrite it?"
+    },
+    {
+      "id": "003/085",
+      "translation": "Are you sure?"
+    },
+    {
+      "id": "003/086",
+      "translation": "Do you want to print the certificate?"
+    },
+    {
+      "id": "003/087",
+      "translation": "Is the printed certificate correct?"
+    },
+    {
+      "id": "003/088",
+      "translation": "Do you want to print it again?"
+    },
+    {
+      "id": "003/089",
+      "translation": "Thank you! Thank you!"
+    },
+    {
+      "id": "003/090",
+      "translation": "Great! I get to move twice!"
+    },
+    {
+      "id": "003/091",
+      "translation": "Forward, forward! Haha!"
+    },
+    {
+      "id": "003/092",
+      "translation": "I can eat more Dorayaki now!"
+    },
+    {
+      "id": "003/093",
+      "translation": "Wow! Double the Dorayaki!"
+    },
+    {
+      "id": "003/094",
+      "translation": "Thank you for the land!"
+    },
+    {
+      "id": "003/095",
+      "translation": "Upgraded!"
+    },
+    {
+      "id": "003/096",
+      "translation": "Good luck!"
+    },
+    {
+      "id": "003/097",
+      "translation": "No rent to pay!"
+    },
+    {
+      "id": "003/098",
+      "translation": "You can't take my Dorayaki!"
+    },
+    {
+      "id": "003/099",
+      "translation": "I'm not afraid of items anymore!"
+    },
+    {
+      "id": "003/100",
+      "translation": "Let's all eat Dorayaki together!"
+    },
+    {
+      "id": "003/102",
+      "translation": "Ah...it's dawn!"
+    },
+    {
+      "id": "003/104",
+      "translation": "Let's see how many buildings there are!"
+    },
+    {
+      "id": "003/105",
+      "translation": "Let's go check out the item shop!"
+    },
+    {
+      "id": "003/106",
+      "translation": "I can't use any items either..."
+    },
+    {
+      "id": "003/107",
+      "translation": "Why can't I move forward!"
+    },
+    {
+      "id": "003/108",
+      "translation": "Oh... can't I take the Dorayaki?"
+    },
+    {
+      "id": "003/109",
+      "translation": "Why is this happening!"
+    },
+    {
+      "id": "003/110",
+      "translation": "Can't I buy land?"
+    },
+    {
+      "id": "003/111",
+      "translation": "I really want to buy land!"
+    },
+    {
+      "id": "003/112",
+      "translation": "Can't I upgrade?"
+    },
+    {
+      "id": "003/113",
+      "translation": "I really want to upgrade!"
+    },
+    {
+      "id": "003/114",
+      "translation": "I can't buy items for now!"
+    },
+    {
+      "id": "003/115",
+      "translation": "I really want to buy items!"
+    },
+    {
+      "id": "003/116",
+      "translation": "Am I the only one who can't play mini-games?"
+    },
+    {
+      "id": "003/117",
+      "translation": "Mini-games are so much fun!"
+    },
+    {
+      "id": "003/118",
+      "translation": "zzz...zzz..."
+    },
+    {
+      "id": "003/119",
+      "translation": "Wow! It's gotten so small!"
+    },
+    {
+      "id": "003/120",
+      "translation": "No...unfortunately..."
+    },
+    {
+      "id": "003/121",
+      "translation": "Sigh...bad luck has struck..."
+    },
+    {
+      "id": "003/122",
+      "translation": "Oh...double rent!"
+    },
+    {
+      "id": "003/123",
+      "translation": "Don't take my Dorayaki!"
+    },
+    {
+      "id": "003/124",
+      "translation": "My 4D Pocket has a hole in it!!"
+    },
+    {
+      "id": "003/127",
+      "translation": "This is my land! Why do I have to pay with Dorayaki?!"
+    },
+    {
+      "id": "003/128",
+      "translation": "Ahhh...ahhh...ah..."
+    },
+    {
+      "id": "003/130",
+      "translation": "This is my land! Why do I have to pay with Dorayaki?!"
+    },
+    {
+      "id": "003/133",
+      "translation": "Gained ["
+    },
+    {
+      "id": "003/134",
+      "translation": "Lost ["
+    },
+    {
+      "id": "003/135",
+      "translation": "]!"
+    }
+  ]
+}

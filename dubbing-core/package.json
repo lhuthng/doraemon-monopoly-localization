@@ -1,0 +1,8 @@
+{
+  "name": "@doraemon-monopoly/dubbing-core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

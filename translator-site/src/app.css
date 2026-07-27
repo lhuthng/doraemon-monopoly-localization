@@ -1,0 +1,269 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-sky: #8edcff;
+  --color-navy: #0752ad;
+  --color-ink: #15335f;
+  --color-ice-panel: #f6fcff;
+  --color-outline: #a9d7f1;
+  --color-accent-blue: #1478df;
+  --color-accent-yellow: #ffd83d;
+  --color-success: #16845c;
+  --color-warning: #b76a08;
+  --color-danger: #bd3d4d;
+  --font-display: 'Trebuchet MS', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+  background: #e7f7ff;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 12% 12%, rgb(255 255 255 / 72%) 0 1px, transparent 2px) 0 0 / 42px 42px,
+    linear-gradient(180deg, #b7eaff 0, #e7f7ff 22rem, #f7fcff 100%);
+}
+button,
+select,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+label:has(input[type='file']) {
+  cursor: pointer;
+}
+
+@layer components {
+  html {
+    scrollbar-color: var(--color-accent-yellow) var(--color-navy);
+    scrollbar-width: thin;
+  }
+
+  html::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  html::-webkit-scrollbar-track {
+    background: var(--color-navy);
+  }
+
+  html::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--color-accent-yellow);
+    background-clip: padding-box;
+  }
+
+  .game-panel {
+    @apply rounded-[1.35rem] border-2 border-outline/80 bg-ice-panel shadow-[0_10px_30px_rgb(32_107_160_/_0.12)];
+  }
+
+  .file-card {
+    @apply cursor-pointer rounded-2xl border-2 border-dashed p-5 transition hover:-translate-y-0.5 hover:shadow-lg;
+  }
+
+  .action-button {
+    @apply inline-flex items-center justify-center rounded-xl border-2 px-3 py-2 text-sm font-black transition hover:-translate-y-px hover:brightness-105;
+  }
+
+  .icon-action {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border-2 border-outline bg-white text-lg font-black text-navy transition hover:-translate-y-px hover:bg-sky/30 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .owner-chip {
+    @apply flex shrink-0 items-center gap-2 rounded-xl border-2 border-transparent bg-sky/20 px-3 py-2 text-sm font-black text-navy transition hover:bg-sky/40 hover:text-navy;
+  }
+
+  .owner-chip img {
+    @apply h-9 w-9 object-contain;
+  }
+
+  .owner-selected {
+    @apply border-accent-yellow bg-accent-yellow/60 text-navy  hover:bg-accent-yellow/80 shadow-sm;
+  }
+
+  .drop-active {
+    @apply outline-4 -outline-offset-4 outline-dashed outline-accent-blue;
+  }
+
+  .record-edited,
+  .voice-edited {
+    @apply border-accent-yellow shadow-[0_0_0_3px_rgb(255_216_61_/_0.28),0_10px_30px_rgb(32_107_160_/_0.12)];
+  }
+
+  .audio-drop-target {
+    @apply relative border-accent-blue ring-4 ring-sky/60;
+    animation: audio-drop-pulse 1s ease-in-out infinite;
+  }
+
+  .record-compact textarea {
+    min-height: 5.5rem;
+  }
+
+  .record-compact .action-button {
+    @apply px-2 py-1 text-xs;
+  }
+
+  .audio-drop-hint {
+    @apply pointer-events-none absolute inset-3 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-accent-blue bg-sky/90 text-center text-sm font-black text-navy shadow-lg;
+    animation: audio-drop-enter 160ms ease-out both;
+  }
+
+  .audio-drop-overlay {
+    @apply pointer-events-none absolute inset-3 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-accent-blue bg-sky/90 text-sm font-black text-navy shadow-lg;
+    animation: audio-drop-enter 160ms ease-out both;
+  }
+
+  .audio-modal-backdrop {
+    @apply fixed inset-0 z-100 grid place-items-center bg-navy/45 p-4 backdrop-blur-sm;
+  }
+
+  .audio-modal {
+    @apply max-h-[min(90vh,42rem)] w-full max-w-xl overflow-y-auto rounded-3xl border-2 border-outline bg-ice-panel p-5 shadow-[0_20px_60px_rgb(7_82_173/0.35)] sm:p-7;
+  }
+
+  .recording-pulse {
+    animation: recording-pulse 1.2s ease-in-out infinite;
+  }
+
+  .trim-timeline {
+    @apply relative mt-6 h-28 overflow-hidden rounded-2xl border-2 border-outline bg-sky/20;
+    touch-action: none;
+  }
+
+  .trim-timeline canvas {
+    @apply h-full w-full;
+  }
+
+  .trim-handle {
+    @apply absolute top-0 z-10 h-full w-1 cursor-ew-resize bg-accent-yellow shadow-[0_0_0_2px_rgb(21_51_95/0.35)];
+  }
+
+  .trim-handle::after {
+    content: '';
+    @apply absolute -left-2 top-1/2 h-10 w-5 -translate-y-1/2;
+
+    background-image: url('/game-assets/bell.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+  background-position: center;
+}
+
+  .audio-drop-complete {
+    animation: audio-drop-complete 650ms ease-out;
+  }
+
+  .scrollbar-main,
+  .scrollbar-popover {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-accent-yellow) transparent;
+  }
+
+  .scrollbar-main {
+    scrollbar-color: var(--color-accent-yellow) var(--color-navy);
+  }
+
+  .scrollbar-main::-webkit-scrollbar,
+  .scrollbar-popover::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-main::-webkit-scrollbar-track {
+    background: var(--color-navy);
+  }
+
+  .scrollbar-popover::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-main::-webkit-scrollbar-thumb,
+  .scrollbar-popover::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--color-accent-yellow);
+    background-clip: padding-box;
+  }
+
+  .popover-chevron {
+    display: inline-block;
+    transition: transform 160ms ease;
+  }
+
+  .popover-chevron.chevron-open {
+    transform: rotate(180deg);
+  }
+
+  .popover-menu-up {
+    top: auto !important;
+    bottom: calc(100% + 0.5rem) !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  .popover-menu-down {
+    top: calc(100% + 0.5rem) !important;
+    bottom: auto !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  @keyframes audio-drop-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 3px rgb(65 164 232 / 0.35),
+        0 12px 30px rgb(32 107 160 / 0.12);
+    }
+    50% {
+      box-shadow:
+        0 0 0 7px rgb(65 164 232 / 0.18),
+        0 16px 34px rgb(32 107 160 / 0.2);
+    }
+  }
+
+  @keyframes recording-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(255 216 61 / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 16px rgb(255 216 61 / 0.08);
+    }
+  }
+
+  @keyframes audio-drop-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes audio-drop-complete {
+    0% {
+      transform: scale(1);
+    }
+    35% {
+      transform: scale(1.015);
+      box-shadow: 0 0 0 8px rgb(47 174 104 / 0.3);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+}

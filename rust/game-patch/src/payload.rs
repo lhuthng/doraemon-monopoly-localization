@@ -34,10 +34,17 @@ pub enum TargetName {
     Others,
     Sprites,
     Runtime,
+    /// Canonical contributor-owned dialogue and voice changes. Kept after the
+    /// legacy target values so older multipart payloads remain decodable.
+    Dubbing,
 }
 
 impl TargetName {
     pub fn all() -> &'static [TargetName] {
+        &[Self::Dubbing, Self::Sprites, Self::Runtime]
+    }
+
+    pub fn legacy() -> &'static [TargetName] {
         &[
             Self::Doraemon,
             Self::Nobita,
@@ -62,6 +69,7 @@ impl TargetName {
             Self::Others => "others",
             Self::Sprites => "sprites",
             Self::Runtime => "runtime",
+            Self::Dubbing => "dubbing",
         }
     }
 
@@ -76,6 +84,7 @@ impl TargetName {
             "others" => Some(Self::Others),
             "sprites" => Some(Self::Sprites),
             "runtime" => Some(Self::Runtime),
+            "dubbing" => Some(Self::Dubbing),
             _ => None,
         }
     }
@@ -91,6 +100,7 @@ impl TargetName {
             Self::Others => "loc-others.dmpatch".into(),
             Self::Sprites => "sprites.dmpatch".into(),
             Self::Runtime => "runtime.dmpatch".into(),
+            Self::Dubbing => "dubbing.dmpatch".into(),
         }
     }
 
@@ -105,6 +115,7 @@ impl TargetName {
             Self::Others => TargetType::Others,
             Self::Sprites => TargetType::Sprites,
             Self::Runtime => TargetType::Runtime,
+            Self::Dubbing => TargetType::Dubbing,
         }
     }
 
@@ -118,6 +129,7 @@ impl TargetName {
             Self::Suneo => &["007"],
             Self::Gian => &["008"],
             Self::Others => &["000", "001", "002"],
+            Self::Dubbing => &["000", "001", "002", "003", "004", "005", "006", "007", "008"],
             Self::Sprites | Self::Runtime => &[],
         }
     }
@@ -131,7 +143,7 @@ impl TargetName {
             Self::Shizuka => Some(3),
             Self::Suneo => Some(4),
             Self::Gian => Some(5),
-            Self::Others | Self::Sprites | Self::Runtime => None,
+            Self::Others | Self::Sprites | Self::Runtime | Self::Dubbing => None,
         }
     }
 }
@@ -142,6 +154,7 @@ pub enum TargetType {
     Others,
     Sprites,
     Runtime,
+    Dubbing,
 }
 
 impl TargetType {
@@ -151,6 +164,7 @@ impl TargetType {
             Self::Others => "others",
             Self::Sprites => "sprites",
             Self::Runtime => "runtime",
+            Self::Dubbing => "dubbing",
         }
     }
 }
@@ -190,6 +204,9 @@ pub fn string_belongs_to(id: &str, target: TargetName) -> bool {
 
 /// Determine whether a voice record belongs to a given target.
 pub fn voice_belongs_to(id: &str, target: TargetName) -> bool {
+    if target == TargetName::Dubbing {
+        return voice_record_character(id).is_some() || is_shared_action_voice(id);
+    }
     if let Some(char_idx) = target.character_index() {
         voice_record_character(id) == Some(char_idx)
     } else if target == TargetName::Others {
@@ -579,6 +596,7 @@ pub fn decode_part(data: &[u8]) -> Result<PayloadPart> {
         6 => TargetName::Others,
         7 => TargetName::Sprites,
         8 => TargetName::Runtime,
+        9 => TargetName::Dubbing,
         _ => return Err(format!("unknown target {target_byte}")),
     };
     let _target_type_byte = reader.u8()?;

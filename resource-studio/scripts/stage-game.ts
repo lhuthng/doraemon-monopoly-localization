@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -63,6 +63,7 @@ await copyFile(resolve(originSource, 'strings.dat'), resolve(destination, 'strin
 await copyFile(resolve(originSource, 'voice.dat'), resolve(destination, 'voice-origin.dat'));
 for (const file of [...files, ...mapFiles])
   await copyFile(resolve(languageSource, file), resolve(destination, file));
+await writeFile(resolve(destination, '.dubbing-language.json'), `${JSON.stringify({ language })}\n`);
 
 const prepare = Bun.spawn(['bun', 'scripts/prepare-graphics.ts'], {
   cwd: studio,

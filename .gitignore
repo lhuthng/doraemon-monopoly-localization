@@ -16,6 +16,9 @@ target/
 *.exe
 !third_party/cnc-ddraw/cnc-ddraw config.exe
 *.wav
+!dubbing/
+!dubbing/**/
+!dubbing/**/*.wav
 *.bin
 *.cue
 *.img
@@ -28,3 +31,5 @@ target/
 resource-studio/public/game/*
 !resource-studio/public/game/.gitkeep
 resource-studio/local-game/
+translator-site/.svelte-kit/
+translator-site/build/
