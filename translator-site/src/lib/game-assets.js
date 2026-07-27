@@ -8,12 +8,12 @@ export const ownerLabels = {
 };
 
 export const ownerIcons = {
-  doraemon: '/game-assets/characters/doraemon.png',
-  nobita: '/game-assets/characters/nobita.png',
-  dorami: '/game-assets/characters/dorami.png',
-  shizuka: '/game-assets/characters/shizuka.png',
-  suneo: '/game-assets/characters/suneo.png',
-  gian: '/game-assets/characters/gian.png'
+  doraemon: './game-assets/characters/doraemon.png',
+  nobita: './game-assets/characters/nobita.png',
+  dorami: './game-assets/characters/dorami.png',
+  shizuka: './game-assets/characters/shizuka.png',
+  suneo: './game-assets/characters/suneo.png',
+  gian: './game-assets/characters/gian.png'
 };
 
 export const ownerSmallIcons = Object.fromEntries(
@@ -21,5 +21,5 @@ export const ownerSmallIcons = Object.fromEntries(
 );
 
 export function gadgetAsset(assetId) {
-  return `/game-assets/gadgets/${assetId}.png`;
+  return `./game-assets/gadgets/${assetId}.png`;
 }

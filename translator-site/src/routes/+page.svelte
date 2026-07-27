@@ -540,7 +540,7 @@
       <div class="flex min-w-0 items-center gap-4">
         <img
           class="h-20 w-36 shrink-0 object-contain sm:h-24 sm:w-44"
-          src="/game-assets/doraemon-monopoly-logo.png"
+          src="./game-assets/doraemon-monopoly-logo.png"
           alt="Doraemon Monopoly"
         />
         <div class="min-w-0">
