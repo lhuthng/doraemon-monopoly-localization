@@ -90,7 +90,7 @@ label:has(input[type='file']) {
   }
 
   .owner-selected {
-    @apply border-white bg-white text-navy shadow-sm;
+    @apply border-accent-yellow bg-accent-yellow/60 text-navy  hover:bg-accent-yellow/80 shadow-sm;
   }
 
   .drop-active {
@@ -107,10 +107,58 @@ label:has(input[type='file']) {
     animation: audio-drop-pulse 1s ease-in-out infinite;
   }
 
+  .record-compact textarea {
+    min-height: 5.5rem;
+  }
+
+  .record-compact .action-button {
+    @apply px-2 py-1 text-xs;
+  }
+
   .audio-drop-hint {
     @apply pointer-events-none absolute inset-3 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-accent-blue bg-sky/90 text-center text-sm font-black text-navy shadow-lg;
     animation: audio-drop-enter 160ms ease-out both;
   }
+
+  .audio-drop-overlay {
+    @apply pointer-events-none absolute inset-3 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-accent-blue bg-sky/90 text-sm font-black text-navy shadow-lg;
+    animation: audio-drop-enter 160ms ease-out both;
+  }
+
+  .audio-modal-backdrop {
+    @apply fixed inset-0 z-100 grid place-items-center bg-navy/45 p-4 backdrop-blur-sm;
+  }
+
+  .audio-modal {
+    @apply max-h-[min(90vh,42rem)] w-full max-w-xl overflow-y-auto rounded-3xl border-2 border-outline bg-ice-panel p-5 shadow-[0_20px_60px_rgb(7_82_173/0.35)] sm:p-7;
+  }
+
+  .recording-pulse {
+    animation: recording-pulse 1.2s ease-in-out infinite;
+  }
+
+  .trim-timeline {
+    @apply relative mt-6 h-28 overflow-hidden rounded-2xl border-2 border-outline bg-sky/20;
+    touch-action: none;
+  }
+
+  .trim-timeline canvas {
+    @apply h-full w-full;
+  }
+
+  .trim-handle {
+    @apply absolute top-0 z-10 h-full w-1 cursor-ew-resize bg-accent-yellow shadow-[0_0_0_2px_rgb(21_51_95/0.35)];
+  }
+
+  .trim-handle::after {
+    content: '';
+    @apply absolute -left-2 top-1/2 h-10 w-5 -translate-y-1/2;
+
+    background-image: url('/game-assets/bell.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+  background-position: center;
+}
 
   .audio-drop-complete {
     animation: audio-drop-complete 650ms ease-out;
@@ -182,6 +230,16 @@ label:has(input[type='file']) {
       box-shadow:
         0 0 0 7px rgb(65 164 232 / 0.18),
         0 16px 34px rgb(32 107 160 / 0.2);
+    }
+  }
+
+  @keyframes recording-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(255 216 61 / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 16px rgb(255 216 61 / 0.08);
     }
   }
 

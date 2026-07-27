@@ -3,6 +3,8 @@
   import DialogueRecord from '$lib/DialogueRecord.svelte';
   import GadgetVoiceRecord from '$lib/GadgetVoiceRecord.svelte';
   import VoiceOnlyRecord from '$lib/VoiceOnlyRecord.svelte';
+  import ProgressSidebar from '$lib/ProgressSidebar.svelte';
+  import SectionNavigator from '$lib/SectionNavigator.svelte';
   import PopoverSelect from '$lib/PopoverSelect.svelte';
   import { gadgetAsset, ownerIcons, ownerLabels, ownerSmallIcons } from '$lib/game-assets';
   import { clearLocalFiles, readLocalFile, saveLocalFile } from '$lib/local-store';
@@ -44,10 +46,7 @@
   let voiceHash = $state('');
   let status = $state('Load your original game files to begin. They remain on this device.');
   let error = $state('');
-  let isDragging = $state(false);
   let showVietnameseNotice = $state(true);
-  let draggingVoiceId = $state('');
-  let droppedVoiceId = $state('');
 
   const sourceById = $derived(
     strings
@@ -121,8 +120,6 @@
       sectionOptions.findIndex((section) => section.id === selectedSection)
     )
   );
-  const changedDialogueCount = $derived(Object.keys(edits).length);
-  const changedVoiceCount = $derived(Object.keys(voices).length);
 
   function textFromTokens(tokens) {
     return tokens
@@ -213,16 +210,10 @@
 
   function dragOver(event) {
     event.preventDefault();
-    isDragging = true;
-  }
-
-  function dragLeave(event) {
-    if (!event.relatedTarget || !event.currentTarget.contains(event.relatedTarget)) isDragging = false;
   }
 
   async function dropFiles(event) {
     event.preventDefault();
-    isDragging = false;
     const files = [...(event.dataTransfer?.files ?? [])];
     const stringsFile = files.find((file) => file.name.toLowerCase() === 'strings.dat');
     const voiceFile = files.find((file) => file.name.toLowerCase() === 'voice.dat');
@@ -234,33 +225,6 @@
     if (stringsFile) await loadGameFile('strings', stringsFile);
     if (voiceFile) await loadGameFile('voice', voiceFile);
     if (sysfontFile) await loadSysfont(sysfontFile);
-  }
-
-  function audioDragOver(event, voiceId) {
-    event.preventDefault();
-    event.stopPropagation();
-    isDragging = false;
-    draggingVoiceId = voiceId;
-  }
-
-  function audioDragLeave(event, voiceId) {
-    event.stopPropagation();
-    if (event.currentTarget === event.target || !event.currentTarget.contains(event.relatedTarget)) {
-      if (draggingVoiceId === voiceId) draggingVoiceId = '';
-    }
-  }
-
-  async function dropAudio(event, voiceId) {
-    event.preventDefault();
-    event.stopPropagation();
-    isDragging = false;
-    draggingVoiceId = '';
-    droppedVoiceId = voiceId;
-    window.setTimeout(() => {
-      if (droppedVoiceId === voiceId) droppedVoiceId = '';
-    }, 650);
-    const file = event.dataTransfer?.files?.[0];
-    if (file) await attachVoice(voiceId, file);
   }
 
   function updateTranslation(id, translation) {
@@ -281,7 +245,14 @@
     const next = { ...voices };
     delete next[voiceId];
     voices = next;
-    void saveLocalFile(`draft-voices-${language}`, next);
+    void saveVoiceDraft(next);
+  }
+
+  async function saveVoiceDraft(value = voices) {
+    const plain = Object.fromEntries(
+      Object.entries(value).map(([id, bytes]) => [id, new Uint8Array(Array.from(bytes))])
+    );
+    await saveLocalFile(`draft-voices-${language}`, plain);
   }
 
   function reflowTranslation(record) {
@@ -329,7 +300,7 @@
     if (!file) return;
     try {
       voices = { ...voices, [voiceId]: await normalizeAudioFile(file) };
-      await saveLocalFile(`draft-voices-${language}`, voices);
+      await saveVoiceDraft(voices);
       status = `Prepared replacement audio for ${voiceId}.`;
       error = '';
     } catch (cause) {
@@ -464,7 +435,7 @@
     voiceHash = '';
     edits = {};
     voices = {};
-    await saveLocalFile(`draft-voices-${language}`, {});
+    await saveVoiceDraft({});
     status = 'Forgot local game files and drafts.';
     error = '';
   }
@@ -507,7 +478,7 @@
     if (savedVoices && typeof savedVoices === 'object' && !(savedVoices instanceof Uint8Array)) {
       voices = savedVoices;
     }
-    if (strings || voice) status = 'Restored local game files from this browser.';
+    if (strings || voice) status = 'Restored original files.';
   });
 
   onMount(() => {
@@ -556,21 +527,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<main
-  class:drop-active={isDragging}
-  class="scrollbar-main min-h-screen overflow-hidden text-ink"
-  ondragover={dragOver}
-  ondragleave={dragLeave}
-  ondragend={() => (isDragging = false)}
-  ondrop={dropFiles}
->
+<main class="scrollbar-main min-h-screen overflow-x-clip text-ink" ondragover={dragOver} ondrop={dropFiles}>
   <header
     class="relative border-b-4 border-navy bg-[linear-gradient(115deg,#75ccf7_0%,#b6edff_52%,#76c8f4_100%)]"
   >
     <div
       class="pointer-events-none absolute inset-0 opacity-25 bg-[radial-gradient(circle_at_20px_20px,#fff_0_2px,transparent_3px)] bg-size-[48px_48px]"
     ></div>
-    <div class="relative mx-auto flex max-w-7xl items-center justify-between gap-5 px-5 py-4 sm:px-8 lg:py-5">
+    <div
+      class="relative mx-auto flex max-w-[1600px] items-center justify-between gap-5 px-5 py-4 sm:px-8 lg:py-5"
+    >
       <div class="flex min-w-0 items-center gap-4">
         <img
           class="h-20 w-36 shrink-0 object-contain sm:h-24 sm:w-44"
@@ -590,7 +556,7 @@
 
   <nav class="border-b border-navy/30 bg-navy text-white" aria-label="Workspace controls">
     <div
-      class="mx-auto flex max-w-7xl flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 text-sm font-bold sm:px-8"
+      class="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 text-sm font-bold sm:px-8"
     >
       <span class="rounded-full bg-white/15 px-3 py-1"
         >{hasStrings ? '✓ strings.dat ready' : '1 · Load strings.dat'}</span
@@ -603,7 +569,7 @@
     </div>
   </nav>
 
-  <div class="mx-auto max-w-7xl px-5 py-6 sm:px-8 sm:py-8">
+  <div class="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 sm:py-8">
     {#if error}
       <p
         class="mb-5 rounded-2xl border-2 border-danger/35 bg-red-50 px-5 py-4 text-sm font-bold text-danger"
@@ -692,7 +658,7 @@
             />
           </div>
           <label class="min-w-48 flex-1 inline-flex items-center text-sm font-black text-navy"
-            ><span class="whitespace-normal">Find a line</span>
+            ><span class="text-nowrap">Find a line</span>
             <input
               class="ml-2 w-full max-w-sm rounded-xl border-2 border-outline bg-white px-3 py-2 font-medium text-ink outline-none placeholder:text-ink/40 focus:border-accent-blue"
               bind:value={query}
@@ -743,8 +709,14 @@
               class="owner-chip"
               onclick={() => (owner = currentOwner)}
             >
-              {#if ownerIcons[currentOwner]}<img src={ownerIcons[currentOwner]} alt="" />{:else}<span
-                  class="grid h-9 w-9 place-items-center rounded-full bg-accent-yellow text-lg">★</span
+              {#if ownerIcons[currentOwner]}
+                <img
+                  class="rounded-full border-navy border-2 h-12 w-12"
+                  src={ownerIcons[currentOwner]}
+                  alt=""
+                />
+              {:else}
+                <span class="grid h-9 w-9 place-items-center rounded-full bg-accent-yellow text-lg">★</span
                 >{/if}
               <span>{ownerLabels[currentOwner]}</span>
             </button>
@@ -765,26 +737,28 @@
               <p class="mt-2 text-sm text-ink/65">Try an ID, another character, or clear the filter.</p>
             </div>
           {/if}
-          {#each records as record (record.id)}
-            <DialogueRecord
-              {record}
-              source={sourceText(record)}
-              translation={currentTranslation(record)}
-              {language}
-              edited={!!edits[record.id]}
-              voiceEdited={!!(record.voiceId && voices[record.voiceId])}
-              voiceId={record.voiceId}
-              hasVoice={!!voice}
-              translateHref={`https://translate.google.com/?sl=zh-TW&tl=${language === 'vietnamese' ? 'vi' : 'en'}&text=${encodeURIComponent(sourceText(record))}&op=translate`}
-              onTranslation={(value) => updateTranslation(record.id, value)}
-              onReflow={() => reflowTranslation(record)}
-              onPlayOriginal={() => playOriginal(record.voiceId)}
-              onPlayNew={() => playNew(record.voiceId)}
-              onReplace={(file) => attachVoice(record.voiceId, file)}
-              onRemove={() => removeVoice(record.voiceId)}
-              onReset={() => resetTranslation(record.id)}
-            />
-          {/each}
+          <div class="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(22rem,1fr))]">
+            {#each records as record (record.id)}
+              <DialogueRecord
+                {record}
+                source={sourceText(record)}
+                translation={currentTranslation(record)}
+                {language}
+                edited={!!edits[record.id]}
+                voiceEdited={!!(record.voiceId && voices[record.voiceId])}
+                voiceId={record.voiceId}
+                hasVoice={!!voice}
+                translateHref={`https://translate.google.com/?sl=zh-TW&tl=${language === 'vietnamese' ? 'vi' : 'en'}&text=${encodeURIComponent(sourceText(record))}&op=translate`}
+                onTranslation={(value) => updateTranslation(record.id, value)}
+                onReflow={() => reflowTranslation(record)}
+                onPlayOriginal={() => playOriginal(record.voiceId)}
+                onPlayNew={() => playNew(record.voiceId)}
+                onReplace={(file) => attachVoice(record.voiceId, file)}
+                onRemove={() => removeVoice(record.voiceId)}
+                onReset={() => resetTranslation(record.id)}
+              />
+            {/each}
+          </div>
 
           {#if gadgetRecords.length}
             <div id="section-gadgets" class="scroll-mt-6 pt-4">
@@ -797,7 +771,7 @@
               </p>
             </div>
           {/if}
-          <div class="grid gap-4 xl:grid-cols-2">
+          <div class="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))]">
             {#each gadgetRecords as record (record.id)}
               {@const voiceId = gadgetVoiceId(characterIndex, record.gadgetVoiceSlot)}
               <GadgetVoiceRecord
@@ -814,7 +788,6 @@
                 onReplace={(file) => attachVoice(voiceId, file)}
                 onRemove={() => removeVoice(voiceId)}
               />
-
             {/each}
           </div>
 
@@ -826,7 +799,7 @@
                 </p>
                 <p class="mt-1 text-sm text-ink/70">Menu, actions, misc, and alphabet recordings.</p>
               </div>
-              <div class="grid gap-3 p-5 sm:grid-cols-2">
+              <div class="p-2 grid gap-2 grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
                 {#each voiceOnlyRecords as voiceRecord (voiceRecord.id)}
                   {@const details = voiceOnlyDetails(voiceRecord)}
                   <VoiceOnlyRecord
@@ -840,136 +813,35 @@
                     onReplace={(file) => attachVoice(voiceRecord.id, file)}
                     onRemove={() => removeVoice(voiceRecord.id)}
                   />
-
                 {/each}
               </div>
             </section>
           {/if}
         </section>
 
-        <aside class="space-y-4 lg:sticky lg:top-5 lg:self-start">
-          <section class="game-panel p-5">
-            <p class="text-xs font-black uppercase tracking-[0.18em] text-navy">Character progress</p>
-            <div class="mt-4 space-y-4">
-              {#each characterProgress as progress (progress.character)}
-                <button
-                  class="block w-full rounded-xl p-2 text-left hover:bg-sky/15"
-                  onclick={() => (owner = progress.character)}
-                >
-                  <div class="flex items-center gap-3">
-                    <img class="h-8 w-8 object-contain" src={ownerSmallIcons[progress.character]} alt="" />
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center justify-between gap-2 text-sm font-black text-navy">
-                        <span>{ownerLabels[progress.character]}</span>
-                        <span class="text-xs text-ink/60">{progress.textPercent}% text</span>
-                      </div>
-                      <div class="mt-1 h-2 overflow-hidden rounded-full bg-sky/35">
-                        <div
-                          class="h-full rounded-full bg-accent-blue"
-                          style={`width: ${progress.textPercent}%`}
-                        ></div>
-                      </div>
-                      <div class="mt-2 flex items-center justify-between gap-2 text-xs font-bold text-ink/60">
-                        <span>{progress.textDone}/{progress.textTotal} translated</span>
-                        <span>{progress.voicePercent}% voice</span>
-                      </div>
-                      <div class="mt-1 h-2 overflow-hidden rounded-full bg-sky/35">
-                        <div
-                          class="h-full rounded-full bg-success"
-                          style={`width: ${progress.voicePercent}%`}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              {/each}
-            </div>
-          </section>
-          {#if language === 'vietnamese' && showVietnameseNotice}
-            <section class="game-panel border-warning bg-accent-yellow p-5">
-              <p class="text-xs font-black uppercase tracking-[0.18em] text-warning">
-                Vietnamese custom font
-              </p>
-              <p class="mt-2 text-sm leading-6 text-warning">
-                Reflow uses the supplied game font and may not match Vietnamese line breaks perfectly.
-              </p>
-              <button
-                class="mt-3 text-sm font-black text-warning hover:underline"
-                onclick={() => (showVietnameseNotice = false)}
-              >
-                Dismiss
-              </button>
-            </section>
-          {/if}
-          <section class="game-panel p-5">
-            <p class="text-xs font-black uppercase tracking-[0.18em] text-navy">Your contribution</p>
-            <div class="mt-4 grid grid-cols-2 gap-3">
-              <div class="rounded-xl bg-sky/25 p-3">
-                <strong class="block text-2xl font-black text-navy">{changedDialogueCount}</strong><span
-                  class="text-xs font-bold text-ink/65">text changes</span
-                >
-              </div>
-              <div class="rounded-xl bg-accent-yellow/35 p-3">
-                <strong class="block text-2xl font-black text-navy">{changedVoiceCount}</strong><span
-                  class="text-xs font-bold text-ink/65">voice files</span
-                >
-              </div>
-            </div>
-            <p class="mt-4 text-xs leading-5 text-ink/65">
-              Download a contribution ZIP when you are ready to send this work to the maintainers.
-            </p>
-          </section>
-          <section class="game-panel p-5">
-            <p class="text-xs font-black uppercase tracking-[0.18em] text-navy">Device storage</p>
-            <p class="mt-2 text-sm leading-6 text-ink/70">{status}</p>
-            <button class="mt-4 text-sm font-black text-danger hover:underline" onclick={forgetDevice}
-              >Forget local files and drafts</button
-            >
-          </section>
-        </aside>
+        <ProgressSidebar
+          progress={characterProgress}
+          {ownerLabels}
+          {ownerSmallIcons}
+          {language}
+          {showVietnameseNotice}
+          {status}
+          onOwner={(value) => (owner = value)}
+          onDismissVietnamese={() => (showVietnameseNotice = false)}
+          onForget={forgetDevice}
+        />
       </div>
-      <nav
-        class="fixed bottom-4 left-1/2 z-50 flex w-[min(94vw,36rem)] -translate-x-1/2 items-center gap-2 rounded-2xl border-2 border-outline bg-white/95 p-2 shadow-[0_12px_35px_rgb(7_82_173/0.25)] backdrop-blur"
-        aria-label="Record sections"
-      >
-        <div class="min-w-0 flex-1">
-          <PopoverSelect
-            label="Grouping"
-            value={selectedSection}
-            options={sectionOptions.map(({ id, label }) => ({ value: id, label }))}
-            dropup
-            onChange={navigateSection}
-          />
-        </div>
-        <div class="w-22">
-          <PopoverSelect
-            label="Character"
-            value={owner}
-            options={DUBBING_OWNERS.slice(0, 6).map((value) => ({
-              value,
-              label: ownerLabels[value],
-              icon: ownerIcons[value]
-            }))}
-            compact
-            dropup
-            onChange={(value) => (owner = value)}
-          />
-        </div>
-        <button
-          class="action-button border-outline bg-white text-navy disabled:opacity-35"
-          disabled={sectionIndex === 0}
-          title="Previous group"
-          aria-label="Previous group"
-          onclick={() => moveSection(-1)}>◀</button
-        >
-        <button
-          class="action-button border-outline bg-white text-navy disabled:opacity-35"
-          disabled={sectionIndex === sectionOptions.length - 1}
-          title="Next group"
-          aria-label="Next group"
-          onclick={() => moveSection(1)}>▶</button
-        >
-      </nav>
+      <SectionNavigator
+        {sectionOptions}
+        {selectedSection}
+        {sectionIndex}
+        {owner}
+        {ownerLabels}
+        {ownerIcons}
+        onSection={navigateSection}
+        onOwner={(value) => (owner = value)}
+        onMove={moveSection}
+      />
     {/if}
   </div>
 </main>

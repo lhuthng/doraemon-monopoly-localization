@@ -1,5 +1,7 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script>
+  import AudioDropOverlay from '$lib/AudioDropOverlay.svelte';
+  import AudioInputFlow from '$lib/AudioInputFlow.svelte';
   let {
     record,
     source,
@@ -20,54 +22,64 @@
   } = $props();
 
   let dragging = $state(false);
+  let dropped = $state(false);
+  let audioFlow = $state();
 
   function dropAudio(event) {
     event.preventDefault();
+    event.stopPropagation();
     dragging = false;
+    dropped = true;
+    window.setTimeout(() => (dropped = false), 650);
     const file = event.dataTransfer?.files?.[0];
-    if (file) onReplace(file);
+    event.dataTransfer?.clearData();
+    if (file?.type.startsWith('audio/') || /\.(wav|mp3|flac|ogg|opus|m4a|aac)$/i.test(file?.name ?? '')) {
+      audioFlow?.openFile(file);
+    }
   }
 </script>
 
 <article
   class:record-edited={edited || voiceEdited}
   class:audio-drop-target={dragging}
-  class="game-panel overflow-hidden"
+  class:audio-drop-complete={dropped}
+  class="record-compact game-panel relative overflow-hidden"
   ondragover={(event) => {
     event.preventDefault();
+    event.stopPropagation();
     dragging = true;
   }}
-  ondragleave={() => (dragging = false)}
+  ondragleave={(event) => {
+    event.stopPropagation();
+    if (!event.relatedTarget || !event.currentTarget.contains(event.relatedTarget)) dragging = false;
+  }}
   ondrop={dropAudio}
 >
   <div
     class="flex flex-wrap items-center justify-between gap-2 border-b border-outline bg-ice-panel px-5 py-3"
   >
     <strong class="font-mono text-sm text-navy">{record.id}</strong>
-    <div class="flex gap-2">
+    <div class="absolute right-4 top-3 flex gap-2">
       {#if edited}<span class="rounded-full bg-success/15 px-3 py-1 text-xs font-black text-success"
           >Dialogue edited</span
         >{/if}
       {#if voiceEdited}<span class="rounded-full bg-accent-yellow px-3 py-1 text-xs font-black text-navy"
           >Audio edited</span
         >{/if}
-      {#if dragging}<span class="rounded-full bg-accent-blue px-3 py-1 text-xs font-black text-white"
-          >Drop audio to replace</span
-        >{/if}
+      {#if dragging}<AudioDropOverlay {dragging} />{/if}
     </div>
   </div>
   <div class="p-5">
-    <div class="grid gap-3 lg:grid-cols-2">
+    <div class="space-y-3">
       <div class="flex min-h-36 flex-col rounded-2xl border border-outline/70 bg-sky/15 p-4">
         <p class="text-xs font-black uppercase tracking-[0.16em] text-navy">Original game text</p>
         <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink">{source}</p>
         <button
-          class="mt-auto self-end pt-3 text-xs font-black text-accent-blue hover:text-navy hover:underline"
-          onclick={() => window.open(translateHref, '_blank', 'noopener,noreferrer')}
-          >Open in Google Translate ↗</button
+          class="mt-auto self-end pt-3 text-xs! font-black text-accent-blue hover:text-navy hover:underline"
+          onclick={() => window.open(translateHref, '_blank', 'noopener,noreferrer')}>GGTranslate ↗</button
         >
       </div>
-      <label class="rounded-2xl border border-success/35 bg-emerald-50/55 p-4">
+      <label class="block rounded-2xl border border-success/35 bg-emerald-50/55 p-4">
         <span class="text-xs font-black uppercase tracking-[0.16em] text-success">{language} translation</span
         >
         <textarea
@@ -79,7 +91,7 @@
         ></textarea>
       </label>
     </div>
-    <div class="mt-3 flex flex-wrap justify-end gap-2">
+    <div class="mt-3 flex flex-wrap items-center justify-start gap-2">
       <button
         class="icon-action"
         title="Reflow text"
@@ -96,11 +108,11 @@
       {#if voiceId}<button
           class="action-button border-outline bg-white text-navy disabled:opacity-40"
           disabled={!hasVoice}
-          onclick={onPlayOriginal}>▶ Original</button
+          onclick={onPlayOriginal}>▶ 1</button
         ><button
           class="action-button border-outline bg-white text-navy disabled:opacity-40"
           disabled={!voiceEdited}
-          onclick={onPlayNew}>▶ New</button
+          onclick={onPlayNew}>▶ 2</button
         ><button
           class="icon-action disabled:opacity-40"
           disabled={!voiceEdited}
@@ -109,8 +121,21 @@
           onclick={onRemove}>⌫</button
         >{/if}
       {#if voiceId}
-        <label class="action-button cursor-pointer bg-accent-blue text-white hover:text-white"
-          >Replace<input
+        <AudioInputFlow bind:this={audioFlow} onUseAudio={onReplace} />
+        <label
+          class="hidden icon-action cursor-pointer bg-accent-blue text-white hover:text-white"
+          title="Replace audio"
+          aria-label="Replace audio"
+          ><svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4"
+            ><path
+              d="M7 7a7 7 0 0 1 11.5 2M17 17a7 7 0 0 1-11.5-2M18 5v4h-4M6 19v-4h4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            /></svg
+          ><input
             class="hidden"
             type="file"
             accept="audio/*,.wav,.mp3,.flac,.ogg,.opus,.m4a,.aac"
