@@ -1,17 +1,58 @@
 # Contributing translations and voices
 
-Dialogue and voice work is stored in [`dubbing/`](dubbing/README.md). The source tree is intentionally small and reviewable: one sorted dialogue JSON file per owner and normalized WAV voice replacements.
+## Contributors
 
-Use the public Translator website. Choose a language and character, then load your own original `strings.dat` (and `voice.dat` when you want voice preview). Those files never leave your browser. The site keeps local progress on that device, can save/load a private `dubbing-work.zip` backup when moving computers, and downloads a small contribution ZIP. Attach that ZIP to a GitHub Issue; do not extract it or send original game files.
+Use the public Translator Workshop to load your own `strings.dat` and optional
+`voice.dat`. The files stay in the browser. They are never uploaded and are not
+included in exported ZIPs.
 
-For local preview, put your legal original game files in `tmp/base/`, run `make setup`, then start `cd resource-studio && bun run dev-en` or `bun run dev-vi`. Translation Studio has **Sync from dubbing**, **Save to dubbing**, and **Check dubbing** controls in its Files & exports menu.
+Use **Save work ZIP** for a private `dubbing-work.zip` backup that you may load
+back into the Workshop later. Use **Download contribution ZIP** when submitting
+work to the project. Attach that contribution ZIP to a GitHub Issue; do not
+attach original game files.
 
-Before opening a pull request, run:
+## Maintainers
+
+Put an untouched, legally obtained game in `tmp/base/` and import a contribution
+without manually copying every file:
+
+```sh
+make import-contribution CONTRIBUTION=tmp/doraemon-monopoly-vietnamese-dubbing.zip
+```
+
+The importer validates the manifest and supported base fingerprints, checks
+dialogue IDs and owners, checks voice IDs and WAV format, merges the contribution
+into `dubbing/<language>/`, and creates a timestamped backup in
+`tmp/dubbing-import-backups/`. It never commits original game files and does not
+publish a patch automatically.
+
+Prepare a local editing/build workspace when needed:
+
+```sh
+make setup
+make studio-vi       # or make studio-en
+```
+
+The canonical source is `dubbing/`. `resource-studio/local-game/` is generated
+and ignored. Use **Sync from dubbing** and **Save to dubbing** in Resource
+Studio when working interactively.
+
+Before committing source changes:
 
 ```sh
 cd resource-studio
-bun run dubbing:organize
-bun run dubbing:check
+bun run dubbing:organize vietnamese
+bun run dubbing:check vietnamese
+cd ..
+make check
 ```
 
-Sprites, fonts, bitmaps, and maps stay in the relevant Resource Studio editors. Do not place them in `dubbing/`.
+Build a tracked component only when it is ready to review:
+
+```sh
+make build-dubbing LANGUAGE=vietnamese PUBLISH=1
+```
+
+Sprites, fonts, bitmaps, and maps stay in their Resource Studio workflows. The
+map view is currently read-only inspection. Do not edit generated `.dmpatch`
+files directly.

@@ -7,6 +7,7 @@ PUBLISH ?=
 PATCHER ?=
 CNC_DDRAW_DIR ?=
 LANGUAGE ?=
+CONTRIBUTION ?=
 PATCHER_CNC_DDRAW_DIR := $(if $(strip $(CNC_DDRAW_DIR)),$(CNC_DDRAW_DIR),third_party/cnc-ddraw)
 RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
 GAME_FILES := Doraemon.exe $(RESOURCE_FILES)
@@ -18,7 +19,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help setup build-dubbing build-sprites build-runtime build-patch build-patcher translator-build translator-dev check-language check-publish check-patcher check-wrapper check-resources check-game check-payloads
+.PHONY: help check setup import-contribution studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-publish check-patcher check-wrapper check-resources check-game check-payloads
 
 help:
 	@printf '%s\n' \
@@ -27,23 +28,47 @@ help:
 	  'Put your own untouched Cantonese game files in tmp/base/:' \
 	  '  Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat' \
 	  '' \
-	  'Commands:' \
-	  '  make setup' \
-	  '      Prepare private Studio workspaces. Dialogue and voices are synced from dubbing/.' \
-	  '  make build-dubbing LANGUAGE=english PUBLISH=1' \
-	  '      Build patches/<language>/dubbing.dmpatch from canonical dubbing/.' \
-	  '  make build-sprites LANGUAGE=english PUBLISH=1' \
-	  '      Build only the independently maintained graphics component.' \
-	  '  make build-runtime LANGUAGE=english PUBLISH=1' \
-	  '      Build only the independently maintained runtime component.' \
-	  '  make build-patch LANGUAGE=english PUBLISH=1' \
-	  '      Build all three independently reviewable components.' \
-	  '  make build-patcher' \
-	  '      Build the Windows patcher from component directories.' \
-	  '  make translator-build' \
-	  '      Build the static contributor site into tmp/contributor-kit/.' \
+	  'Recommended workflow:' \
+	  '  1. Put private original game files in tmp/base/.' \
+	  '  2. make setup' \
+	  '  3. make studio-en or make studio-vi' \
+	  '  4. make check' \
+	  '  5. make build-patch LANGUAGE=<language> PUBLISH=1' \
+	  '  6. make build-patcher' \
 	  '' \
-	  'Source of truth: dubbing/ for dialogue and voices; the ignored Studio workspace for graphics/font/bitmap edits.'
+	  'Preparation and contributions:' \
+	  '  make setup' \
+	  '      Generate ignored local-game workspaces from tmp/base and patches/.' \
+	  '  make import-contribution CONTRIBUTION=tmp/<contribution>.zip' \
+	  '      Validate and merge a Translator Workshop ZIP into dubbing/.' \
+	  '  make studio-en | make studio-vi' \
+	  '      Prepare and launch the matching Resource Studio workspace.' \
+	  '' \
+	  'Validation and builds:' \
+	  '  make check' \
+	  '      Run Rust workspace tests and Resource Studio checks/tests.' \
+	  '  make build-dubbing LANGUAGE=english PUBLISH=1' \
+	  '      Build only patches/<language>/dubbing.dmpatch.' \
+	  '  make build-sprites LANGUAGE=english PUBLISH=1' \
+	  '      Build only the graphics component.' \
+	  '  make build-runtime LANGUAGE=english PUBLISH=1' \
+	  '      Build only the runtime component.' \
+	  '  make build-patch LANGUAGE=english PUBLISH=1' \
+	  '      Build all three components for one language.' \
+	  '  make build-patcher' \
+	  '      Embed tracked components into tmp/release/patcher.exe.' \
+	  '  make release' \
+	  '      Validate payload presence and build the local patcher artifact.' \
+	  '' \
+	  'PUBLISH=1 writes tracked patches/. Without it, output goes to ignored tmp/patches/.' \
+	  '' \
+	  'Source of truth: dubbing/ for dialogue and voices; Resource Studio local-game/ is generated.' \
+	  '' \
+	  'Run make help to see this workflow.'
+
+check:
+	@cargo test --workspace
+	@cd resource-studio && bun run check && bun test
 
 check-resources:
 	@missing=0; for file in $(RESOURCE_FILES); do \
@@ -78,6 +103,16 @@ setup: check-resources check-payloads
 	@cd resource-studio && bun run dubbing:sync english && bun run dubbing:sync vietnamese
 	@printf '%s\n' 'Prepared private Studio workspaces. Start one with: cd resource-studio && bun run dev-en'
 
+import-contribution:
+	@test -n "$(CONTRIBUTION)" || { printf '%s\n' 'Usage: make import-contribution CONTRIBUTION=tmp/<contribution>.zip'; exit 2; }
+	@cd resource-studio && bun run dubbing:import -- "../$(CONTRIBUTION)"
+
+studio-en: setup
+	@cd resource-studio && bun run dev-en
+
+studio-vi: setup
+	@cd resource-studio && bun run dev-vi
+
 build-dubbing: check-language check-publish check-game
 	@missing=0; for file in $(RESOURCE_FILES); do \
 	  if [ ! -f "resource-studio/local-game/$(LANGUAGE)/$$file" ]; then printf '%s\n' "Missing resource-studio/local-game/$(LANGUAGE)/$$file. Run make setup after preserving any local graphics edits."; missing=1; fi; \
@@ -100,6 +135,8 @@ build-runtime: check-language check-publish check-game
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target runtime --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 
 build-patch: build-dubbing build-sprites build-runtime
+
+release: check-payloads build-patcher
 
 translator-build:
 	@cd translator-site && bun run build

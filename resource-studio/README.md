@@ -1,10 +1,22 @@
 # Resource Studio
 
-A Svelte 5 and Bun application for inspecting and rebuilding user-supplied
-_Doraemon Monopoly_ resources locally in the browser. No game file is bundled
-into development or production builds.
+Resource Studio is a Svelte 5 and Bun application for inspecting and rebuilding
+user-supplied Doraemon Monopoly resources locally. No game file is bundled into
+development or production builds.
 
-## Commands
+## Start here
+
+From the repository root, put an untouched game in `tmp/base/` and run:
+
+```sh
+make setup
+make studio-en       # English workspace
+make studio-vi       # Vietnamese workspace
+```
+
+The Make targets prepare ignored `resource-studio/local-game/` workspaces from
+the current components and canonical `dubbing/` source before starting Vite.
+You can also run the package commands directly:
 
 ```sh
 bun install
@@ -15,33 +27,57 @@ bun run lint
 bun run build
 ```
 
-Run `bun run translate-server` in another terminal only when local machine
-translation is needed.
+## Routes and inputs
 
-## Workspaces
+| Route | Workspace | Inputs |
+| --- | --- | --- |
+| `/` | Translation Studio | `strings.dat`, `voice.dat`, optional `sysfont.dat` |
+| `/assets` | Graphics Studio | `bitmaps.dat`, `Sprite1.dat`, `sprite2.dat` |
+| `/fonts` | Font Studio | `sysfont.dat`, optional numbered PNG replacements |
 
-| Route     | Workspace          | Inputs                                                                    |
-| --------- | ------------------ | ------------------------------------------------------------------------- |
-| `/`       | Translation studio | `strings.dat`, `voice.dat`; optional `sysfont.dat` for width-aware reflow |
-| `/assets` | Graphics studio    | `bitmaps.dat`, `Sprite1.dat`, and `sprite2.dat`                           |
-| `/fonts`  | Font studio        | `sysfont.dat` and optional numbered PNG replacements                      |
+Optional ignored copies may be placed under `public/game/` using the canonical
+filenames. Missing optional files show an empty state instead of failing the
+application.
 
-Use the file controls or route-specific drop zones. Optional ignored local
-copies may be placed under `public/game/` with the exact canonical filenames.
-A missing optional file is an empty state, not an application error.
+## Dubbing workflow
+
+Canonical dialogue and voice source lives in `../dubbing/`. Maintainers can
+import a public Workshop contribution ZIP with:
+
+```sh
+bun run dubbing:import -- ../tmp/<contribution>.zip
+```
+
+The importer validates the ZIP, creates a backup under
+`../tmp/dubbing-import-backups/`, merges valid records into `dubbing/`, and
+checks the result. It does not require a local Studio workspace.
+
+Useful source commands are:
+
+```sh
+bun run dubbing:organize vietnamese
+bun run dubbing:check vietnamese
+bun run dubbing:sync vietnamese
+bun run dubbing:export vietnamese
+```
+
+`dubbing:sync` rebuilds a generated local workspace from canonical source.
+`dubbing:export` moves a private local workspace back into canonical source and
+should only be used intentionally. A private `dubbing-work.zip` is not a
+maintainer contribution and should be loaded in the public Workshop instead.
 
 ## Editing guarantees
 
 - Untranslated string records preserve their original decoded bytes.
 - String group and child offsets rebuild dynamically.
 - Leading and trailing spaces remain intact; line breaks encode as `\N`.
-- Voice replacements normalize to mono 22.05 kHz 16-bit PCM WAV and preserve untouched packed records.
+- Voice replacements normalize to mono 22.05 kHz 16-bit PCM WAV and preserve
+  untouched packed records.
 - Indexed sprite imports preserve palette indices rather than canvas RGB.
 - Sprite1 preserves its hotspot when resized; Sprite2 has no hotspot fields.
 - Untouched archive records remain byte-for-byte unchanged.
-- Font Studio can extend a 640-record sysfont to the five Vietnamese CC/CD
-  banks without changing the filename.
+- Font Studio can extend a 640-record sysfont to five Vietnamese CC/CD banks.
 
-The TypeScript in this project is the browser editor and optional translation
-service. Executable patching, font release generation, backup/restore, and disc
-audio extraction live in the root Rust workspace.
+The Rust workspace handles executable patching, font release generation,
+backup/restore, and disc-audio extraction. Resource Studio handles browser-side
+resource editing and validation.
