@@ -9,14 +9,18 @@ development or production builds.
 From the repository root, put an untouched game in `workspace/base/` and run:
 
 ```sh
+make dependencies
 make prepare
+make apply-dubbing LANGUAGE=english
 make studio-en       # English workspace
 make studio-vi       # Vietnamese workspace
 ```
 
-The Make targets prepare ignored `apps/resource-studio/local-game/` workspaces
-from the current components and canonical `content/dubbing/` source before
-starting Vite. You can also run the package commands directly:
+`make prepare` materializes ignored `apps/resource-studio/local-game/`
+workspaces from the original game and current component patches. It does not
+touch dubbing. `make apply-dubbing LANGUAGE=...` is the explicit canonical
+source-to-workspace step; Studio commands only launch Vite. You can also run
+the package commands directly:
 
 ```sh
 cd apps/resource-studio

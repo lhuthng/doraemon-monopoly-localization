@@ -258,7 +258,7 @@ async function syncLanguage(language: DubbingLanguage) {
     voiceFiles(language)
   ]);
   const target = resolve(localGame, language);
-  if (!(await exists(target))) throw new Error(`Missing Studio workspace ${target}. Run make setup first.`);
+  if (!(await exists(target))) throw new Error(`Missing Studio workspace ${target}. Run make prepare first.`);
   const rebuiltStrings = rebuildStrings(
     originalStrings,
     parseStrings(originalStrings),

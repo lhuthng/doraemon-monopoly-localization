@@ -30,6 +30,7 @@ Prepare a local editing/build workspace when needed:
 
 ```sh
 make prepare
+make apply-dubbing LANGUAGE=vietnamese
 make studio-vi       # or make studio-en
 ```
 

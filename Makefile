@@ -8,7 +8,6 @@ PATCHER ?=
 CNC_DDRAW_DIR ?=
 LANGUAGE ?=
 CONTRIBUTION ?=
-SETUP ?= auto
 PATCHER_CNC_DDRAW_DIR := $(if $(strip $(CNC_DDRAW_DIR)),$(CNC_DDRAW_DIR),vendor/cnc-ddraw)
 RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
 GAME_FILES := Doraemon.exe $(RESOURCE_FILES)
@@ -20,7 +19,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help setup dependencies check prepare ensure-studio import-contribution studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-setup check-publish check-patcher check-wrapper check-resources check-game check-payloads
+.PHONY: help dependencies check prepare apply-dubbing export-dubbing import-contribution studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-studio check-publish check-patcher check-wrapper check-resources check-game check-payloads
 
 help:
 	@printf '%s\n' \
@@ -31,34 +30,36 @@ help:
 	  '' \
 	  'Recommended workflow:' \
 	  '  1. Put private original game files in workspace/base/.' \
-	  '  2. make setup' \
-	  '  3. make studio-en or make studio-vi' \
-	  '  4. make check' \
-	  '  5. make build-patch LANGUAGE=<language> PUBLISH=1' \
-	  '  6. make build-patcher' \
+	  '  2. make dependencies' \
+	  '  3. make prepare' \
+	  '  4. make apply-dubbing LANGUAGE=<language>' \
+	  '  5. make studio-en or make studio-vi' \
+	  '  6. make build-patch LANGUAGE=<language> PUBLISH=1' \
+	  '  7. make build-patcher' \
 	  '' \
 	  'Preparation and contributions:' \
-	  '  make setup' \
-	  '      Install Bun workspace dependencies, validate workspace/base, materialize local-game, and sync canonical content.' \
+	  '  make dependencies' \
+	  '      Install the locked Bun workspace dependencies.' \
 	  '  make prepare' \
-	  '      Rebuild local-game workspaces from already-installed dependencies.' \
+	  '      Rebuild Studio local-game from workspace/base and the current component patches only.' \
+	  '  make apply-dubbing LANGUAGE=english' \
+	  '      Apply canonical content/dubbing/<language> to that prepared Studio workspace.' \
 	  '  make import-contribution CONTRIBUTION=workspace/<contribution>.zip' \
 	  '      Validate and merge a Translator Workshop ZIP into content/dubbing/.' \
 	  '  make studio-en | make studio-vi' \
-	  '      Reuse a complete workspace, prepare it only when missing, then launch Studio.' \
-	  '      SETUP=1 always refreshes; SETUP=0 always skips preparation.' \
+	  '      Launch Studio only; it never prepares or overwrites the workspace.' \
 	  '' \
 	  'Validation and builds:' \
 	  '  make check' \
 	  '      Run Rust workspace tests, shared package checks, and app checks.' \
 	  '  make build-dubbing LANGUAGE=english PUBLISH=1' \
-	  '      Build only content/patches/<language>/dubbing.dmpatch.' \
+	  '      Export Studio dubbing to content/dubbing/, then build only the dubbing component.' \
 	  '  make build-sprites LANGUAGE=english PUBLISH=1' \
 	  '      Build only the graphics component.' \
 	  '  make build-runtime LANGUAGE=english PUBLISH=1' \
 	  '      Build only the runtime component.' \
 	  '  make build-patch LANGUAGE=english PUBLISH=1' \
-	  '      Build all three components for one language.' \
+	  '      Export Studio dubbing to content/dubbing/, then build all three components.' \
 	  '  make build-patcher' \
 	  '      Embed tracked components into workspace/release/patcher.exe.' \
 	  '  make release' \
@@ -69,8 +70,6 @@ help:
 	  'Source of truth: content/dubbing/ for dialogue and voices; Resource Studio local-game/ is generated.' \
 	  '' \
 	  'Run make help to see this workflow.'
-
-setup: dependencies prepare
 
 dependencies:
 	@bun install --frozen-lockfile
@@ -93,9 +92,6 @@ check-game: check-resources
 check-language:
 	@case "$(LANGUAGE)" in english|vietnamese) ;; *) printf '%s\n' 'Choose LANGUAGE=english or LANGUAGE=vietnamese.'; exit 2 ;; esac
 
-check-setup:
-	@case "$(SETUP)" in auto|0|1) ;; *) printf '%s\n' 'SETUP must be auto (default), 0, or 1.'; exit 2 ;; esac
-
 check-publish:
 	@case "$(PUBLISH)" in ''|1) ;; *) printf '%s\n' 'PUBLISH must be empty or 1.'; exit 2 ;; esac
 
@@ -116,47 +112,33 @@ prepare: check-resources check-payloads
 	@cp $(BASE_DIR)/voice.dat apps/resource-studio/local-game/origin/voice.dat
 	@cargo run -p patch-build -- materialize-parts --parts-dir content/patches/english --base-dir $(BASE_DIR) --output-dir apps/resource-studio/local-game/english
 	@cargo run -p patch-build -- materialize-parts --parts-dir content/patches/vietnamese --base-dir $(BASE_DIR) --output-dir apps/resource-studio/local-game/vietnamese
-	@cd apps/resource-studio && bun run dubbing:sync english && bun run dubbing:sync vietnamese
-	@printf '%s\n' 'Prepared private Studio workspaces. Start one with: cd apps/resource-studio && bun run dev-en'
+	@printf '%s\n' 'Prepared Studio workspaces from workspace/base and content/patches. Run make apply-dubbing LANGUAGE=<language> before editing dialogue or voices.'
 
-ensure-studio: check-language check-setup
-	@if [ "$(SETUP)" = 0 ]; then \
-	  printf '%s\n' 'Skipping workspace preparation (SETUP=0).'; \
-	elif [ "$(SETUP)" = 1 ]; then \
-	  $(MAKE) setup; \
-	else \
-	  missing=0; \
-	  for file in $(RESOURCE_FILES); do \
-	    if [ ! -f "apps/resource-studio/local-game/$(LANGUAGE)/$$file" ]; then missing=1; fi; \
-	  done; \
-	  for file in strings.dat voice.dat; do \
-	    if [ ! -f "apps/resource-studio/local-game/origin/$$file" ]; then missing=1; fi; \
-	  done; \
-	  if [ "$$missing" = 1 ]; then \
-	    printf '%s\n' 'Studio workspace is missing or incomplete; running make setup.'; \
-	    $(MAKE) setup; \
-	  else \
-	    printf '%s\n' 'Using the existing $(LANGUAGE) Studio workspace (SETUP=auto).'; \
-	  fi; \
-	fi
+check-studio: check-language
+	@missing=0; for file in $(RESOURCE_FILES); do \
+	  if [ ! -f "apps/resource-studio/local-game/$(LANGUAGE)/$$file" ]; then printf '%s\n' "Missing apps/resource-studio/local-game/$(LANGUAGE)/$$file. Run make prepare."; missing=1; fi; \
+	done; \
+	for file in strings.dat voice.dat; do \
+	  if [ ! -f "apps/resource-studio/local-game/origin/$$file" ]; then printf '%s\n' "Missing apps/resource-studio/local-game/origin/$$file. Run make prepare."; missing=1; fi; \
+	done; test $$missing -eq 0
+
+apply-dubbing: check-studio
+	@cd apps/resource-studio && bun run dubbing:check $(LANGUAGE) && bun run dubbing:sync $(LANGUAGE)
+
+export-dubbing: check-studio
+	@cd apps/resource-studio && bun run dubbing:export $(LANGUAGE) && bun run dubbing:check $(LANGUAGE)
 
 import-contribution:
 	@test -n "$(CONTRIBUTION)" || { printf '%s\n' 'Usage: make import-contribution CONTRIBUTION=workspace/<contribution>.zip'; exit 2; }
 	@cd apps/resource-studio && bun run dubbing:import -- "../../$(CONTRIBUTION)"
 
 studio-en:
-	@$(MAKE) ensure-studio LANGUAGE=english SETUP="$(SETUP)"
 	@cd apps/resource-studio && bun run dev-en
 
 studio-vi:
-	@$(MAKE) ensure-studio LANGUAGE=vietnamese SETUP="$(SETUP)"
 	@cd apps/resource-studio && bun run dev-vi
 
-build-dubbing: check-language check-publish check-game
-	@missing=0; for file in $(RESOURCE_FILES); do \
-	  if [ ! -f "apps/resource-studio/local-game/$(LANGUAGE)/$$file" ]; then printf '%s\n' "Missing apps/resource-studio/local-game/$(LANGUAGE)/$$file. Run make prepare after preserving any local graphics edits."; missing=1; fi; \
-	done; test $$missing -eq 0
-	@cd apps/resource-studio && bun run dubbing:check $(LANGUAGE) && bun run dubbing:sync $(LANGUAGE)
+build-dubbing: check-publish check-game export-dubbing
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts \
 	  --language "$(LANGUAGE)" \
@@ -165,15 +147,20 @@ build-dubbing: check-language check-publish check-game
 	  --output-dir "$(PATCH_DIR)/$(LANGUAGE)" \
 	  --target dubbing
 
-build-sprites: check-language check-publish check-game
+build-sprites: check-publish check-game check-studio
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target sprites
 
-build-runtime: check-language check-publish check-game
+build-runtime: check-publish check-game check-studio
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target runtime --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 
-build-patch: build-dubbing build-sprites build-runtime
+build-patch: check-language check-publish check-game check-studio
+	@cd apps/resource-studio && bun run dubbing:export $(LANGUAGE) && bun run dubbing:check $(LANGUAGE)
+	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
+	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target dubbing
+	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target sprites
+	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target runtime --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 
 release: check-payloads build-patcher
 

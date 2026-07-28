@@ -109,14 +109,20 @@ Place these files from an untouched game in `workspace/base/`:
 Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
 ```
 
-Then prepare ignored local workspaces:
+Install dependencies, then materialize the current component patches over the
+original game into ignored local workspaces:
 
 ```sh
+make dependencies
 make prepare
 ```
 
-`make prepare` materializes the current component patches and syncs canonical
-`content/dubbing/` into the English and Vietnamese workspaces.
+`make prepare` does not apply or overwrite canonical dubbing. Apply it
+explicitly to the workspace you intend to edit:
+
+```sh
+make apply-dubbing LANGUAGE=vietnamese
+```
 
 ### 2. Import or edit content
 
@@ -133,9 +139,10 @@ make studio-en
 make studio-vi
 ```
 
-Canonical dialogue and voice edits belong in `content/dubbing/`. Graphics and
-font work is maintained through Resource Studio and its generated local
-workspace.
+Studio edits live in the generated local workspace until `make build-patch`
+exports dialogue and voice changes back into canonical `content/dubbing/`.
+Graphics and font work stays in the local workspace and is included in the
+same component build.
 
 ### 3. Validate
 
@@ -190,13 +197,15 @@ Run `make help` for the same workflow in the terminal.
 | Command | Purpose |
 | --- | --- |
 | `make check` | Run Rust tests plus Resource Studio and Workshop checks/tests. |
-| `make prepare` | Validate workspace/base, materialize local-game, sync canonical content. |
+| `make dependencies` | Install locked Bun dependencies. |
+| `make prepare` | Materialize local-game from workspace/base and current patches only. |
+| `make apply-dubbing LANGUAGE=...` | Apply canonical dubbing to one prepared Studio workspace. |
 | `make import-contribution CONTRIBUTION=...` | Import and validate a Workshop contribution ZIP. |
-| `make studio-en` / `make studio-vi` | Prepare and launch a Studio workspace. |
-| `make build-dubbing LANGUAGE=... PUBLISH=1` | Build the dubbing component. |
+| `make studio-en` / `make studio-vi` | Launch an existing Studio workspace without preparing it. |
+| `make build-dubbing LANGUAGE=... PUBLISH=1` | Export Studio dubbing, then build the dubbing component. |
 | `make build-sprites LANGUAGE=... PUBLISH=1` | Build the graphics component. |
 | `make build-runtime LANGUAGE=... PUBLISH=1` | Build the runtime component. |
-| `make build-patch LANGUAGE=... PUBLISH=1` | Build all components for one language. |
+| `make build-patch LANGUAGE=... PUBLISH=1` | Export Studio dubbing, then build all components for one language. |
 | `make build-patcher` | Embed tracked components into `workspace/release/patcher.exe`. |
 | `make release` | Check payload presence and build a local patcher. |
 | `make translator-dev` | Run the public Workshop locally. |
