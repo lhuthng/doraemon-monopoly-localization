@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/game-patch", "rust/patch-build", "rust/patcher"]
+members = ["crates/game-patch", "crates/patch-build", "crates/patcher"]
 resolver = "2"
 
 [workspace.package]

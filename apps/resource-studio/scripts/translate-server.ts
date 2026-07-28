@@ -1,0 +1,191 @@
+import { pipeline, env } from '@huggingface/transformers';
+import { VIETNAMESE_TO_SLOT } from '@doraemon-monopoly/dubbing-core';
+
+type TargetLanguage = 'en' | 'vi';
+type ModelId = 'nllb' | 'm2m100';
+type TranslationResult = { translation_text: string };
+type Translator = (
+  text: string,
+  options: { src_lang: string; tgt_lang: string; max_new_tokens: number }
+) => Promise<TranslationResult | TranslationResult[]>;
+
+const MODELS: Record<
+  ModelId,
+  {
+    label: string;
+    model: string;
+    dtype: 'q8';
+    source: string;
+    targets: Record<TargetLanguage, string>;
+  }
+> = {
+  nllb: {
+    label: 'NLLB 200 distilled 600M',
+    model: 'Xenova/nllb-200-distilled-600M',
+    dtype: 'q8',
+    source: 'zho_Hant',
+    targets: { en: 'eng_Latn', vi: 'vie_Latn' }
+  },
+  m2m100: {
+    label: 'M2M100 418M',
+    model: 'Xenova/m2m100_418M',
+    dtype: 'q8',
+    source: 'zh',
+    targets: { en: 'en', vi: 'vi' }
+  }
+};
+
+const createTranslator = pipeline as unknown as (
+  task: 'translation',
+  model: string,
+  options: { dtype: 'q8' }
+) => Promise<Translator>;
+const translatorPromises = new Map<ModelId, Promise<Translator>>();
+const modelStates = new Map<
+  ModelId,
+  { state: 'idle' | 'loading' | 'ready' | 'error'; message?: string; startedAt?: number; finishedAt?: number }
+>(Object.keys(MODELS).map((id) => [id as ModelId, { state: 'idle' }]));
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-headers': 'content-type',
+      'content-type': 'application/json; charset=utf-8'
+    }
+  });
+}
+
+function cleanAsciiPunctuation(text: string) {
+  return text
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
+    .replaceAll('…', '...')
+    .replace(/Low Bunny Rich|Ding Dong Monopoly|Dingdang Monopoly/gi, 'Doraemon Monopoly')
+    .replace(/Wickrona/gi, 'Soft-World')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function vietnameseText(text: string) {
+  return cleanAsciiPunctuation(text)
+    .replace(/cửa tùy ý|cửa bất kỳ|cửa ở bất cứ đâu/gi, 'Cánh cửa thần kỳ')
+    .replace(/chuồn chuồn tre|chuồn chuồn bằng tre/gi, 'Chong chóng tre')
+    .replace(/bánh bao đậu đỏ|bánh đậu đỏ/gi, 'bánh rán')
+    .normalize('NFC')
+    .split('')
+    .filter((character) => character.charCodeAt(0) < 128 || VIETNAMESE_TO_SLOT.has(character))
+    .join('')
+    .trim();
+}
+
+function cleanupTranslation(text: string, target: TargetLanguage) {
+  if (target === 'en') return cleanAsciiPunctuation(text);
+  if (target === 'vi') return vietnameseText(text);
+  throw new Error(`No cleanup code is available for "${target}".`);
+}
+
+async function translator(modelId: ModelId) {
+  let translatorPromise = translatorPromises.get(modelId);
+  if (!translatorPromise) {
+    const model = MODELS[modelId];
+    modelStates.set(modelId, { state: 'loading', startedAt: Date.now(), message: `Loading ${model.label}…` });
+    env.allowLocalModels = false;
+    env.useBrowserCache = false;
+    env.useFSCache = true;
+    translatorPromise = createTranslator('translation', model.model, {
+      dtype: model.dtype
+    });
+    translatorPromise = translatorPromise
+      .then((loaded) => {
+        modelStates.set(modelId, {
+          state: 'ready',
+          finishedAt: Date.now(),
+          message: `${model.label} ready.`
+        });
+        return loaded;
+      })
+      .catch((error) => {
+        // Do not retain a rejected model promise: a transient download or ONNX
+        // cache failure must be recoverable on the next request.
+        translatorPromises.delete(modelId);
+        const detail = error instanceof Error ? error.message : String(error);
+        modelStates.set(modelId, { state: 'error', finishedAt: Date.now(), message: detail });
+        throw new Error(
+          `Could not load ${model.label}. The local model cache may be incomplete or corrupted; retry to download it again. Details: ${detail}`
+        );
+      });
+    translatorPromises.set(modelId, translatorPromise);
+  }
+  return translatorPromise;
+}
+
+async function translateText(text: string, target: TargetLanguage, modelId: ModelId) {
+  const model = MODELS[modelId];
+  const translate = await translator(modelId);
+  const result = await translate(text, {
+    src_lang: model.source,
+    tgt_lang: model.targets[target],
+    max_new_tokens: 192
+  });
+  const output = Array.isArray(result) ? result[0] : result;
+  if (!output || typeof output.translation_text !== 'string') {
+    throw new Error('The model returned no translation text.');
+  }
+  return cleanupTranslation(output.translation_text, target);
+}
+
+Bun.serve({
+  hostname: '127.0.0.1',
+  port: 5184,
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === 'OPTIONS') return json({});
+    if (url.pathname === '/api/health') {
+      return json({
+        ok: true,
+        models: Object.entries(MODELS).map(([id, model]) => ({ id, label: model.label, model: model.model }))
+      });
+    }
+    if (url.pathname === '/api/status' && request.method === 'GET') {
+      return json({ models: Object.fromEntries([...modelStates].map(([id, state]) => [id, state])) });
+    }
+    if (url.pathname === '/api/warmup' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const model = body?.model || 'nllb';
+        if (model !== 'nllb' && model !== 'm2m100') throw new Error('model must be "nllb" or "m2m100".');
+        void translator(model).catch(() => undefined);
+        return json({ accepted: true, model }, 202);
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+      }
+    }
+    if (url.pathname !== '/api/translate' || request.method !== 'POST')
+      return json({ error: 'Not found.' }, 404);
+
+    try {
+      const body = await request.json();
+      const target = body?.target;
+      const model = body?.model || 'nllb';
+      const texts = body?.texts;
+      if (target !== 'en' && target !== 'vi') throw new Error('target must be "en" or "vi".');
+      if (model !== 'nllb' && model !== 'm2m100') throw new Error('model must be "nllb" or "m2m100".');
+      if (!Array.isArray(texts) || !texts.every((text) => typeof text === 'string')) {
+        throw new Error('texts must be an array of strings.');
+      }
+      const translations: string[] = [];
+      for (const text of texts) {
+        translations.push(text.trim() ? await translateText(text, target, model) : '');
+      }
+      return json({ translations });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    }
+  }
+});
+
+console.log('Doraemon translation server listening on http://127.0.0.1:5184');

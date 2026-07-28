@@ -4,13 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'translator-site/**'
-      - 'dubbing-core/**'
-      - 'resource-studio/src/lib/generated-dubbing-catalogue.ts'
-      - 'resource-studio/src/lib/dubbing.ts'
-      - 'resource-studio/src/lib/formats.ts'
-      - 'resource-studio/src/lib/stored-zip.ts'
-      - 'resource-studio/src/lib/voice-formats.ts'
+      - 'apps/translator-workshop/**'
+      - 'packages/dubbing-core/**'
+      - 'apps/resource-studio/src/lib/generated-dubbing-catalogue.ts'
+      - 'packages/dubbing-core/src/**'
   workflow_dispatch:
 
 permissions:
@@ -32,11 +29,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-        working-directory: translator-site
+        working-directory: apps/translator-workshop
       - run: bun run build
-        working-directory: translator-site
+        working-directory: apps/translator-workshop
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: translator-site/build
+          path: apps/translator-workshop/build
       - id: deployment
         uses: actions/deploy-pages@v4

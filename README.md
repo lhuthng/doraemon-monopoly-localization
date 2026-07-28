@@ -55,34 +55,39 @@ There are two ZIP types:
 Maintainers can import a contribution automatically:
 
 ```sh
-make import-contribution CONTRIBUTION=tmp/doraemon-monopoly-vietnamese-dubbing.zip
+make import-contribution CONTRIBUTION=workspace/doraemon-monopoly-vietnamese-dubbing.zip
 ```
 
 The importer checks the format, language, supported resource fingerprints,
 record IDs, voice ownership, and WAV format. It creates a timestamped backup in
-`tmp/dubbing-import-backups/`, merges the contribution into `dubbing/`, and
-validates the result. It does not publish a patch automatically.
+`workspace/dubbing-import-backups/`, merges the contribution into
+`content/dubbing/`, and validates the result. It does not publish a patch
+automatically.
 
 ## Repository layout
 
 | Path | Role |
 | --- | --- |
-| `tmp/base/` | Private untouched game resources used for local builds. Never commit them. |
-| `dubbing/` | Canonical, reviewable dialogue and voice source. |
-| `resource-studio/` | Browser editors, import/export tools, and local scripts. |
-| `resource-studio/local-game/` | Ignored generated workspaces for editing and preview. |
-| `patches/<language>/` | Reviewable generated `dubbing`, `sprites`, and `runtime` components. |
-| `tmp/patches/` | Ignored candidate component output when `PUBLISH` is not set. |
-| `tmp/release/` | Ignored local Windows patcher output. |
-| `rust/game-patch/` | Archive, executable, audio, and installation logic. |
-| `rust/patch-build/` | Payload generation and Windows release packaging. |
-| `rust/patcher/` | Native Windows patcher UI. |
-| `translator-site/` | Public Translator Workshop website. |
+| `workspace/base/` | Private untouched game resources used for local builds. Never commit them. |
+| `apps/resource-studio/` | Browser editors, import/export tools, and local scripts. |
+| `apps/translator-workshop/` | Public Translator Workshop website. |
+| `packages/dubbing-core/` | Shared TypeScript primitives (archive parsing, audio, ZIP). |
+| `content/dubbing/` | Canonical, reviewable dialogue and voice source. |
+| `content/patches/<language>/` | Reviewable generated `dubbing`, `sprites`, and `runtime` components. |
+| `content/assets/` | Patcher/release assets (icons, etc.). |
+| `crates/game-patch/` | Archive, executable, audio, and installation logic. |
+| `crates/patch-build/` | Payload generation and Windows release packaging. |
+| `crates/patcher/` | Native Windows patcher UI. |
+| `tools/dubbing/` | Filesystem-oriented dubbing import, check, and sync tools. |
+| `docs/reference/` | Stable format documentation. |
+| `docs/research/` | Historical reverse-engineering notes. |
+| `vendor/cnc-ddraw/` | Vendored cnc-ddraw graphics compatibility wrapper. |
+| `workspace/` | Ignored local inputs, candidate patches, and generated output. |
 
 The source flow is:
 
 ```text
-contributor ZIP -> dubbing/ -> local-game workspace -> component patches
+contributor ZIP -> content/dubbing/ -> local-game workspace -> component patches
                  -> embedded Windows patcher -> player's own game
 ```
 
@@ -98,7 +103,7 @@ Install Rust/Cargo, Bun, and GNU MinGW when building Windows binaries on macOS:
 brew install mingw-w64
 ```
 
-Place these files from an untouched game in `tmp/base/`:
+Place these files from an untouched game in `workspace/base/`:
 
 ```text
 Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
@@ -107,19 +112,18 @@ Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.d
 Then prepare ignored local workspaces:
 
 ```sh
-make setup
+make prepare
 ```
 
-`make setup` materializes the current component patches and syncs canonical
-`dubbing/` into the English and Vietnamese workspaces. It does not replace the
-canonical source tree.
+`make prepare` materializes the current component patches and syncs canonical
+`content/dubbing/` into the English and Vietnamese workspaces.
 
 ### 2. Import or edit content
 
 For a Workshop contribution:
 
 ```sh
-make import-contribution CONTRIBUTION=tmp/<contribution>.zip
+make import-contribution CONTRIBUTION=workspace/<contribution>.zip
 ```
 
 For local work, launch one workspace:
@@ -129,13 +133,9 @@ make studio-en
 make studio-vi
 ```
 
-The Translation Studio edits strings, linked dialogue voices, and voice records.
-The Graphics Studio handles indexed bitmaps and sprites. Font Studio handles
-glyph banks, including Vietnamese extensions. The map view is currently an
-inspector rather than a map editor.
-
-Canonical dialogue and voice edits belong in `dubbing/`. Graphics and font work
-is maintained through Resource Studio and its generated local workspace.
+Canonical dialogue and voice edits belong in `content/dubbing/`. Graphics and
+font work is maintained through Resource Studio and its generated local
+workspace.
 
 ### 3. Validate
 
@@ -143,14 +143,6 @@ Run the complete local checks:
 
 ```sh
 make check
-```
-
-For focused dubbing checks:
-
-```sh
-cd resource-studio
-bun run dubbing:organize vietnamese
-bun run dubbing:check vietnamese
 ```
 
 ### 4. Build components
@@ -169,18 +161,16 @@ To build all three for one language:
 make build-patch LANGUAGE=vietnamese PUBLISH=1
 ```
 
-Without `PUBLISH=1`, component output goes to ignored `tmp/patches/` for a
+Without `PUBLISH=1`, component output goes to ignored `workspace/patches/` for a
 candidate build.
 
 ### 5. Package and test a patcher
-
-After the required components exist under `patches/`:
 
 ```sh
 make build-patcher
 ```
 
-The result is `tmp/release/patcher.exe`. Copy it beside a test game's
+The result is `workspace/release/patcher.exe`. Copy it beside a test game's
 `Doraemon.exe` on Windows 11, apply the selected language, test Play/Restore,
 and verify local music and wrapper options when relevant.
 
@@ -199,33 +189,37 @@ Run `make help` for the same workflow in the terminal.
 
 | Command | Purpose |
 | --- | --- |
-| `make check` | Run Rust tests plus Resource Studio type checks and tests. |
-| `make setup` | Generate ignored English/Vietnamese local workspaces. |
+| `make check` | Run Rust tests plus Resource Studio and Workshop checks/tests. |
+| `make prepare` | Validate workspace/base, materialize local-game, sync canonical content. |
 | `make import-contribution CONTRIBUTION=...` | Import and validate a Workshop contribution ZIP. |
 | `make studio-en` / `make studio-vi` | Prepare and launch a Studio workspace. |
 | `make build-dubbing LANGUAGE=... PUBLISH=1` | Build the dubbing component. |
 | `make build-sprites LANGUAGE=... PUBLISH=1` | Build the graphics component. |
 | `make build-runtime LANGUAGE=... PUBLISH=1` | Build the runtime component. |
 | `make build-patch LANGUAGE=... PUBLISH=1` | Build all components for one language. |
-| `make build-patcher` | Embed tracked components into `tmp/release/patcher.exe`. |
+| `make build-patcher` | Embed tracked components into `workspace/release/patcher.exe`. |
 | `make release` | Check payload presence and build a local patcher. |
 | `make translator-dev` | Run the public Workshop locally. |
-| `make translator-build` | Build the static Workshop into `tmp/contributor-kit/`. |
+| `make translator-build` | Build the static Workshop into `workspace/contributor-kit/`. |
 
 ## Development checks
 
 ```sh
 cargo test --workspace
-cd resource-studio
+cd apps/resource-studio
 bun run check
 bun run test
 bun run lint
 bun run build
 ```
 
-See [`resource-studio/README.md`](resource-studio/README.md) for editor routes
-and guarantees, [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution policy,
-and [`dubbing/README.md`](dubbing/README.md) for canonical source rules.
+See each domain README for specifics:
+
+- [`apps/resource-studio/README.md`](apps/resource-studio/README.md) — editor routes and guarantees.
+- [`apps/translator-workshop/README.md`](apps/translator-workshop/README.md) — contributor workflow.
+- [`packages/dubbing-core/README.md`](packages/dubbing-core/README.md) — shared package contract.
+- [`content/dubbing/README.md`](content/dubbing/README.md) — canonical source rules.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution policy.
 
 ## Legal
 
@@ -234,5 +228,5 @@ permissively licensed compatibility files. It does not contain the original
 game or replace the need for a legally obtained copy.
 
 cnc-ddraw is redistributed under its included MIT license. See
-[`third_party/cnc-ddraw/LICENSE`](third_party/cnc-ddraw/LICENSE) and the
+[`vendor/cnc-ddraw/LICENSE`](vendor/cnc-ddraw/LICENSE) and the
 [upstream project](https://github.com/FunkyFr3sh/cnc-ddraw).

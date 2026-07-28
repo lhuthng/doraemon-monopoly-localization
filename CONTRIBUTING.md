@@ -13,37 +13,38 @@ attach original game files.
 
 ## Maintainers
 
-Put an untouched, legally obtained game in `tmp/base/` and import a contribution
-without manually copying every file:
+Put an untouched, legally obtained game in `workspace/base/` and import a
+contribution without manually copying every file:
 
 ```sh
-make import-contribution CONTRIBUTION=tmp/doraemon-monopoly-vietnamese-dubbing.zip
+make import-contribution CONTRIBUTION=workspace/doraemon-monopoly-vietnamese-dubbing.zip
 ```
 
 The importer validates the manifest and supported base fingerprints, checks
-dialogue IDs and owners, checks voice IDs and WAV format, merges the contribution
-into `dubbing/<language>/`, and creates a timestamped backup in
-`tmp/dubbing-import-backups/`. It never commits original game files and does not
-publish a patch automatically.
+dialogue IDs and owners, checks voice IDs and WAV format, merges the
+contribution into `content/dubbing/<language>/`, and creates a timestamped
+backup in `workspace/dubbing-import-backups/`. It never commits original game
+files and does not publish a patch automatically.
 
 Prepare a local editing/build workspace when needed:
 
 ```sh
-make setup
+make prepare
 make studio-vi       # or make studio-en
 ```
 
-The canonical source is `dubbing/`. `resource-studio/local-game/` is generated
-and ignored. Use **Sync from dubbing** and **Save to dubbing** in Resource
-Studio when working interactively.
+The canonical source is `content/dubbing/`.
+`apps/resource-studio/local-game/` is generated and ignored. Use **Sync from
+dubbing** and **Save to dubbing** in Resource Studio when working
+interactively.
 
 Before committing source changes:
 
 ```sh
-cd resource-studio
+cd apps/resource-studio
 bun run dubbing:organize vietnamese
 bun run dubbing:check vietnamese
-cd ..
+cd ../..
 make check
 ```
 

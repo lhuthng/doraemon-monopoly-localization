@@ -1,0 +1,47 @@
+{
+  "name": "doraemon-monopoly-resource-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "setup-en": "bun scripts/prepare-local-game.ts english",
+    "setup-vi": "bun scripts/prepare-local-game.ts vietnamese",
+    "dev-en": "bun scripts/stage-game.ts english && vite",
+    "dev-vi": "bun scripts/stage-game.ts vietnamese && vite",
+    "dubbing:export": "bun ../../tools/dubbing/dubbing.ts export",
+    "dubbing:import": "bun ../../tools/dubbing/dubbing.ts import",
+    "dubbing:sync": "bun ../../tools/dubbing/dubbing.ts sync",
+    "dubbing:organize": "bun ../../tools/dubbing/dubbing.ts organize",
+    "dubbing:check": "bun ../../tools/dubbing/dubbing.ts check",
+    "dubbing:catalogue": "bun ../../tools/dubbing/dubbing.ts catalogue",
+    "bitmap-text": "bun scripts/bitmap-text.js",
+    "translate-server": "bun scripts/translate-server.ts",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "bun test",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@types/bun": "^1.3.14",
+    "eslint": "^10.7.0",
+    "eslint-plugin-svelte": "^3.20.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.5",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.7.2",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.64.0",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "@doraemon-monopoly/dubbing-core": "workspace:*",
+    "@huggingface/transformers": "3.8.1",
+    "sharp": "^0.35.3"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "doraemon-monopoly-localization",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
+}

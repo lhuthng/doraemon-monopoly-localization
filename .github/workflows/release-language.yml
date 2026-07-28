@@ -30,7 +30,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then tag="${{ inputs.tag }}"; else tag="${GITHUB_REF_NAME}"; fi
           for lang in english vietnamese; do
             for component in dubbing sprites runtime; do
-              test -f "patches/$lang/$component.dmpatch" || { echo "Missing patches/$lang/$component.dmpatch"; exit 1; }
+              test -f "content/patches/$lang/$component.dmpatch" || { echo "Missing content/patches/$lang/$component.dmpatch"; exit 1; }
             done
           done
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
@@ -46,10 +46,10 @@ jobs:
       - name: Package Windows patcher
         run: |
           cargo run -p patch-build -- universal \
-            --english-payload-dir patches/english \
-            --vietnamese-payload-dir patches/vietnamese \
+            --english-payload-dir content/patches/english \
+            --vietnamese-payload-dir content/patches/vietnamese \
             --output-dir release \
-            --cnc-ddraw-dir third_party/cnc-ddraw
+            --cnc-ddraw-dir vendor/cnc-ddraw
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
