@@ -863,6 +863,97 @@ fn patch_portable_options(
     Ok(output)
 }
 
+const PRIMARY_DIRECTSOUND_16BIT_GUARD: &[u8] = &[
+    0x8b, 0x4d, 0x90, 0x66, 0xc7, 0x81, 0xf8, 0x00, 0x00, 0x00, 0x01, 0x00, 0x8b, 0x55, 0x90,
+    0x66, 0xc7, 0x82, 0xfa, 0x00, 0x00, 0x00, 0x02, 0x00, 0x8b, 0x45, 0x90, 0xc7, 0x80, 0xfc,
+    0x00, 0x00, 0x00, 0x22, 0x56, 0x00, 0x00, 0x8b, 0x4d, 0x90, 0xc7, 0x81, 0x00, 0x01, 0x00,
+    0x00, 0x88, 0x58, 0x01, 0x00, 0x8b, 0x55, 0x90, 0x66, 0xc7, 0x82, 0x04, 0x01, 0x00, 0x00,
+    0x04, 0x00, 0x8b, 0x45, 0x90, 0x66, 0xc7, 0x80, 0x06, 0x01, 0x00, 0x00, 0x10, 0x00, 0x8b,
+    0x4d, 0x90, 0x66, 0xc7, 0x81, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00,
+];
+const PRIMARY_DIRECTSOUND_AVG_OFFSET: usize = 46;
+const PRIMARY_DIRECTSOUND_BLOCK_OFFSET: usize = 60;
+const PRIMARY_DIRECTSOUND_BITS_OFFSET: usize = 72;
+const PRIMARY_DIRECTSOUND_RATE_OFFSET: usize = 33;
+
+fn primary_directsound_8bit_guard() -> Vec<u8> {
+    let mut guard = PRIMARY_DIRECTSOUND_16BIT_GUARD.to_vec();
+    guard[PRIMARY_DIRECTSOUND_AVG_OFFSET..PRIMARY_DIRECTSOUND_AVG_OFFSET + 4]
+        .copy_from_slice(&44_100u32.to_le_bytes());
+    guard[PRIMARY_DIRECTSOUND_BLOCK_OFFSET..PRIMARY_DIRECTSOUND_BLOCK_OFFSET + 2]
+        .copy_from_slice(&2u16.to_le_bytes());
+    guard[PRIMARY_DIRECTSOUND_BITS_OFFSET..PRIMARY_DIRECTSOUND_BITS_OFFSET + 2]
+        .copy_from_slice(&8u16.to_le_bytes());
+    guard
+}
+
+fn unique_guard_offset(input: &[u8], guard: &[u8]) -> Result<Option<usize>> {
+    let mut matches = input
+        .windows(guard.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == guard).then_some(offset));
+    let first = matches.next();
+    if matches.next().is_some() {
+        return Err("the primary DirectSound format guard matched more than once".into());
+    }
+    Ok(first)
+}
+
+/// Changes only the primary DirectSound PCM output from 16-bit stereo to
+/// 8-bit stereo. The 22,050 Hz sample rate is part of the guarded instruction
+/// sequence and is deliberately left unchanged.
+pub fn patch_primary_directsound_8bit(input: &[u8]) -> Result<Vec<u8>> {
+    if input.get(0x85043) == Some(&0xe9)
+        && find_bytes(input, b"BGMRT4\0").is_some()
+        && find_bytes(input, b"BGMRT5\0").is_none()
+    {
+        return Err("this executable has the older 16-bit local-music runtime enabled; restore it and reapply with the updated patcher before selecting 8-bit DirectSound".into());
+    }
+    let patched_guard = primary_directsound_8bit_guard();
+    if unique_guard_offset(input, &patched_guard)?.is_some() {
+        return Ok(input.to_vec());
+    }
+    let offset = unique_guard_offset(input, PRIMARY_DIRECTSOUND_16BIT_GUARD)?
+        .ok_or("could not locate the verified 22,050 Hz stereo DirectSound format initializer")?;
+    let mut output = input.to_vec();
+    output[offset + PRIMARY_DIRECTSOUND_AVG_OFFSET
+        ..offset + PRIMARY_DIRECTSOUND_AVG_OFFSET + 4]
+        .copy_from_slice(&44_100u32.to_le_bytes());
+    output[offset + PRIMARY_DIRECTSOUND_BLOCK_OFFSET
+        ..offset + PRIMARY_DIRECTSOUND_BLOCK_OFFSET + 2]
+        .copy_from_slice(&2u16.to_le_bytes());
+    output[offset + PRIMARY_DIRECTSOUND_BITS_OFFSET
+        ..offset + PRIMARY_DIRECTSOUND_BITS_OFFSET + 2]
+        .copy_from_slice(&8u16.to_le_bytes());
+
+    let allowed = [
+        PRIMARY_DIRECTSOUND_AVG_OFFSET..PRIMARY_DIRECTSOUND_AVG_OFFSET + 4,
+        PRIMARY_DIRECTSOUND_BLOCK_OFFSET..PRIMARY_DIRECTSOUND_BLOCK_OFFSET + 2,
+        PRIMARY_DIRECTSOUND_BITS_OFFSET..PRIMARY_DIRECTSOUND_BITS_OFFSET + 2,
+    ];
+    if input
+        .iter()
+        .zip(&output)
+        .enumerate()
+        .any(|(index, (before, after))| {
+            before != after
+                && !allowed
+                    .iter()
+                    .any(|range| range.contains(&index.saturating_sub(offset)))
+        })
+    {
+        return Err("DirectSound 8-bit verification found an unrelated byte change".into());
+    }
+    if output[offset + PRIMARY_DIRECTSOUND_RATE_OFFSET
+        ..offset + PRIMARY_DIRECTSOUND_RATE_OFFSET + 4]
+        != 22_050u32.to_le_bytes()
+        || unique_guard_offset(&output, &patched_guard)? != Some(offset)
+    {
+        return Err("DirectSound 8-bit verification failed".into());
+    }
+    Ok(output)
+}
+
 /// Convenience wrapper for the default no-disc portable configuration.
 pub fn patch_portable(verified: &[u8]) -> Result<Vec<u8>> {
     patch_portable_options(verified, true, true, true, false)
@@ -1061,7 +1152,7 @@ fn install_local_music_bgm_volume_hook(
 
 /// Upgrades an older `.port` patch with the current BGM volume hook in place.
 fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"BGMRT4\0").is_some() {
+    if find_bytes(output, b"BGMRT5\0").is_some() {
         let (_, labels) = portable_section(false, b"\0")?;
         return install_local_music_bgm_volume_hook(
             output,
@@ -1097,12 +1188,46 @@ fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     )
 }
 
+/// Replaces the previous embedded streamer with the format-adaptive build.
+/// Its entry point may move when the C payload changes, so the dispatch pointer
+/// in the fixed `.port` core is updated together with the runtime bytes.
+fn install_bgm_runtime_v5_upgrade(output: &mut [u8]) -> Result<bool> {
+    if find_bytes(output, b"BGMRT5\0").is_some() {
+        return Ok(false);
+    }
+    if find_bytes(output, b"BGMRT4\0").is_none() {
+        return Ok(false);
+    }
+    let section = find_section(output, b".port")?;
+    let raw_size =
+        u32::from_le_bytes(output[section + 16..section + 20].try_into().unwrap()) as usize;
+    let raw = u32::from_le_bytes(output[section + 20..section + 24].try_into().unwrap()) as usize;
+    if raw_size < PORT_BGM_OFFSET + BGM_RUNTIME.len()
+        || raw + PORT_BGM_OFFSET + BGM_RUNTIME.len() > output.len()
+    {
+        return Err("existing .port section has no safe room for the updated BGM runtime".into());
+    }
+    let (_, labels) = portable_section(false, b"\0")?;
+    let dispatch_raw = raw
+        + labels["audio_dispatch"]
+            .checked_sub(PORT_VA)
+            .ok_or("invalid embedded BGM dispatch pointer")? as usize;
+    output[dispatch_raw..dispatch_raw + 4]
+        .copy_from_slice(&bgm_symbols::BGMDISPATCH.to_le_bytes());
+    output[raw + PORT_BGM_OFFSET..raw + PORT_BGM_OFFSET + BGM_RUNTIME.len()]
+        .copy_from_slice(BGM_RUNTIME);
+    if find_bytes(output, b"BGMRT5\0").is_none() {
+        return Err("embedded BGM runtime upgrade failed verification".into());
+    }
+    Ok(true)
+}
+
 /// Upgrades an already portable executable to local BGM.dat playback.
 fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
     if find_bytes(output, b"doraudio.dll\0").is_some() {
         return Err("this executable uses the retired doraudio.dll/Music.dat backend; restore the original executable before enabling BGM.dat".into());
     }
-    if find_bytes(output, b"BGMRT4\0").is_none() {
+    if find_bytes(output, b"BGMRT5\0").is_none() {
         return Err("this older portable build predates embedded BGM.dat streaming; restore the original executable before enabling local music".into());
     }
     let (_, labels) = portable_section(false, b"\0")?;
@@ -1168,7 +1293,10 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
 
 /// Restores the original CD/MCI Music routines and constructor fallback.
 fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"BGMRT4\0").is_none() || output.get(0x85043) != Some(&0xe9) {
+    if (find_bytes(output, b"BGMRT5\0").is_none()
+        && find_bytes(output, b"BGMRT4\0").is_none())
+        || output.get(0x85043) != Some(&0xe9)
+    {
         return Ok(false);
     }
     let (_, labels) = portable_section(false, b"\0")?;
@@ -1334,6 +1462,7 @@ pub fn patch_compatible(
     let already_portable = find_section(input, b".port").is_ok();
     if already_portable {
         let mut output = input.to_vec();
+        let upgraded_bgm_runtime = install_bgm_runtime_v5_upgrade(&mut output)?;
         let added_credit = install_title_credit_in_existing_port(&mut output)?;
         let upgraded_local_music = if canonical_layout && local_audio_requested {
             install_local_music_runtime_upgrade(&mut output)?
@@ -1351,6 +1480,11 @@ pub fn patch_compatible(
             false
         };
         let mut actions = Vec::new();
+        if upgraded_bgm_runtime {
+            actions.push(
+                "upgraded local BGM.dat streaming for 8-bit DirectSound compatibility".into(),
+            );
+        }
         if added_credit {
             actions.push("added the title-screen patch credit".into());
         }
@@ -1500,7 +1634,7 @@ mod tests {
             bgm_symbols::BGMDISPATCH
         );
         assert!(find_bytes(&section, b"BGM.dat\0").is_some());
-        assert!(find_bytes(&section, b"BGMRT4\0").is_some());
+        assert!(find_bytes(&section, b"BGMRT5\0").is_some());
         assert!(find_bytes(&section, b"doraudio.dll\0").is_none());
         let open = (labels["open_music"] - PORT_VA) as usize;
         let play = (labels["play"] - PORT_VA) as usize;
@@ -1546,12 +1680,127 @@ mod tests {
     fn rejects_unknown_executable() {
         assert!(build_variants(&[0; 128], false).is_err());
     }
+
+    #[test]
+    fn primary_directsound_8bit_changes_only_requested_constants() {
+        let prefix = 19;
+        let mut original = vec![0xa5; prefix];
+        original.extend_from_slice(PRIMARY_DIRECTSOUND_16BIT_GUARD);
+        original.extend_from_slice(&[0x5a; 23]);
+
+        let patched = patch_primary_directsound_8bit(&original).unwrap();
+        let changed: Vec<_> = original
+            .iter()
+            .zip(&patched)
+            .enumerate()
+            .filter_map(|(offset, (before, after))| (before != after).then_some(offset))
+            .collect();
+        assert_eq!(
+            changed,
+            vec![
+                prefix + PRIMARY_DIRECTSOUND_AVG_OFFSET,
+                prefix + PRIMARY_DIRECTSOUND_AVG_OFFSET + 1,
+                prefix + PRIMARY_DIRECTSOUND_AVG_OFFSET + 2,
+                prefix + PRIMARY_DIRECTSOUND_BLOCK_OFFSET,
+                prefix + PRIMARY_DIRECTSOUND_BITS_OFFSET,
+            ]
+        );
+        assert_eq!(
+            &patched[prefix + PRIMARY_DIRECTSOUND_RATE_OFFSET
+                ..prefix + PRIMARY_DIRECTSOUND_RATE_OFFSET + 4],
+            &22_050u32.to_le_bytes()
+        );
+        assert_eq!(
+            &patched[prefix + PRIMARY_DIRECTSOUND_AVG_OFFSET
+                ..prefix + PRIMARY_DIRECTSOUND_AVG_OFFSET + 4],
+            &44_100u32.to_le_bytes()
+        );
+        assert_eq!(
+            &patched[prefix + PRIMARY_DIRECTSOUND_BLOCK_OFFSET
+                ..prefix + PRIMARY_DIRECTSOUND_BLOCK_OFFSET + 2],
+            &2u16.to_le_bytes()
+        );
+        assert_eq!(
+            &patched[prefix + PRIMARY_DIRECTSOUND_BITS_OFFSET
+                ..prefix + PRIMARY_DIRECTSOUND_BITS_OFFSET + 2],
+            &8u16.to_le_bytes()
+        );
+        assert_eq!(patch_primary_directsound_8bit(&patched).unwrap(), patched);
+    }
+
+    #[test]
+    fn primary_directsound_8bit_rejects_unguarded_or_ambiguous_input() {
+        assert!(patch_primary_directsound_8bit(&[0; 128]).is_err());
+        let mut duplicate = PRIMARY_DIRECTSOUND_16BIT_GUARD.to_vec();
+        duplicate.extend_from_slice(PRIMARY_DIRECTSOUND_16BIT_GUARD);
+        assert!(patch_primary_directsound_8bit(&duplicate).is_err());
+    }
+
+    #[test]
+    fn old_local_music_runtime_upgrades_when_fixture_is_available() {
+        let Ok(path) = std::env::var("DORAEMON_TEST_PORTABLE_EXE") else {
+            return;
+        };
+        let old = std::fs::read(path).unwrap();
+        assert!(find_bytes(&old, b"BGMRT4\0").is_some());
+        let upgraded = patch_compatible(&old, true, true, true, false).unwrap();
+        assert!(find_bytes(&upgraded.bytes, b"BGMRT5\0").is_some());
+        let combined = patch_primary_directsound_8bit(&upgraded.bytes).unwrap();
+        assert_eq!(&combined[0x88e92..0x88e96], &44_100u32.to_le_bytes());
+        assert_eq!(&combined[0x88ea0..0x88ea2], &2u16.to_le_bytes());
+        assert_eq!(&combined[0x88eac..0x88eae], &8u16.to_le_bytes());
+        assert_eq!(combined[0x85043], 0xe9);
+    }
+
     #[test]
     fn real_fixture_matches_verified_portable_patch_when_available() {
         let Ok(folder) = std::env::var("DORAEMON_TEST_DATA_DIR") else {
             return;
         };
         let original = std::fs::read(std::path::Path::new(&folder).join("Doraemon.exe")).unwrap();
+        let primary_8bit = patch_primary_directsound_8bit(&original).unwrap();
+        assert_eq!(primary_8bit.len(), original.len());
+        for vietnamese in [false, true] {
+            for no_disc in [false, true] {
+                for no_reg in [false, true] {
+                    for local_audio in [false, true] {
+                        for modern_volume in [false, true] {
+                            for primary_8bit in [false, true] {
+                                let runtime = patch_language_runtime(
+                                    &original,
+                                    vietnamese,
+                                    no_disc,
+                                    no_reg,
+                                    local_audio,
+                                    modern_volume,
+                                )
+                                .unwrap();
+                                let combined = if primary_8bit {
+                                    patch_primary_directsound_8bit(&runtime.bytes).unwrap()
+                                } else {
+                                    runtime.bytes
+                                };
+                                if primary_8bit {
+                                    assert_eq!(
+                                        &combined[0x88e92..0x88e96],
+                                        &44_100u32.to_le_bytes()
+                                    );
+                                    assert_eq!(&combined[0x88ea0..0x88ea2], &2u16.to_le_bytes());
+                                    assert_eq!(&combined[0x88eac..0x88eae], &8u16.to_le_bytes());
+                                }
+                                if local_audio {
+                                    assert!(find_bytes(&combined, b"BGMRT5\0").is_some());
+                                    assert_eq!(combined[0x85043], 0xe9);
+                                }
+                                if modern_volume {
+                                    assert_eq!(combined[0x8b3b0], 0xe8);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let (_, portable) = build_variants(&original, false).unwrap();
         assert_ne!(hash::bytes(&portable), hash::bytes(&original));
         assert_eq!(
@@ -1729,6 +1978,27 @@ mod tests {
             .actions
             .iter()
             .any(|action| action == "added the title-screen patch credit"));
+        let mut v4_portable = portable.clone();
+        let marker = find_bytes(&v4_portable, b"BGMRT5\0").unwrap();
+        v4_portable[marker..marker + 7].copy_from_slice(b"BGMRT4\0");
+        assert!(patch_primary_directsound_8bit(&v4_portable).is_err());
+        let port = find_section(&v4_portable, b".port").unwrap();
+        let port_raw =
+            u32::from_le_bytes(v4_portable[port + 20..port + 24].try_into().unwrap()) as usize;
+        let (_, labels) = portable_section(false, b"\0").unwrap();
+        let dispatch_raw = port_raw + (labels["audio_dispatch"] - PORT_VA) as usize;
+        v4_portable[dispatch_raw..dispatch_raw + 4]
+            .copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        let upgraded_runtime =
+            patch_compatible(&v4_portable, true, true, true, false).unwrap();
+        assert!(find_bytes(&upgraded_runtime.bytes, b"BGMRT5\0").is_some());
+        assert_eq!(
+            &upgraded_runtime.bytes[dispatch_raw..dispatch_raw + 4],
+            &bgm_symbols::BGMDISPATCH.to_le_bytes()
+        );
+        assert!(upgraded_runtime.actions.iter().any(|action| {
+            action == "upgraded local BGM.dat streaming for 8-bit DirectSound compatibility"
+        }));
         let (plain_vi, portable_vi) = build_variants(&original, true).unwrap();
         assert_eq!(plain_vi.as_ref().unwrap().len(), original.len());
         assert_eq!(portable_vi.len(), original.len() + PORT_SIZE);

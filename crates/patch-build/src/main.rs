@@ -75,8 +75,35 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload-dir DIR] [--vietnamese-payload-dir DIR] [--cnc-ddraw-dir DIR]\n  (legacy monolithic and multipart inputs remain supported for migration)");
+    eprintln!("Usage:\n  patch-build directsound-8bit --input Doraemon.exe --output Doraemon-8bit.exe\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload-dir DIR] [--vietnamese-payload-dir DIR] [--cnc-ddraw-dir DIR]\n  (legacy monolithic and multipart inputs remain supported for migration)");
     std::process::exit(2)
+}
+
+fn directsound_8bit(arguments: &[String]) -> Result<(), String> {
+    let input = PathBuf::from(value(arguments, "--input").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    if input == output {
+        return Err("--output must be a separate file so the original executable is preserved".into());
+    }
+    let original =
+        fs::read(&input).map_err(|error| format!("{}: {error}", input.display()))?;
+    let patched = pe::patch_primary_directsound_8bit(&original)?;
+    if patched == original {
+        return Err("the input executable already uses the guarded 8-bit DirectSound format".into());
+    }
+    fs::write(&output, &patched)
+        .map_err(|error| format!("{}: {error}", output.display()))?;
+    let verified =
+        fs::read(&output).map_err(|error| format!("verify {}: {error}", output.display()))?;
+    if verified != patched {
+        return Err(format!("{} failed write verification", output.display()));
+    }
+    println!(
+        "Wrote {} without changing {}. Verified 22,050 Hz stereo, 44,100 bytes/sec, 2-byte blocks, and 8-bit samples.",
+        output.display(),
+        input.display()
+    );
+    Ok(())
 }
 
 fn merge_parts(arguments: &[String]) -> Result<(), String> {
@@ -1149,6 +1176,7 @@ fn portable(arguments: &[String]) -> Result<(), String> {
 fn main() {
     let arguments: Vec<String> = env::args().skip(1).collect();
     let result = match arguments.first().map(String::as_str) {
+        Some("directsound-8bit") => directsound_8bit(&arguments[1..]),
         Some("vi-font") => vi_font(&arguments[1..]),
         Some("extract-audio") => extract_audio(&arguments[1..]),
         Some("release") => release(&arguments[1..]),

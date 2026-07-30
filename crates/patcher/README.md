@@ -3,7 +3,8 @@
 Native Windows UI patcher for applying language patches to Doraemon Monopoly.
 
 - Provides backup/restore for original game files.
-- Applies language, music, and graphics wrapper options.
+- Applies language, music, DirectSound, and graphics wrapper options.
+- Shows concise hover help on the dashed underline beneath every option.
 - Designed for local build and Windows verification only.
 
 ## Windows verification checklist
@@ -12,3 +13,7 @@ Native Windows UI patcher for applying language patches to Doraemon Monopoly.
 2. Apply each language option and verify in-game text.
 3. Test Restore backup functionality.
 4. Test local music and cnc-ddraw wrapper options.
+5. Enable 8-bit DirectSound and verify the game uses 22,050 Hz stereo,
+   44,100 bytes/sec, 2-byte blocks, and 8-bit samples.
+6. Enable local music, modern volume control, and 8-bit DirectSound together;
+   verify menu music starts through the format-adaptive embedded runtime.

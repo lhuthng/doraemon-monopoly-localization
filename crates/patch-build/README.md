@@ -7,3 +7,5 @@ This crate handles:
 - `release-parts` — generate `.dmpatch` payloads for dubbing, sprites, runtime.
 - `materialize-parts` — rebuild a working local-game from patches and base.
 - `universal` — package tracked components and cnc-ddraw into a patcher.exe.
+- `directsound-8bit` — write a separate guarded 8-bit DirectSound executable
+  while preserving the input file.

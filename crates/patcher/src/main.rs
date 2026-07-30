@@ -145,6 +145,7 @@ mod windows_app {
         no_reg: nwg::CheckBox,
         local_audio: nwg::CheckBox,
         modern_volume: nwg::CheckBox,
+        primary_audio_8bit: nwg::CheckBox,
         audio_group: nwg::ControlHandle,
         reduce_bgm: nwg::CheckBox,
         optimize_voice: nwg::CheckBox,
@@ -163,6 +164,8 @@ mod windows_app {
         log_group: nwg::ControlHandle,
         log: nwg::RichTextBox,
         exit: nwg::Button,
+        option_hints: Vec<nwg::Label>,
+        option_tooltips: nwg::Tooltip,
         timer: nwg::AnimationTimer,
     }
 
@@ -428,7 +431,7 @@ mod windows_app {
             let mut ui = Self::default();
 
             nwg::Window::builder()
-                .size((640, 730))
+                .size((640, 754))
                 .position((300, 150))
                 .title("Doraemon Monopoly Patcher")
                 .flags(
@@ -481,7 +484,7 @@ mod windows_app {
                 12,
                 66,
                 616,
-                214,
+                238,
                 &ui.group_font,
             )?;
 
@@ -540,16 +543,24 @@ mod windows_app {
                 .parent(&ui.window)
                 .build(&mut ui.modern_volume)?;
 
+            nwg::CheckBox::builder()
+                .text("Use 8-bit DirectSound output (Windows 95 / v86)")
+                .check_state(nwg::CheckBoxState::Unchecked)
+                .position((24, 241))
+                .size((440, 20))
+                .parent(&ui.window)
+                .build(&mut ui.primary_audio_8bit)?;
+
             nwg::Label::builder()
                 .text(&music_text(game))
-                .position((24, 241))
+                .position((24, 265))
                 .size((420, 28))
                 .parent(&ui.window)
                 .build(&mut ui.music)?;
 
             nwg::Button::builder()
                 .text("Refresh")
-                .position((520, 246))
+                .position((520, 270))
                 .size((85, 24))
                 .parent(&ui.window)
                 .build(&mut ui.refresh_music)?;
@@ -557,11 +568,11 @@ mod windows_app {
             // -- Actions group box --
 
             ui.actions_group =
-                make_group_box(&ui.window, " Actions ", 12, 290, 616, 56, &ui.group_font)?;
+                make_group_box(&ui.window, " Actions ", 12, 314, 616, 56, &ui.group_font)?;
 
             nwg::Button::builder()
                 .text("Apply patch")
-                .position((24, 308))
+                .position((24, 332))
                 .size((125, 30))
                 .parent(&ui.window)
                 .build(&mut ui.apply)?;
@@ -569,7 +580,7 @@ mod windows_app {
             nwg::Button::builder()
                 .text("Restore backup")
                 .enabled(game.join("backup").is_dir())
-                .position((160, 308))
+                .position((160, 332))
                 .size((130, 30))
                 .parent(&ui.window)
                 .build(&mut ui.restore)?;
@@ -577,7 +588,7 @@ mod windows_app {
             nwg::Button::builder()
                 .text("Add graphics wrapper")
                 .enabled(true)
-                .position((301, 308))
+                .position((301, 332))
                 .size((165, 30))
                 .parent(&ui.window)
                 .build(&mut ui.wrapper)?;
@@ -585,7 +596,7 @@ mod windows_app {
             nwg::Button::builder()
                 .text("Play")
                 .enabled(game.join("Doraemon.exe").is_file())
-                .position((477, 308))
+                .position((477, 332))
                 .size((128, 30))
                 .parent(&ui.window)
                 .build(&mut ui.play)?;
@@ -593,7 +604,7 @@ mod windows_app {
             // -- Audio group box --
 
             ui.audio_group =
-                make_group_box(&ui.window, " Audio ", 12, 356, 616, 94, &ui.group_font)?;
+                make_group_box(&ui.window, " Audio ", 12, 380, 616, 94, &ui.group_font)?;
 
             nwg::CheckBox::builder()
                 .text("Reduce BGM.dat")
@@ -602,7 +613,7 @@ mod windows_app {
                     find_cue(game).is_some()
                         || cue::valid_wav(&game.join("DoraemonMusic.wav")),
                 )
-                .position((24, 378))
+                .position((24, 402))
                 .size((180, 20))
                 .parent(&ui.window)
                 .build(&mut ui.reduce_bgm)?;
@@ -610,14 +621,14 @@ mod windows_app {
             nwg::CheckBox::builder()
                 .text("Reduce Voice.dat")
                 .check_state(nwg::CheckBoxState::Unchecked)
-                .position((220, 378))
+                .position((220, 402))
                 .size((210, 20))
                 .parent(&ui.window)
                 .build(&mut ui.optimize_voice)?;
 
             nwg::Label::builder()
                 .text("Quality:")
-                .position((24, 410))
+                .position((24, 434))
                 .size((60, 20))
                 .parent(&ui.window)
                 .build(&mut ui.voice_quality_label)?;
@@ -630,7 +641,7 @@ mod windows_app {
                     "Compact".into(),
                 ])
                 .selected_index(Some(0))
-                .position((88, 406))
+                .position((88, 430))
                 .size((190, 26))
                 .parent(&ui.window)
                 .build(&mut ui.voice_quality)?;
@@ -638,7 +649,7 @@ mod windows_app {
             nwg::Button::builder()
                 .text("Compress")
                 .enabled(false)
-                .position((480, 400))
+                .position((480, 424))
                 .size((125, 30))
                 .parent(&ui.window)
                 .build(&mut ui.audio_apply)?;
@@ -650,19 +661,19 @@ mod windows_app {
                 .pos(0)
                 .step(1)
                 .size((616, 22))
-                .position((12, 460))
+                .position((12, 484))
                 .parent(&ui.window)
                 .build(&mut ui.progress)?;
 
             // -- Log group box --
 
             ui.log_group =
-                make_group_box(&ui.window, " Log ", 12, 492, 616, 190, &ui.group_font)?;
+                make_group_box(&ui.window, " Log ", 12, 516, 616, 190, &ui.group_font)?;
 
             nwg::RichTextBox::builder()
                 .text("")
                 .readonly(true)
-                .position((24, 514))
+                .position((24, 538))
                 .size((592, 158))
                 .parent(&ui.window)
                 .build(&mut ui.log)?;
@@ -673,10 +684,52 @@ mod windows_app {
 
             nwg::Button::builder()
                 .text("Exit")
-                .position((548, 690))
+                .position((548, 714))
                 .size((80, 24))
                 .parent(&ui.window)
                 .build(&mut ui.exit)?;
+
+            for (text, x, y, width) in [
+                ("┄┄┄┄┄┄┄┄┄", 24, 99, 82),
+                ("┄┄┄┄┄┄┄┄┄┄┄┄", 42, 157, 116),
+                ("┄┄┄┄┄┄┄┄┄┄┄┄┄┄", 42, 181, 130),
+                ("┄┄┄┄┄┄┄┄┄┄┄", 42, 205, 105),
+                ("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄", 42, 229, 270),
+                ("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄", 42, 253, 290),
+                ("┄┄┄┄┄┄┄┄", 42, 414, 82),
+                ("┄┄┄┄┄┄┄┄┄┄", 238, 414, 96),
+                ("┄┄┄┄┄┄", 24, 445, 55),
+            ] {
+                let mut hint = nwg::Label::default();
+                nwg::Label::builder()
+                    .text(text)
+                    .position((x, y))
+                    .size((width, 12))
+                    .parent(&ui.window)
+                    .build(&mut hint)?;
+                ui.option_hints.push(hint);
+            }
+            nwg::Tooltip::builder()
+                .default_decoration(Some("Why this option?"), Some(nwg::TooltipIcon::Info))
+                .register(&ui.language, "Select which localized game resources to install. <original> keeps the current language.")
+                .register(&ui.option_hints[0], "Select which localized game resources to install. <original> keeps the current language.")
+                .register(&ui.no_disc, "Bypasses the original CD check so supported installations can start without the disc mounted.")
+                .register(&ui.option_hints[1], "Bypasses the original CD check so supported installations can start without the disc mounted.")
+                .register(&ui.no_reg, "Bypasses the old Setup registry requirement, which is often missing on newer Windows and Wine.")
+                .register(&ui.option_hints[2], "Bypasses the old Setup registry requirement, which is often missing on newer Windows and Wine.")
+                .register(&ui.local_audio, "Streams a verified BGM.dat through DirectSound instead of using CD/MCI music.")
+                .register(&ui.option_hints[3], "Streams a verified BGM.dat through DirectSound instead of using CD/MCI music.")
+                .register(&ui.modern_volume, "Routes the legacy mixer controls through DirectSound so volume works on Windows 7+ and CrossOver.")
+                .register(&ui.option_hints[4], "Routes the legacy mixer controls through DirectSound so volume works on Windows 7+ and CrossOver.")
+                .register(&ui.primary_audio_8bit, "Keeps 22,050 Hz stereo but uses 8-bit samples, forcing Windows 95/v86 onto SB16 DMA1 instead of the distorted 16-bit DMA5 path.")
+                .register(&ui.option_hints[5], "Keeps 22,050 Hz stereo but uses 8-bit samples, forcing Windows 95/v86 onto SB16 DMA1 instead of the distorted 16-bit DMA5 path.")
+                .register(&ui.reduce_bgm, "Re-encodes disc music more compactly to reduce BGM.dat size.")
+                .register(&ui.option_hints[6], "Re-encodes disc music more compactly to reduce BGM.dat size.")
+                .register(&ui.optimize_voice, "Re-encodes voice clips more compactly to reduce Voice.dat size.")
+                .register(&ui.option_hints[7], "Re-encodes voice clips more compactly to reduce Voice.dat size.")
+                .register(&ui.voice_quality, "Choose the size/quality balance used when compressing BGM.dat or Voice.dat.")
+                .register(&ui.option_hints[8], "Choose the size/quality balance used when compressing BGM.dat or Voice.dat.")
+                .build(&mut ui.option_tooltips)?;
 
             nwg::AnimationTimer::builder()
                 .parent(&ui.window)
@@ -766,6 +819,10 @@ mod windows_app {
             ui.wrapper.set_enabled(false);
             ui.play.set_enabled(game.join("Doraemon.exe").is_file());
             ui.no_disc.set_enabled(false);
+            ui.no_reg.set_enabled(false);
+            ui.local_audio.set_enabled(false);
+            ui.modern_volume.set_enabled(false);
+            ui.primary_audio_8bit.set_enabled(false);
             append_log(
                 &ui,
                 TaskState::Working,
@@ -1056,7 +1113,7 @@ mod windows_app {
                                     },
                                 ) == nwg::MessageChoice::Yes
                             });
-                    let mut options = ApplyOptions {
+                    let options = ApplyOptions {
                         no_disc: !audio_only
                             && ui.no_disc.check_state() == nwg::CheckBoxState::Checked,
                         no_reg: !audio_only
@@ -1065,6 +1122,9 @@ mod windows_app {
                             && ui.local_audio.check_state() == nwg::CheckBoxState::Checked,
                         modern_volume: !audio_only
                             && ui.modern_volume.check_state() == nwg::CheckBoxState::Checked,
+                        primary_audio_8bit: !audio_only
+                            && ui.primary_audio_8bit.check_state()
+                                == nwg::CheckBoxState::Checked,
                         cue: find_cue(&events_game),
                         reduce_bgm: audio_only
                             && ui.reduce_bgm.check_state() == nwg::CheckBoxState::Checked,
@@ -1122,6 +1182,7 @@ mod windows_app {
                                 || options.no_reg
                                 || options.local_audio
                                 || options.modern_volume
+                                || options.primary_audio_8bit
                                 || options.reduce_bgm
                                 || options.optimize_voice;
                             let backup = game.join("backup");

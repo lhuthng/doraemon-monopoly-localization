@@ -17,6 +17,7 @@ pub struct ApplyOptions {
     pub no_reg: bool,
     pub local_audio: bool,
     pub modern_volume: bool,
+    pub primary_audio_8bit: bool,
     pub cue: Option<PathBuf>,
     pub reduce_bgm: bool,
     pub optimize_voice: bool,
@@ -445,13 +446,22 @@ fn apply_compatibility(
         Some(15),
     );
     let original = fs::read(&exe_path).map_err(|e| format!("{}: {e}", exe_path.display()))?;
-    let result = pe::patch_compatible(
+    let mut result = pe::patch_compatible(
         &original,
         options.no_disc,
         local_audio.enabled,
         options.no_reg,
         options.modern_volume,
     )?;
+    if options.primary_audio_8bit {
+        let bytes = pe::patch_primary_directsound_8bit(&result.bytes)?;
+        if bytes != result.bytes {
+            result
+                .actions
+                .push("set primary DirectSound output to 22,050 Hz stereo 8-bit".into());
+        }
+        result.bytes = bytes;
+    }
     if local_audio.enabled && !result.local_audio_supported {
         return Err(
             "this executable layout cannot safely use the local DirectSound music backend".into(),
@@ -1063,7 +1073,7 @@ pub fn apply_with_progress(
         "Checking the game executable structure…",
         Some(40),
     );
-    let exe_patch = pe::patch_language_runtime(
+    let mut exe_patch = pe::patch_language_runtime(
         &exe_source,
         payload.language == Language::Vietnamese,
         options.no_disc,
@@ -1071,6 +1081,15 @@ pub fn apply_with_progress(
         local_audio.enabled,
         options.modern_volume,
     )?;
+    if options.primary_audio_8bit {
+        let bytes = pe::patch_primary_directsound_8bit(&exe_patch.bytes)?;
+        if bytes != exe_patch.bytes {
+            exe_patch
+                .actions
+                .push("set primary DirectSound output to 22,050 Hz stereo 8-bit".into());
+        }
+        exe_patch.bytes = bytes;
+    }
     if local_audio.enabled && !exe_patch.local_audio_supported {
         return Err(
             "this executable layout cannot safely use the local DirectSound music backend".into(),
@@ -1600,7 +1619,8 @@ mod tests {
                 no_disc: true,
                 no_reg: true,
                 local_audio: true,
-                modern_volume: false,
+                modern_volume: true,
+                primary_audio_8bit: true,
                 cue: Some(PathBuf::from(cue_path)),
                 ..ApplyOptions::default()
             },
@@ -1609,6 +1629,12 @@ mod tests {
         .unwrap();
         assert!(report.changed.iter().any(|name| name == "BGM.dat"));
         assert!(music::valid(&folder.join("BGM.dat")));
+        let executable = fs::read(folder.join("Doraemon.exe")).unwrap();
+        assert_eq!(&executable[0x88e92..0x88e96], &44_100u32.to_le_bytes());
+        assert_eq!(&executable[0x88ea0..0x88ea2], &2u16.to_le_bytes());
+        assert_eq!(&executable[0x88eac..0x88eae], &8u16.to_le_bytes());
+        assert!(executable.windows(7).any(|bytes| bytes == b"BGMRT5\0"));
+        assert_eq!(executable[0x8b3b0], 0xe8);
         restore(&folder.join("backup")).unwrap();
         assert!(!folder.join("BGM.dat").exists());
         fs::remove_dir_all(folder).unwrap();

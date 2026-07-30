@@ -19,7 +19,8 @@ not distributed here. Use the tools only with game files you legally own.
 - Some UI text and baked-in artwork remain untranslated.
 - The patcher supports Cantonese v1.26 and v1.18 resource layouts.
 - Windows patchers support language patches, backups/restoration, local music,
-  legacy volume compatibility, and an optional cnc-ddraw graphics wrapper.
+  legacy volume compatibility, an optional Windows 95/v86 8-bit DirectSound
+  mode, and an optional cnc-ddraw graphics wrapper.
 
 ## For players
 
@@ -32,7 +33,11 @@ Use **Restore backup** to return to the files saved before the last patch.
 **Skip disc check** and **Skip registry check** only bypass validation; they do
 not provide missing game or CD data. **Use local music** can replace CD/MCI
 music with a generated `BGM.dat`. **Add graphics wrapper** is an optional
-compatibility feature, separate from translation.
+compatibility feature, separate from translation. **Use 8-bit DirectSound
+output** keeps 22,050 Hz stereo playback but selects the SB16 8-bit DMA path;
+it is off by default. When local music is also selected, its DirectSound
+stream follows the same 8-bit path. Hover a dashed option underline for a
+short explanation.
 
 Keep an untouched copy of the game. The patcher works beside the executable and
 does not need a path to another installation.

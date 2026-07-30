@@ -66,7 +66,7 @@ typedef struct {
     volatile LONG lock;
     DWORD generation;
     DWORD level;
-    DWORD sample_rate, half_frames, half_bytes, buffer_bytes;
+    DWORD sample_rate, sample_bytes, half_frames, half_bytes, buffer_bytes;
     int active_track;
     int current_half;
     int playing;
@@ -80,9 +80,9 @@ typedef struct {
 
 static State state = { INVALID_FILE };
 
-/* PE patch revisions are not safely replaceable in place. This marker lets
-   the Rust patcher distinguish this streamer from the first embedded build. */
-__declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT4";
+/* The marker lets the Rust patcher upgrade known embedded streamer revisions
+   together with their dispatch pointer while rejecting unknown layouts. */
+__declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT5";
 
 static const DWORD track_frames[TRACKS] = {
     7525812,2865912,924924,2394924,174048,2130324,1541736,1376802,1903944,308994
@@ -242,9 +242,20 @@ static int decode(BYTE *target, DWORD frames) {
     DWORD i;
     for (i = 0; i < frames; ++i) {
         int16_t sample;
-        if (!next_sample(&sample)) { zero_bytes(target + i * 2, (frames - i) * 2); return 0; }
-        target[i * 2] = (BYTE)sample;
-        target[i * 2 + 1] = (BYTE)((uint16_t)sample >> 8);
+        if (!next_sample(&sample)) {
+            if (state.sample_bytes == 1) {
+                while (i < frames) target[i++] = 0x80;
+            } else {
+                zero_bytes(target + i * 2, (frames - i) * 2);
+            }
+            return 0;
+        }
+        if (state.sample_bytes == 1) {
+            target[i] = (BYTE)(((int)sample + 32768) >> 8);
+        } else {
+            target[i * 2] = (BYTE)sample;
+            target[i * 2 + 1] = (BYTE)((uint16_t)sample >> 8);
+        }
     }
     return 1;
 }
@@ -279,13 +290,14 @@ static int create_full_buffer(DWORD frames) {
     BufferDescription description;
     WaveFormat format;
     void *device, *a=0, *b=0;
-    DWORD bytes=frames*2, an=0, bn=0;
+    DWORD bytes=frames*state.sample_bytes, an=0, bn=0;
     typedef HRESULT (__stdcall *CreateSoundBufferFn)(void *,BufferDescription *,void **,void *);
     device=*(void **)((BYTE*)state.manager+0x10c);
     if (!device) return 0;
     format.format=1; format.channels=1; format.samples_per_second=state.sample_rate;
-    format.bytes_per_second=state.sample_rate*2; format.block_align=2;
-    format.bits_per_sample=16; format.extra=0;
+    format.bytes_per_second=state.sample_rate*state.sample_bytes;
+    format.block_align=(WORD)state.sample_bytes;
+    format.bits_per_sample=(WORD)(state.sample_bytes*8); format.extra=0;
     description.size=sizeof(description);
     description.flags=*(DWORD *)((BYTE*)state.manager+0xe8);
     description.bytes=bytes; description.reserved=0; description.format=&format;
@@ -294,7 +306,8 @@ static int create_full_buffer(DWORD frames) {
     if (lock_buffer(state.buffer,0,bytes,&a,&an,&b,&bn) != 0) {
         com0(state.buffer,2); state.buffer=0; return 0;
     }
-    if (!decode((BYTE*)a,an/2) || (b && bn && !decode((BYTE*)b,bn/2))) {
+    if (!decode((BYTE*)a,an/state.sample_bytes) ||
+        (b && bn && !decode((BYTE*)b,bn/state.sample_bytes))) {
         unlock_buffer(state.buffer,a,an,b,bn);
         com0(state.buffer,2); state.buffer=0; return 0;
     }
@@ -315,9 +328,9 @@ static void set_volume(void) {
 static int refill(DWORD offset, DWORD frames) {
     void *a=0,*b=0; DWORD an=0,bn=0;
     if (!decode(state.scratch, frames)) return 0;
-    if (lock_buffer(state.buffer, offset, frames*2, &a,&an,&b,&bn) != 0) {
+    if (lock_buffer(state.buffer, offset, frames*state.sample_bytes, &a,&an,&b,&bn) != 0) {
         com0(state.buffer, 20);
-        if (lock_buffer(state.buffer, offset, frames*2, &a,&an,&b,&bn) != 0) return 0;
+        if (lock_buffer(state.buffer, offset, frames*state.sample_bytes, &a,&an,&b,&bn) != 0) return 0;
     }
     copy_bytes((BYTE*)a, state.scratch, an);
     if (b && bn) copy_bytes((BYTE*)b, state.scratch + an, bn);
@@ -327,13 +340,16 @@ static int refill(DWORD offset, DWORD frames) {
 static void wave_header(BYTE *p, DWORD bytes) {
     copy_bytes(p,(const BYTE*)"RIFF",4); put32(p+4,bytes+36);
     copy_bytes(p+8,(const BYTE*)"WAVEfmt ",8); put32(p+16,16); put16(p+20,1); put16(p+22,1);
-    put32(p+24,state.sample_rate); put32(p+28,state.sample_rate*2); put16(p+32,2); put16(p+34,16);
+    put32(p+24,state.sample_rate);
+    put32(p+28,state.sample_rate*state.sample_bytes);
+    put16(p+32,(WORD)state.sample_bytes);
+    put16(p+34,(WORD)(state.sample_bytes*8));
     copy_bytes(p+36,(const BYTE*)"data",4); put32(p+40,bytes);
 }
 
 static int create_buffer(DWORD frames) {
     BYTE *seed;
-    DWORD bytes=frames*2;
+    DWORD bytes=frames*state.sample_bytes;
     int slot;
     void **owned;
     seed = (BYTE*)game_alloc(bytes + 44);
@@ -416,8 +432,12 @@ __declspec(dllexport) DWORD __stdcall BgmInit(void *manager) {
         le16(h+20)!=1 || le16(h+22)!=16 || le32(h+24)!=BLOCK_FRAMES) {
         close_locked(); unlock(); return 0;
     }
+    /* The game's primary WAVEFORMATEX lives at manager+0xf8. When the
+       executable's guarded primary format is patched to 8-bit, local music
+       must follow it instead of opening a second 16-bit DMA5 buffer. */
+    state.sample_bytes=*(WORD *)((BYTE*)state.manager+0x106)==8 ? 1 : 2;
     state.half_frames=state.sample_rate*2;
-    state.half_bytes=state.half_frames*2;
+    state.half_bytes=state.half_frames*state.sample_bytes;
     state.buffer_bytes=state.half_bytes*2;
     for (i=0;i<TRACKS;++i) {
         BYTE *e=h+32+i*16; Track *t=&state.tracks[i];
@@ -442,7 +462,7 @@ __declspec(dllexport) DWORD __stdcall BgmPlay(DWORD id) {
         if (state.buffer) com0(state.buffer,18);
         state.active_track=(int)id-2;
         if (reset_track()) {
-            if (!state.buffer) ok=create_buffer(state.buffer_bytes/2);
+            if (!state.buffer) ok=create_buffer(state.buffer_bytes/state.sample_bytes);
             else ok=refill(0, state.half_frames) && refill(state.half_bytes, state.half_frames) &&
                 com0(state.buffer,18)==0 && com1(state.buffer,13,0)==0 && play_buffer(state.buffer)==0;
             if (ok && !state.timer) {
