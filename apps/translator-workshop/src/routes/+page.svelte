@@ -9,6 +9,7 @@
   import { gadgetAsset, ownerIcons, ownerLabels, ownerSmallIcons } from '$lib/game-assets';
   import { clearLocalFiles, readLocalFile, saveLocalFile } from '$lib/local-store';
   import { onMount } from 'svelte';
+  import { env } from '$env/dynamic/public';
   import {
     DUBBING_FORMAT,
     DUBBING_OWNERS,
@@ -47,6 +48,10 @@
   let status = $state('Load your original game files to begin. They remain on this device.');
   let error = $state('');
   let showVietnameseNotice = $state(true);
+
+  const gatekeeperUrl = env.PUBLIC_GATEKEEPER_URL || '';
+  let coupon = $state('');
+  let fetching = $state(false);
 
   const sourceById = $derived(
     strings
@@ -210,6 +215,41 @@
 
   function dragOver(event) {
     event.preventDefault();
+  }
+
+  async function fetchCouponFile(name) {
+    if (!gatekeeperUrl) throw new Error('This Workshop build has no gatekeeper URL configured.');
+    const response = await fetch(`${gatekeeperUrl}/api/files?name=${encodeURIComponent(name)}`, {
+      headers: { 'X-Coupon': coupon.trim() }
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`HTTP ${response.status}${body ? `: ${body}` : ''}`);
+    }
+    const bytes = await response.arrayBuffer();
+    return new File([bytes], name, { type: 'application/octet-stream' });
+  }
+
+  async function applyCoupon() {
+    if (!coupon.trim()) {
+      error = 'Enter a coupon first.';
+      return;
+    }
+    fetching = true;
+    error = '';
+    try {
+      const [stringsFile, voiceFile, sysfontFile] = await Promise.all(
+        ['strings.dat', 'voice.dat', 'sysfont.dat'].map(fetchCouponFile)
+      );
+      await loadGameFile('strings', stringsFile);
+      await loadGameFile('voice', voiceFile);
+      await loadSysfont(sysfontFile);
+      status = 'Loaded strings.dat, voice.dat, and sysfont.dat from the project coupon.';
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      fetching = false;
+    }
   }
 
   async function dropFiles(event) {
@@ -586,8 +626,8 @@
           <h2 class="mt-2 text-2xl font-black text-ink sm:text-3xl">Bring your own original game files</h2>
           <p class="mt-2 max-w-2xl text-sm leading-6 text-ink/75">
             The translator reads the text directly in your browser. Drop <code>strings.dat</code>,
-            <code>voice.dat</code>, and optionally <code>sysfont.dat</code> anywhere here—or use the buttons. Original
-            files never enter a ZIP or leave this device.
+            <code>voice.dat</code>, and optionally <code>sysfont.dat</code> anywhere here—or use the buttons.
+            Files you load yourself never enter a ZIP or leave this device.
           </p>
         </div>
         <div class="grid gap-4 p-6 sm:grid-cols-2 sm:p-8">
@@ -629,6 +669,30 @@
             >
           </label>
         </div>
+        {#if gatekeeperUrl}
+          <div class="border-t border-outline bg-white/70 px-6 py-4 sm:px-8">
+            <p class="text-xs font-black uppercase tracking-[0.2em] text-navy">Project coupon</p>
+            <p class="mt-1 text-sm leading-6 text-ink/70">
+              Have a coupon from the project? Enter it to fetch the original <code>strings.dat</code>,
+              <code>voice.dat</code>, and <code>sysfont.dat</code> from the project's server instead of your own
+              copy.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                class="w-56 max-w-full rounded-xl border-2 border-outline bg-white px-3 py-2 text-sm font-medium text-ink outline-none placeholder:text-ink/40 focus:border-accent-blue"
+                bind:value={coupon}
+                placeholder="coupon"
+                disabled={fetching}
+              />
+              <button
+                class="inline-flex rounded-xl bg-accent-blue px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+                onclick={applyCoupon}
+                disabled={fetching}
+              >{fetching ? 'Fetching…' : 'Fetch original files'}</button
+              >
+            </div>
+          </div>
+        {/if}
         <div
           class="flex flex-wrap items-center justify-between gap-3 border-t border-outline bg-ice-panel px-6 py-4 text-sm sm:px-8"
         >

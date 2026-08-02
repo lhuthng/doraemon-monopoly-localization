@@ -19,7 +19,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help dependencies check prepare apply-dubbing export-dubbing import-contribution studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-studio check-publish check-patcher check-wrapper check-resources check-game check-payloads
+.PHONY: help dependencies check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-studio check-publish check-patcher check-wrapper check-resources check-game check-payloads
 
 help:
 	@printf '%s\n' \
@@ -42,6 +42,20 @@ help:
 	  '      Install the locked Bun workspace dependencies.' \
 	  '  make prepare' \
 	  '      Rebuild Studio local-game from workspace/base and the current component patches only.' \
+	  '  make fetch-base' \
+	  '      Optional: fetch workspace/base files from the gatekeeper worker (needs CLOUDFLARE_GATEKEEPER_URL/SECRET).' \
+	  '  make upload-base' \
+	  '      Upload workspace/base files into the gatekeeper R2 bucket (needs R2_* env vars).' \
+	  '  make gatekeeper-mint' \
+	  '      Mint a coupon and print its SHA-256 for the gatekeeper worker.' \
+	  '  make gatekeeper-add-coupon COUPON=...' \
+	  '      Mint a coupon, record it, and push it live (needs CLOUDFLARE_API_TOKEN/ACCOUNT_ID in apps/gatekeeper/.env).' \
+	  '  make gatekeeper-sync-coupons' \
+	  '      Force-push the current active coupon set to Cloudflare.' \
+	  '  make gatekeeper-list-coupons' \
+	  '      List coupons and whether each is active or revoked.' \
+	  '  make gatekeeper-delete-coupon COUPON=...|HASH=...' \
+	  '      Revoke a coupon and push immediately.' \
 	  '  make apply-dubbing LANGUAGE=english' \
 	  '      Apply canonical content/dubbing/<language> to that prepared Studio workspace.' \
 	  '  make import-contribution CONTRIBUTION=workspace/<contribution>.zip' \
@@ -78,6 +92,7 @@ check:
 	@cargo test --workspace
 	@cd apps/resource-studio && bun run check && bun test
 	@cd apps/translator-workshop && bun run check && bun test
+	@cd apps/gatekeeper && bun run check && bun test
 
 check-resources:
 	@missing=0; for file in $(RESOURCE_FILES); do \
@@ -113,6 +128,27 @@ prepare: check-resources check-payloads
 	@cargo run -p patch-build -- materialize-parts --parts-dir content/patches/english --base-dir $(BASE_DIR) --output-dir apps/resource-studio/local-game/english
 	@cargo run -p patch-build -- materialize-parts --parts-dir content/patches/vietnamese --base-dir $(BASE_DIR) --output-dir apps/resource-studio/local-game/vietnamese
 	@printf '%s\n' 'Prepared Studio workspaces from workspace/base and content/patches. Run make apply-dubbing LANGUAGE=<language> before editing dialogue or voices.'
+
+fetch-base:
+	@cd apps/resource-studio && bun run fetch-base
+
+upload-base:
+	@cd apps/resource-studio && bun run upload-base
+
+gatekeeper-mint:
+	@cd apps/gatekeeper && bun run mint-coupon
+
+gatekeeper-add-coupon:
+	@cd apps/gatekeeper && bun run add-coupon $(COUPON)
+
+gatekeeper-sync-coupons:
+	@cd apps/gatekeeper && bun run sync-coupon-hashes
+
+gatekeeper-list-coupons:
+	@cd apps/gatekeeper && bun run list-coupons
+
+gatekeeper-delete-coupon:
+	@cd apps/gatekeeper && bun run delete-coupon $(COUPON) $(HASH)
 
 check-studio: check-language
 	@missing=0; for file in $(RESOURCE_FILES); do \

@@ -46,8 +46,14 @@ does not need a path to another installation.
 
 The public [Translator Workshop](https://github.com/lhuthng/doraemon-monopoly-localization)
 lets contributors load their own `strings.dat` and optional `voice.dat` locally
-in the browser. Original files never leave the browser and are not included in
-downloads.
+in the browser. Files you load yourself never enter a ZIP or leave your device,
+and are not included in downloads.
+
+Workshop builds that set `PUBLIC_GATEKEEPER_URL` additionally show a **Project
+coupon** section: contributors who hold a project-issued coupon can fetch the
+original `strings.dat`, `voice.dat`, and `sysfont.dat` from the project's
+Cloudflare gatekeeper instead of loading their own copy. See
+[`apps/gatekeeper/`](apps/gatekeeper/README.md).
 
 There are two ZIP types:
 
@@ -76,6 +82,7 @@ automatically.
 | `workspace/base/` | Private untouched game resources used for local builds. Never commit them. |
 | `apps/resource-studio/` | Browser editors, import/export tools, and local scripts. |
 | `apps/translator-workshop/` | Public Translator Workshop website. |
+| `apps/gatekeeper/` | Optional Cloudflare Worker + R2 gatekeeper for fetching private game files. |
 | `packages/dubbing-core/` | Shared TypeScript primitives (archive parsing, audio, ZIP). |
 | `content/dubbing/` | Canonical, reviewable dialogue and voice source. |
 | `content/patches/<language>/` | Reviewable generated `dubbing`, `sprites`, and `runtime` components. |
@@ -113,6 +120,49 @@ Place these files from an untouched game in `workspace/base/`:
 ```text
 Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
 ```
+
+Authorized maintainers can skip the manual copy and fetch the same files through
+the project gatekeeper (a second, optional way — manual setup stays primary):
+
+```sh
+make fetch-base       # reads CLOUDFLARE_GATEKEEPER_URL / CLOUDFLARE_GATEKEEPER_SECRET
+```
+
+Every download is verified against the public SHA-256 fingerprints in
+`content/base-fingerprints.json`.
+
+#### Gatekeeper flow (optional, second path)
+
+The gatekeeper (`apps/gatekeeper/`) is a Cloudflare Worker + R2 bucket that serves
+the private base files to authorized callers. Full setup lives in its
+[README](apps/gatekeeper/README.md); the flow is:
+
+```text
+Terraform (bucket + KV + worker) -> wrangler secrets -> R2 upload -> coupons -> Workshop fetch
+```
+
+- **Infra**: `cd apps/gatekeeper && bun run build`, then `terraform apply`
+  (create the R2 bucket, KV namespace, and worker script + bindings).
+- **Secrets** (`wrangler secret put`, never in files or git):
+  - `MAINTAINER_SECRET` — used by `make fetch-base` (mirrored in
+    `apps/resource-studio/.env` and `apps/gatekeeper/.dev.vars`).
+  - `COUPON_HASHES` — JSON array of coupon SHA-256 digests for the Workshop.
+    Managed by the coupon commands below (they push it automatically); no manual
+    `wrangler secret put` needed.
+- **Upload**: `make upload-base` pushes the 7 base files into R2 with sha256
+  metadata (needs `R2_*` keys in `apps/resource-studio/.env`).
+- **Coupons**: the local `apps/gatekeeper/coupons.registry.json` (gitignored)
+  is the single source of truth. `make gatekeeper-add-coupon COUPON="Phrase"`
+  (or without `COUPON=` for a random one) mints a coupon and pushes the worker
+  secret immediately — every command needs `CLOUDFLARE_API_TOKEN` (and
+  `CLOUDFLARE_ACCOUNT_ID`) in `apps/gatekeeper/.env`, so minting is always
+  live, never a manual step. `make gatekeeper-list-coupons` shows active vs
+  revoked; `make gatekeeper-delete-coupon COUPON=...` (or `HASH=...`) revokes
+  one and re-pushes; `make gatekeeper-sync-coupons` force-pushes the current
+  active set. Any human-readable string works as a coupon.
+- **Workshop**: builds with `PUBLIC_GATEKEEPER_URL` (from a repo variable in the
+  deploy workflow) show a **Project coupon** field that fetches
+  `strings.dat`, `voice.dat`, and `sysfont.dat` from the worker.
 
 Install dependencies, then materialize the current component patches over the
 original game into ignored local workspaces:
@@ -204,6 +254,13 @@ Run `make help` for the same workflow in the terminal.
 | `make check` | Run Rust tests plus Resource Studio and Workshop checks/tests. |
 | `make dependencies` | Install locked Bun dependencies. |
 | `make prepare` | Materialize local-game from workspace/base and current patches only. |
+| `make fetch-base` | Optional: fetch workspace/base files from the gatekeeper worker. |
+| `make upload-base` | Upload workspace/base files into the gatekeeper's R2 bucket. |
+| `make gatekeeper-mint` | Mint a random coupon and print its SHA-256 digest. |
+| `make gatekeeper-add-coupon COUPON=...` | Mint (or use a given) coupon, record it, and push to Cloudflare immediately. |
+| `make gatekeeper-sync-coupons` | Force-push the current active coupon set from the registry. |
+| `make gatekeeper-list-coupons` | List coupons and whether they're active or revoked. |
+| `make gatekeeper-delete-coupon COUPON=...` | Revoke a coupon (or `HASH=<sha256>` for legacy ones). |
 | `make apply-dubbing LANGUAGE=...` | Apply canonical dubbing to one prepared Studio workspace. |
 | `make import-contribution CONTRIBUTION=...` | Import and validate a Workshop contribution ZIP. |
 | `make studio-en` / `make studio-vi` | Launch an existing Studio workspace without preparing it. |
@@ -240,6 +297,11 @@ See each domain README for specifics:
 This repository contains tooling, documentation, difference payloads, and
 permissively licensed compatibility files. It does not contain the original
 game or replace the need for a legally obtained copy.
+
+The optional gatekeeper worker can serve a private copy of the original
+resources to explicitly authorized people. That is still distribution of
+copyrighted material, so it is gated behind secrets/coupons and never the
+default path; see [`apps/gatekeeper/`](apps/gatekeeper/README.md).
 
 cnc-ddraw is redistributed under its included MIT license. See
 [`vendor/cnc-ddraw/LICENSE`](vendor/cnc-ddraw/LICENSE) and the

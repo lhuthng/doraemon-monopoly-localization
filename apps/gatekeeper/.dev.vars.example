@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# These must match the Workers Secrets set with `wrangler secret put`.
+MAINTAINER_SECRET=
+COUPON_HASHES=[]  # JSON array of SHA-256 coupon digests

@@ -1,0 +1,17 @@
+# Template for wrangler.toml. Copy to wrangler.toml and fill in real values.
+# Never commit the real wrangler.toml if it contains a real KV namespace id
+# you consider private; secrets themselves always live in Workers Secrets.
+name = "doraemon-gatekeeper"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[[r2_buckets]]
+binding = "GAME_FILES"
+bucket_name = "doraemon-game-files"
+
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+ALLOWED_ORIGINS = ""

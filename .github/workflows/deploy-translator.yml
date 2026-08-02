@@ -32,6 +32,11 @@ jobs:
         working-directory: apps/translator-workshop
       - run: bun run build
         working-directory: apps/translator-workshop
+        env:
+          # Public worker endpoint; enable the "Project coupon" section on the
+          # deployed site. Set as a repository variable; the build also succeeds
+          # without it (the section is simply hidden).
+          PUBLIC_GATEKEEPER_URL: ${{ vars.PUBLIC_GATEKEEPER_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/translator-workshop/build

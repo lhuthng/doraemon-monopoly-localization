@@ -1,0 +1,24 @@
+{
+  "name": "doraemon-monopoly-gatekeeper",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "bun build src/index.ts --outdir dist --format esm",
+    "deploy": "bun run build && wrangler deploy",
+    "mint-coupon": "bun scripts/mint-coupon.ts",
+    "add-coupon": "bun scripts/add-coupon.ts",
+    "sync-coupon-hashes": "bun scripts/sync-coupon-hashes.ts",
+    "list-coupons": "bun scripts/list-coupons.ts",
+    "delete-coupon": "bun scripts/delete-coupon.ts",
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250930.0",
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  }
+}

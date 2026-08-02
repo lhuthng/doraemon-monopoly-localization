@@ -1,0 +1,13 @@
+{
+  "format": "doraemon-monopoly-base-fingerprints/v1",
+  "note": "Public SHA-256 hashes of the untouched original game files used to verify downloads. Never contains the files themselves.",
+  "files": {
+    "Doraemon.exe": "fdf00e681671f93b09d257f77d7ce0720e7129cf6bc44ba9e0f19c2efa4fecba",
+    "strings.dat": "9ecce72afcef20e472d70d5d3b642887202ea85fc05e2e22aa05694de972dcec",
+    "sysfont.dat": "8fedc4ad400c55ee65c60baa229894e862b2e1a2d9e0a2d58371495200c4e4a0",
+    "Sprite1.dat": "af68d62e6aefe34ab4bf466898ee532c2647a2569230f7871e059b96346b06b3",
+    "sprite2.dat": "5789cc11b7b005009dcd645bf11732178544633f6b9c9c40361640a92f9ecf1e",
+    "bitmaps.dat": "9bba998ed68836a2db00316a2df51901533032025a7178a1f5ea560c8d5b63c0",
+    "voice.dat": "e1493bad6c543fc5888f4524c166df55fa8a095c9390d646b60e314fd8c89a85"
+  }
+}

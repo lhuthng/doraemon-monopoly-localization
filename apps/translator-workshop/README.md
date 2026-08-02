@@ -13,9 +13,16 @@ recordings to the Doraemon Monopoly localization project.
 5. Use **Download contribution ZIP** to create a submission archive. Attach it
    to a GitHub Issue.
 
+Builds that set `PUBLIC_GATEKEEPER_URL` (see `.env.example`) show a **Project
+coupon** section: entering a project-issued coupon fetches the original
+`strings.dat`, `voice.dat`, and `sysfont.dat` from the Cloudflare gatekeeper
+instead of your own copy. See [`../gatekeeper/README.md`](../gatekeeper/README.md).
+
 ## Browser privacy guarantees
 
-- Game files are never uploaded to any server.
+- Files you load yourself are never uploaded to any server.
+- The coupon download is an explicit opt-in: it fetches original files from the
+  project's gatekeeper worker after you authenticate with a coupon.
 - All processing happens in the browser via WebAssembly and JavaScript.
 - Contribution ZIPs contain only translated text and replacement audio, not
    original game files.

@@ -1,0 +1,20 @@
+name = "doraemon-gatekeeper"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+observability = { enabled = true }
+
+# Secrets are NOT stored here. Set them with:
+#   wrangler secret put MAINTAINER_SECRET --name doraemon-gatekeeper
+#   wrangler secret put COUPON_HASHES --name doraemon-gatekeeper
+# For local development put the same values in apps/gatekeeper/.dev.vars.
+
+[[r2_buckets]]
+binding = "GAME_FILES"
+bucket_name = "doraemon-game-files"
+
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "98535370bd2b4c3c94034786ef2912b2"
+
+[vars]
+ALLOWED_ORIGINS = ""

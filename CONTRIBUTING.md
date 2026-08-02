@@ -3,8 +3,13 @@
 ## Contributors
 
 Use the public Translator Workshop to load your own `strings.dat` and optional
-`voice.dat`. The files stay in the browser. They are never uploaded and are not
-included in exported ZIPs.
+`voice.dat`. Files you load yourself stay in the browser. They are never
+uploaded and are not included in exported ZIPs.
+
+If a Workshop build exposes a **Project coupon** field and you hold a coupon,
+entering it fetches the original `strings.dat`, `voice.dat`, and `sysfont.dat`
+from the project's Cloudflare gatekeeper instead of your own copy. That is an
+explicit download, separate from the private browser flow.
 
 Use **Save work ZIP** for a private `dubbing-work.zip` backup that you may load
 back into the Workshop later. Use **Download contribution ZIP** when submitting
@@ -19,6 +24,11 @@ contribution without manually copying every file:
 ```sh
 make import-contribution CONTRIBUTION=workspace/doraemon-monopoly-vietnamese-dubbing.zip
 ```
+
+The manual file setup in `workspace/base/` is the primary flow. Authorized
+maintainers may instead fetch the same files through the gatekeeper worker
+(`make fetch-base`); see
+[`apps/gatekeeper/README.md`](apps/gatekeeper/README.md) for setup.
 
 The importer validates the manifest and supported base fingerprints, checks
 dialogue IDs and owners, checks voice IDs and WAV format, merges the
