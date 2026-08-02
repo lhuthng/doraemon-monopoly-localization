@@ -5,6 +5,7 @@ import {
   DUBBING_FORMAT,
   DUBBING_OWNERS,
   compareRecordIds,
+  dialogueVoicePath,
   gadgetMetadataForStringId,
   isDubbingLanguage,
   normalizeDialogueFile,

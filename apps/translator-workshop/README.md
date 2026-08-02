@@ -9,14 +9,21 @@ recordings to the Doraemon Monopoly localization project.
 2. Load your own `strings.dat` and optional `voice.dat` from a legally owned
    game. Files are processed entirely in the browser.
 3. Translate dialogue records and record or upload replacement voice WAVs.
-4. Use **Save work ZIP** for a private `dubbing-work.zip` resume backup.
-5. Use **Download contribution ZIP** to create a submission archive. Attach it
-   to a GitHub Issue.
+4. Use **Save work** to back up your session. The modal offers:
+   - **This browser** — stored locally in the browser's IndexedDB.
+   - **Cloud** — zstd-compressed and stored on the project gatekeeper (needs a
+     coupon; the coupon is remembered in the browser).
+   - **Download ZIP** — a `doraemon-monopoly-<language>-dubbing.zip` to attach
+     to a GitHub Issue. Both Local and Cloud options show when each was last
+     saved and mark which one is newer.
+5. Use **Load work** to restore from a ZIP file, from this browser, or from the
+   cloud.
 
 Builds that set `PUBLIC_GATEKEEPER_URL` (see `.env.example`) show a **Project
 coupon** section: entering a project-issued coupon fetches the original
 `strings.dat`, `voice.dat`, and `sysfont.dat` from the Cloudflare gatekeeper
-instead of your own copy. See [`../gatekeeper/README.md`](../gatekeeper/README.md).
+instead of your own copy. The same coupon enables Cloud Save/Load work. See
+[`../gatekeeper/README.md`](../gatekeeper/README.md).
 
 ## Browser privacy guarantees
 
@@ -24,20 +31,23 @@ instead of your own copy. See [`../gatekeeper/README.md`](../gatekeeper/README.m
 - The coupon download is an explicit opt-in: it fetches original files from the
   project's gatekeeper worker after you authenticate with a coupon.
 - All processing happens in the browser via WebAssembly and JavaScript.
-- Contribution ZIPs contain only translated text and replacement audio, not
-   original game files.
+- Saved work contains only translated text and replacement audio, not
+  original game files.
 
-## Private work ZIP format
+## Work / contribution ZIP format
 
-`dubbing-work.zip` contains `work.json` with the contributor's session state.
-Load it back into the Workshop to resume work.
+The unified work file is the contribution ZIP
+(`doraemon-monopoly-<language>-dubbing.zip`), so a saved session doubles as a
+submission:
 
-## Contribution ZIP format
-
-`doraemon-monopoly-<language>-dubbing.zip` contains:
 - `manifest.json` — format version, language, and source fingerprints.
 - `dialogue/` — per-owner JSON files with translated records.
 - `voices/` — per-owner WAV directories with replacement audio.
+
+The Workshop restores its session (translations + voices) from this same ZIP,
+and `make import-contribution CONTRIBUTION=...` accepts it directly. Cloud
+storage sends the ZIP zstd-compressed (level 9); the gatekeeper only stores and
+returns the opaque compressed blob.
 
 ## Local development
 

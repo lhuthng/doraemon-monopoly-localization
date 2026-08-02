@@ -20,6 +20,7 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
+    "@bokuweb/zstd-wasm": "^0.0.27",
     "@doraemon-monopoly/dubbing-core": "workspace:*",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.8.0",

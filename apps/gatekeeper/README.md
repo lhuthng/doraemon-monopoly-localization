@@ -11,7 +11,28 @@ Three access modes:
 | --- | --- | --- |
 | Resource Studio (CLI) | `Authorization: Bearer <secret>` | `make fetch-base` populates `workspace/base/` |
 | Translator Workshop (browser) | `X-Coupon: <coupon>` | "Project coupon" UI fetches `strings.dat`, `voice.dat`, `sysfont.dat` |
+| Translator Workshop (browser) | `X-Coupon: <coupon>` | Cloud **Save/Load work** against `/api/work` |
 | Anyone | none | `GET /api/health` only |
+
+## Endpoints
+
+| Path | Methods | Auth | Purpose |
+| --- | --- | --- | --- |
+| `/api/health` | GET | none | Liveness probe |
+| `/api/files?name=<file>` | GET | coupon or maintainer secret | Serve the 7 allowlisted game files |
+| `/api/work` | GET, HEAD, PUT | coupon or maintainer secret | Store / retrieve a caller's saved-work blob |
+
+The worker treats `/api/work` payloads as **opaque bytes** — it never parses the
+ZIP or inspects its contents. Clients zstd-compress their work ZIP before
+sending and decompress after fetching. Storage is scoped per identity:
+
+- Coupon holder: `work/coupon/<sha256(coupon)>.zst` (one slot per coupon).
+- Maintainer: `work/maintainer.zst`.
+
+`PUT` stores the request body and returns `{ uploadedAt, size, sha256 }`.
+`GET` streams the blob with `X-Uploaded-At`, `Last-Modified`, `X-SHA256`, and
+`Content-Length` headers. `HEAD` returns the same headers without the body, so
+the Workshop can show which of Local/Cloud is newer without downloading.
 
 ## Layout
 
@@ -39,6 +60,8 @@ Three access modes:
   array, so many coupons can be valid at once.
 - Strict 7-file allowlist (`Doraemon.exe`, `strings.dat`, `sysfont.dat`,
   `Sprite1.dat`, `sprite2.dat`, `bitmaps.dat`, `voice.dat`) blocks path traversal.
+  `/api/work` keys are derived server-side from the authenticated identity, so a
+  caller can only ever reach their own slot.
 - Per-IP rate limiting (20 req/min) via a KV counter; returns `429 + Retry-After`.
 - CORS allows only configured origins; CLI calls (no `Origin` header) always pass.
 - Each object carries `X-SHA256` metadata; `content/base-fingerprints.json` holds

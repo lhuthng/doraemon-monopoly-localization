@@ -6,8 +6,16 @@
   import ProgressSidebar from '$lib/ProgressSidebar.svelte';
   import SectionNavigator from '$lib/SectionNavigator.svelte';
   import PopoverSelect from '$lib/PopoverSelect.svelte';
+  import WorkTransferModal from '$lib/WorkTransferModal.svelte';
   import { gadgetAsset, ownerIcons, ownerLabels, ownerSmallIcons } from '$lib/game-assets';
-  import { clearLocalFiles, readLocalFile, saveLocalFile } from '$lib/local-store';
+  import {
+    clearLocalFiles,
+    readLocalFile,
+    saveLocalFile,
+    readLocalWork,
+    saveLocalWork
+  } from '$lib/local-store';
+  import { cloudWorkMeta, loadCloudWork, saveCloudWork, saveCoupon, savedCoupon } from '$lib/cloud-work';
   import { onMount } from 'svelte';
   import { env } from '$env/dynamic/public';
   import {
@@ -50,8 +58,14 @@
   let showVietnameseNotice = $state(true);
 
   const gatekeeperUrl = env.PUBLIC_GATEKEEPER_URL || '';
-  let coupon = $state('');
+  let coupon = $state(savedCoupon());
+  $effect(() => saveCoupon(coupon));
   let fetching = $state(false);
+  let workModal = $state(null);
+  let workBusy = $state(null);
+  let localWorkSavedAt = $state(null);
+  let cloudWorkSavedAt = $state(null);
+  const cloudEnabled = gatekeeperUrl.length > 0;
 
   const sourceById = $derived(
     strings
@@ -356,7 +370,7 @@
     URL.revokeObjectURL(link.href);
   }
 
-  function saveContribution() {
+  function workEntries() {
     const byOwner = new Map();
     for (const [id, edit] of Object.entries(edits)) {
       const record = data.languages[language].records.find((candidate) => candidate.id === id);
@@ -365,7 +379,7 @@
       translations.push({ id, ...edit });
       byOwner.set(record.owner, translations);
     }
-    const entries = [
+    return [
       {
         name: `dubbing/${language}/manifest.json`,
         bytes: jsonBytes({
@@ -390,30 +404,68 @@
         bytes
       }))
     ];
-    download(entries, `doraemon-monopoly-${language}-dubbing.zip`);
-    status = 'Downloaded contribution ZIP. Attach it to a GitHub Issue.';
   }
 
-  function saveWork() {
-    const work = {
-      format: 'doraemon-monopoly-work/v1',
-      language,
-      owner,
-      stringsSha256: stringsHash || undefined,
-      voiceSha256: voiceHash || undefined,
-      edits
-    };
-    download(
-      [
-        { name: 'work.json', bytes: jsonBytes(work) },
-        ...Object.entries(voices).map(([id, bytes]) => ({
-          name: `voices/${id.replaceAll('/', '-')}.wav`,
-          bytes
-        }))
-      ],
-      'dubbing-work.zip'
+  async function workZipBytes() {
+    return new Uint8Array(await storedZip(workEntries()).arrayBuffer());
+  }
+
+  function downloadWork() {
+    download(workEntries(), `doraemon-monopoly-${language}-dubbing.zip`);
+    status = 'Downloaded work ZIP. Attach it to a GitHub Issue.';
+  }
+
+  function applyLoadedWork(loaded) {
+    language = loaded.language;
+    edits = editableDialogueEdits(loaded.edits);
+    voices = loaded.voices;
+    status =
+      strings || voice ? 'Restored your work ZIP.' : 'Restored work. Load your original files for preview.';
+    error = '';
+  }
+
+  async function loadWorkBytes(bytes) {
+    const entries = readStoredZip(bytes);
+    const manifestEntry = entries.find((entry) => /^dubbing\/[^/]+\/manifest\.json$/i.test(entry.name));
+    if (manifestEntry) {
+      const manifest = JSON.parse(decoder.decode(manifestEntry.bytes));
+      if (manifest.format !== DUBBING_FORMAT || !data.languages[manifest.language])
+        throw new Error('Unsupported work ZIP.');
+      if (stringsHash && manifest.stringsSha256 && stringsHash !== manifest.stringsSha256)
+        throw new Error('This work ZIP belongs to a different strings.dat.');
+      if (voiceHash && manifest.voiceSha256 && voiceHash !== manifest.voiceSha256)
+        throw new Error('This work ZIP belongs to a different voice.dat.');
+      const edits = {};
+      for (const entry of entries) {
+        const match = /^dubbing\/[^/]+\/dialogue\/[^/]+\.json$/i.exec(entry.name);
+        if (!match) continue;
+        const records = JSON.parse(decoder.decode(entry.bytes)).records ?? [];
+        for (const record of records) edits[record.id] = { translation: record.translation };
+      }
+      const voices = {};
+      for (const entry of entries) {
+        const match = /^dubbing\/[^/]+\/voices\/[^/]+\/(\d{3})-(\d{3})-(\d{3})\.wav$/i.exec(entry.name);
+        if (!match) continue;
+        voices[`${match[1]}/${match[2]}/${match[3]}`] = entry.bytes;
+      }
+      applyLoadedWork({ language: manifest.language, edits, voices });
+      return;
+    }
+    const workEntry = entries.find((entry) => entry.name === 'work.json');
+    if (!workEntry) throw new Error('This is not a translator work ZIP.');
+    const work = JSON.parse(decoder.decode(workEntry.bytes));
+    if (work.format !== 'doraemon-monopoly-work/v1') throw new Error('Unsupported work ZIP.');
+    if (stringsHash && work.stringsSha256 && stringsHash !== work.stringsSha256)
+      throw new Error('This work ZIP belongs to a different strings.dat.');
+    if (voiceHash && work.voiceSha256 && voiceHash !== work.voiceSha256)
+      throw new Error('This work ZIP belongs to a different voice.dat.');
+    const voices = Object.fromEntries(
+      entries.flatMap((entry) => {
+        const match = /^voices\/(\d{3})-(\d{3})-(\d{3})\.wav$/i.exec(entry.name);
+        return match ? [[`${match[1]}/${match[2]}/${match[3]}`, entry.bytes]] : [];
+      })
     );
-    status = 'Saved your private work ZIP.';
+    applyLoadedWork({ language: work.language, edits: work.edits, voices });
   }
 
   async function loadWork(input) {
@@ -421,29 +473,101 @@
     input.value = '';
     if (!file) return;
     try {
-      const entries = readStoredZip(new Uint8Array(await file.arrayBuffer()));
-      const workEntry = entries.find((entry) => entry.name === 'work.json');
-      if (!workEntry) throw new Error('This is not a translator work ZIP.');
-      const work = JSON.parse(decoder.decode(workEntry.bytes));
-      if (work.format !== 'doraemon-monopoly-work/v1') throw new Error('Unsupported work ZIP.');
-      if (stringsHash && work.stringsSha256 && stringsHash !== work.stringsSha256)
-        throw new Error('This work ZIP belongs to a different strings.dat.');
-      if (voiceHash && work.voiceSha256 && voiceHash !== work.voiceSha256)
-        throw new Error('This work ZIP belongs to a different voice.dat.');
-      language = work.language;
-      owner = work.owner;
-      edits = editableDialogueEdits(work.edits);
-      voices = Object.fromEntries(
-        entries.flatMap((entry) => {
-          const match = /^voices\/(\d{3})-(\d{3})-(\d{3})\.wav$/i.exec(entry.name);
-          return match ? [[`${match[1]}/${match[2]}/${match[3]}`, entry.bytes]] : [];
-        })
-      );
-      status =
-        strings || voice ? 'Restored your work ZIP.' : 'Restored work. Load your original files for preview.';
-      error = '';
+      await loadWorkBytes(new Uint8Array(await file.arrayBuffer()));
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
+    }
+  }
+
+  async function refreshWorkMetas() {
+    localWorkSavedAt = (await readLocalWork())?.savedAt ?? null;
+    if (cloudEnabled && coupon.trim()) {
+      try {
+        cloudWorkSavedAt = (await cloudWorkMeta(gatekeeperUrl, coupon))?.uploadedAt ?? null;
+      } catch {
+        cloudWorkSavedAt = null;
+      }
+    } else {
+      cloudWorkSavedAt = null;
+    }
+  }
+
+  function openSaveWork() {
+    workModal = 'save';
+    workBusy = null;
+    void refreshWorkMetas();
+  }
+
+  function openLoadWork() {
+    workModal = 'load';
+    workBusy = null;
+    void refreshWorkMetas();
+  }
+
+  async function saveWorkLocal() {
+    workBusy = 'local';
+    error = '';
+    try {
+      await saveLocalWork(await workZipBytes());
+      localWorkSavedAt = (await readLocalWork())?.savedAt ?? null;
+      workModal = null;
+      status = 'Saved your work in this browser.';
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      workBusy = null;
+    }
+  }
+
+  async function saveWorkCloud() {
+    if (!cloudEnabled || !coupon.trim()) {
+      error = 'Enter a coupon to use cloud storage.';
+      return;
+    }
+    workBusy = 'cloud';
+    error = '';
+    try {
+      const uploadedAt = await saveCloudWork(gatekeeperUrl, coupon, await workZipBytes());
+      cloudWorkSavedAt = uploadedAt;
+      workModal = null;
+      status = 'Saved your work to the cloud.';
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      workBusy = null;
+    }
+  }
+
+  async function loadWorkLocal() {
+    workBusy = 'local';
+    error = '';
+    try {
+      const local = await readLocalWork();
+      if (!local?.bytes) throw new Error('No work saved in this browser yet.');
+      await loadWorkBytes(local.bytes);
+      workModal = null;
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      workBusy = null;
+    }
+  }
+
+  async function loadWorkCloud() {
+    if (!cloudEnabled || !coupon.trim()) {
+      error = 'Enter a coupon to use cloud storage.';
+      return;
+    }
+    workBusy = 'cloud';
+    error = '';
+    try {
+      const bytes = await loadCloudWork(gatekeeperUrl, coupon);
+      await loadWorkBytes(bytes);
+      workModal = null;
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      workBusy = null;
     }
   }
 
@@ -626,8 +750,8 @@
           <h2 class="mt-2 text-2xl font-black text-ink sm:text-3xl">Bring your own original game files</h2>
           <p class="mt-2 max-w-2xl text-sm leading-6 text-ink/75">
             The translator reads the text directly in your browser. Drop <code>strings.dat</code>,
-            <code>voice.dat</code>, and optionally <code>sysfont.dat</code> anywhere here—or use the buttons.
-            Files you load yourself never enter a ZIP or leave this device.
+            <code>voice.dat</code>, and optionally <code>sysfont.dat</code> anywhere here—or use the buttons. Files
+            you load yourself never enter a ZIP or leave this device.
           </p>
         </div>
         <div class="grid gap-4 p-6 sm:grid-cols-2 sm:p-8">
@@ -687,8 +811,7 @@
               <button
                 class="inline-flex rounded-xl bg-accent-blue px-4 py-2 text-sm font-black text-white disabled:opacity-50"
                 onclick={applyCoupon}
-                disabled={fetching}
-              >{fetching ? 'Fetching…' : 'Fetch original files'}</button
+                disabled={fetching}>{fetching ? 'Fetching…' : 'Fetch original files'}</button
               >
             </div>
           </div>
@@ -697,13 +820,8 @@
           class="flex flex-wrap items-center justify-between gap-3 border-t border-outline bg-ice-panel px-6 py-4 text-sm sm:px-8"
         >
           <p class="text-ink/70">Already have a backup from another computer?</p>
-          <label class="cursor-pointer font-black text-accent-blue hover:underline"
-            >Load work ZIP<input
-              class="hidden"
-              type="file"
-              accept=".zip"
-              onchange={(event) => loadWork(event.currentTarget)}
-            /></label
+          <button class="cursor-pointer font-black text-accent-blue hover:underline" onclick={openLoadWork}
+            >Load work</button
           >
         </div>
       </section>
@@ -754,16 +872,11 @@
                 onchange={(event) => loadSysfont(event.currentTarget.files?.[0])}
               /></label
             >
-            <label class="action-button cursor-pointer border-outline bg-white text-navy"
-              >Load work<input
-                class="hidden"
-                type="file"
-                accept=".zip"
-                onchange={(event) => loadWork(event.currentTarget)}
-              /></label
+            <button
+              class="action-button cursor-pointer border-outline bg-white text-navy"
+              onclick={openLoadWork}>Load work</button
             >
-            <button class="action-button bg-accent-yellow text-navy" onclick={saveWork}>Save work</button>
-            <button class="action-button bg-accent-blue text-white" onclick={saveContribution}>Export</button>
+            <button class="action-button bg-accent-yellow text-navy" onclick={openSaveWork}>Save work</button>
           </div>
         </div>
         <div class="flex gap-2 overflow-x-auto px-4 py-3 sm:px-5" aria-label="Choose character or game group">
@@ -907,5 +1020,20 @@
         onMove={moveSection}
       />
     {/if}
+
+    <WorkTransferModal
+      mode={workModal}
+      open={workModal !== null}
+      {coupon}
+      {cloudEnabled}
+      localSavedAt={localWorkSavedAt}
+      cloudSavedAt={cloudWorkSavedAt}
+      busy={workBusy}
+      onClose={() => (workModal = null)}
+      onLocal={workModal === 'save' ? saveWorkLocal : loadWorkLocal}
+      onCloud={workModal === 'save' ? saveWorkCloud : loadWorkCloud}
+      onDownload={downloadWork}
+      onFile={loadWork}
+    />
   </div>
 </main>

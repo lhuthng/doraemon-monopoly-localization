@@ -55,13 +55,16 @@ original `strings.dat`, `voice.dat`, and `sysfont.dat` from the project's
 Cloudflare gatekeeper instead of loading their own copy. See
 [`apps/gatekeeper/`](apps/gatekeeper/README.md).
 
-There are two ZIP types:
+**Save work** and **Load work** each open a modal with Local and Cloud options
+(plus a download/from-file option). Local keeps a copy in the browser;
+Cloud stores a zstd-compressed copy on the gatekeeper behind the coupon. Both
+options show when they were last saved and mark which one is newer.
 
-- `dubbing-work.zip` is a private resume backup. It contains `work.json` and is
-  intended to be loaded back into the Workshop by the same contributor.
-- `doraemon-monopoly-<language>-dubbing.zip` is a contribution export. It
-  contains a manifest, translated dialogue JSON, and replacement WAV files.
-  Maintainers can import it into the canonical source tree.
+There is a single work/contribution ZIP type:
+
+- `doraemon-monopoly-<language>-dubbing.zip` contains a manifest, translated
+  dialogue JSON, and replacement WAV files. The Workshop restores its session
+  from it, and maintainers can import it into the canonical source tree.
 
 Maintainers can import a contribution automatically:
 
@@ -96,24 +99,64 @@ automatically.
 | `vendor/cnc-ddraw/` | Vendored cnc-ddraw graphics compatibility wrapper. |
 | `workspace/` | Ignored local inputs, candidate patches, and generated output. |
 
-The source flow is:
+The data flow:
 
 ```text
-contributor ZIP -> content/dubbing/ -> local-game workspace -> component patches
-                 -> embedded Windows patcher -> player's own game
+      contributor ZIP
+           │ 1. import-contribution
+           ▼
+  content/dubbing/<lang>   ←────────────────┐
+   (canonical source)                       │ 3. export-dubbing
+           │                                │   (Studio edits back up)
+           │ 2. apply-dubbing               │
+           ▼                                │
+  local-game/<lang>  ───────────────────────┘
+   (Studio workspace, make studio-en/vi)
+           │ 4. build-patch
+           ▼
+  content/patches/<lang>   (.dmpatch components)
+           │ 5. build-patcher
+           ▼
+  workspace/release/patcher.exe  ──►  players
+
+  auto catalogue regen (apply/export/import/build-patch)
+  or manual: make update-catalogue
+           ▼
+  generated-dubbing-catalogue.ts  ──►  Translator Workshop site
 ```
 
-Do not edit `.dmpatch` files directly. Rebuild them from their source files.
+Everything starts from `workspace/base/` (private originals) via `make prepare`,
+which materializes the `local-game/` Studio workspaces. `content/dubbing/` is the
+canonical, reviewable source; the Translator Workshop catalogue is generated from
+it automatically by the commands above. Do not edit `.dmpatch` files directly —
+rebuild them from their source files.
 
 ## Maintainer workflow
 
 ### 1. Prepare the machine
 
-Install Rust/Cargo, Bun, and GNU MinGW when building Windows binaries on macOS:
+Install **rustup** (recommended; the repo's `rust-toolchain.toml` pins Rust 1.77.2
+and the `x86_64-pc-windows-gnu` target, which rustup installs automatically on
+first build — the distro-packaged `cargo`/`rustc` ignores that file and only ships
+the Linux host target):
 
 ```sh
-brew install mingw-w64
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+Then install **Bun** and the MinGW cross-toolchains. Both are needed when
+building Windows binaries: the 32-bit one compiles the BGM runtime
+(`game-patch` build script), the 64-bit one links and resource-stamps the
+patcher (`x86_64-pc-windows-gnu`):
+
+```sh
+sudo apt-get install -y gcc-mingw-w64-i686 gcc-mingw-w64-x86-64   # Debian/Ubuntu
+sudo dnf install mingw32-gcc mingw64-gcc                           # Fedora
+brew install mingw-w64                                             # macOS
+```
+
+`make check-mingw` verifies the cross-toolchains; `make dependencies` installs
+the Bun workspace and fetches the Rust crates.
 
 Place these files from an untouched game in `workspace/base/`:
 
@@ -162,7 +205,10 @@ Terraform (bucket + KV + worker) -> wrangler secrets -> R2 upload -> coupons -> 
   active set. Any human-readable string works as a coupon.
 - **Workshop**: builds with `PUBLIC_GATEKEEPER_URL` (from a repo variable in the
   deploy workflow) show a **Project coupon** field that fetches
-  `strings.dat`, `voice.dat`, and `sysfont.dat` from the worker.
+  `strings.dat`, `voice.dat`, and `sysfont.dat` from the worker. The same coupon
+  powers Cloud **Save/Load work**: the Workshop zstd-compresses its work ZIP and
+  the worker stores/returns the opaque compressed blob under
+  `work/coupon/<sha256(coupon)>.zst` in the bucket.
 
 Install dependencies, then materialize the current component patches over the
 original game into ignored local workspaces:
@@ -172,61 +218,78 @@ make dependencies
 make prepare
 ```
 
-`make prepare` does not apply or overwrite canonical dubbing. Apply it
-explicitly to the workspace you intend to edit:
+`make prepare` creates the `local-game/` workspaces Studio edits; it does not
+apply or overwrite canonical dubbing. From here, two main flows keep every output
+(Studio, Translator site, and release patches) in sync:
+
+### 2. Flow A — Import a contribution ZIP into everything
+
+Run these in order. Each command regenerates the Translator Workshop catalogue, so
+the translator always reflects the newest translation:
 
 ```sh
-make apply-dubbing LANGUAGE=vietnamese
-```
-
-### 2. Import or edit content
-
-For a Workshop contribution:
-
-```sh
+# 1. Validate + merge the ZIP into canonical content/dubbing/vietnamese/
+#    (creates a timestamped backup in workspace/dubbing-import-backups/)
 make import-contribution CONTRIBUTION=workspace/<contribution>.zip
+
+# 2. Push the imported dubbing into the Studio workspace, so studio-vi shows it
+make apply-dubbing LANGUAGE=vietnamese
+
+# 3. Optional: review or adjust it in the browser
+make studio-vi
+
+# 4. Export (no-op here, already in sync) and build all three tracked components
+make build-patch LANGUAGE=vietnamese PUBLISH=1
+
+# 5. Commit and push → the Translator site redeploys automatically
+git add content/dubbing content/patches apps/resource-studio/src/lib/generated-dubbing-catalogue.ts
+git commit -m "Import contribution <name>"
+git push
 ```
 
-For local work, launch one workspace:
+What each step updates:
+
+| Step | Updates |
+| --- | --- |
+| 1. `import-contribution` | `content/dubbing/vietnamese/` + Translator catalogue |
+| 2. `apply-dubbing` | Studio workspace `local-game/vietnamese/` (so Studio shows it) |
+| 4. `build-patch` | Tracked release components `content/patches/vietnamese/` |
+| 5. commit + push | Live Translator Workshop site |
+
+### 3. Flow B — Edit in Studio, then update everything else
+
+Studio edits live in the generated workspace until you export them. New files you
+add under `local-game/<language>/` (sprites, fonts, etc.) are picked up by the
+component build automatically:
 
 ```sh
-make studio-en
+# 1. Launch Studio on the prepared workspace and make your edits
 make studio-vi
+
+# 2. Pull dialogue + voice edits back into canonical content/dubbing/vietnamese/
+#    (also regenerates the Translator catalogue)
+make export-dubbing LANGUAGE=vietnamese
+
+# 3. Build all three tracked components → content/patches/vietnamese/
+make build-patch LANGUAGE=vietnamese PUBLISH=1
+
+# 4. Commit and push → the Translator site redeploys automatically
+git add content/dubbing content/patches apps/resource-studio/src/lib/generated-dubbing-catalogue.ts
+git commit -m "Studio edits for Vietnamese"
+git push
 ```
 
-Studio edits live in the generated local workspace until `make build-patch`
-exports dialogue and voice changes back into canonical `content/dubbing/`.
-Graphics and font work stays in the local workspace and is included in the
-same component build.
+### 4. Validate
 
-### 3. Validate
-
-Run the complete local checks:
+Run the complete local checks before committing:
 
 ```sh
 make check
 ```
 
-### 4. Build components
+### 5. Build and release a patcher
 
-Use `PUBLISH=1` only when you intend to update tracked release components:
-
-```sh
-make build-dubbing LANGUAGE=vietnamese PUBLISH=1
-make build-sprites LANGUAGE=vietnamese PUBLISH=1
-make build-runtime LANGUAGE=vietnamese PUBLISH=1
-```
-
-To build all three for one language:
-
-```sh
-make build-patch LANGUAGE=vietnamese PUBLISH=1
-```
-
-Without `PUBLISH=1`, component output goes to ignored `workspace/patches/` for a
-candidate build.
-
-### 5. Package and test a patcher
+To package the tracked components into a Windows patcher locally:
 
 ```sh
 make build-patcher
@@ -236,14 +299,28 @@ The result is `workspace/release/patcher.exe`. Copy it beside a test game's
 `Doraemon.exe` on Windows 11, apply the selected language, test Play/Restore,
 and verify local music and wrapper options when relevant.
 
-For a local release-style check:
+To publish it as a GitHub release, push a tag:
 
 ```sh
-make release
+git tag patcher-v1.x.x
+git push origin patcher-v1.x.x
 ```
 
-This checks that all language components exist and builds the local patcher. It
-does not create a GitHub release or publish files remotely.
+The `release-language.yml` workflow builds `patcher.exe` from the tracked
+`content/patches/` components and uploads it to GitHub Releases.
+
+Notes:
+
+- `PUBLISH=1` writes tracked `content/patches/`. Without it, component output goes
+  to ignored `workspace/patches/` for a candidate build. `build-dubbing`,
+  `build-sprites`, and `build-runtime` each build a single component if you need
+  finer control.
+- The Translator Workshop catalogue (`generated-dubbing-catalogue.ts`) is
+  regenerated automatically by `import-contribution`, `apply-dubbing`, and
+  `export-dubbing` (and therefore `build-patch`). Commit it together with the
+  `content/dubbing/` changes so the deploy picks them up.
+- `make release` checks that all language components exist and builds a local
+  patcher without publishing anything.
 
 ## Make command reference
 
@@ -252,7 +329,8 @@ Run `make help` for the same workflow in the terminal.
 | Command | Purpose |
 | --- | --- |
 | `make check` | Run Rust tests plus Resource Studio and Workshop checks/tests. |
-| `make dependencies` | Install locked Bun dependencies. |
+| `make dependencies` | Install locked Bun dependencies and fetch Rust crates (installs the pinned Rust toolchain + target via rustup). |
+| `make check-mingw` | Verify the 32-bit and 64-bit MinGW cross-toolchains are installed. |
 | `make prepare` | Materialize local-game from workspace/base and current patches only. |
 | `make fetch-base` | Optional: fetch workspace/base files from the gatekeeper worker. |
 | `make upload-base` | Upload workspace/base files into the gatekeeper's R2 bucket. |
@@ -261,13 +339,15 @@ Run `make help` for the same workflow in the terminal.
 | `make gatekeeper-sync-coupons` | Force-push the current active coupon set from the registry. |
 | `make gatekeeper-list-coupons` | List coupons and whether they're active or revoked. |
 | `make gatekeeper-delete-coupon COUPON=...` | Revoke a coupon (or `HASH=<sha256>` for legacy ones). |
-| `make apply-dubbing LANGUAGE=...` | Apply canonical dubbing to one prepared Studio workspace. |
-| `make import-contribution CONTRIBUTION=...` | Import and validate a Workshop contribution ZIP. |
+| `make apply-dubbing LANGUAGE=...` | Apply canonical dubbing to one prepared Studio workspace (also regenerates the Workshop catalogue). |
+| `make export-dubbing LANGUAGE=...` | Pull Studio edits back into canonical content/dubbing (also regenerates the Workshop catalogue). |
+| `make import-contribution CONTRIBUTION=...` | Import and validate a Workshop contribution ZIP (also regenerates the Workshop catalogue). |
+| `make update-catalogue` | Regenerate the Translator Workshop catalogue from `content/dubbing/`. |
 | `make studio-en` / `make studio-vi` | Launch an existing Studio workspace without preparing it. |
 | `make build-dubbing LANGUAGE=... PUBLISH=1` | Export Studio dubbing, then build the dubbing component. |
 | `make build-sprites LANGUAGE=... PUBLISH=1` | Build the graphics component. |
 | `make build-runtime LANGUAGE=... PUBLISH=1` | Build the runtime component. |
-| `make build-patch LANGUAGE=... PUBLISH=1` | Export Studio dubbing, then build all components for one language. |
+| `make build-patch LANGUAGE=... PUBLISH=1` | Export Studio dubbing, build all components, and regenerate the Workshop catalogue. |
 | `make build-patcher` | Embed tracked components into `workspace/release/patcher.exe`. |
 | `make release` | Check payload presence and build a local patcher. |
 | `make translator-dev` | Run the public Workshop locally. |

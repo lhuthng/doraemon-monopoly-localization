@@ -19,7 +19,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help dependencies check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-studio check-publish check-patcher check-wrapper check-resources check-game check-payloads
+.PHONY: help dependencies check-mingw check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution update-catalogue studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-studio check-origin check-publish check-patcher check-wrapper check-resources check-game check-payloads
 
 help:
 	@printf '%s\n' \
@@ -39,7 +39,8 @@ help:
 	  '' \
 	  'Preparation and contributions:' \
 	  '  make dependencies' \
-	  '      Install the locked Bun workspace dependencies.' \
+	  '      Install the locked Bun workspace dependencies and fetch the Rust crates.' \
+	  '      Also verifies the 32-bit MinGW cross-toolchain (gcc-mingw-w64-i686 on Debian/Ubuntu).' \
 	  '  make prepare' \
 	  '      Rebuild Studio local-game from workspace/base and the current component patches only.' \
 	  '  make fetch-base' \
@@ -58,8 +59,12 @@ help:
 	  '      Revoke a coupon and push immediately.' \
 	  '  make apply-dubbing LANGUAGE=english' \
 	  '      Apply canonical content/dubbing/<language> to that prepared Studio workspace.' \
+	  '      Also regenerates the Translator Workshop catalogue.' \
 	  '  make import-contribution CONTRIBUTION=workspace/<contribution>.zip' \
 	  '      Validate and merge a Translator Workshop ZIP into content/dubbing/.' \
+	  '      Also regenerates the Translator Workshop catalogue.' \
+	  '  make update-catalogue' \
+	  '      Regenerate the Translator Workshop catalogue from content/dubbing/.' \
 	  '  make studio-en | make studio-vi' \
 	  '      Launch Studio only; it never prepares or overwrites the workspace.' \
 	  '' \
@@ -87,8 +92,19 @@ help:
 
 dependencies:
 	@bun install --frozen-lockfile
+	@cargo fetch
 
-check:
+check-mingw:
+	@missing=0; for tool in i686-w64-mingw32-gcc x86_64-w64-mingw32-gcc x86_64-w64-mingw32-windres; do \
+	  if ! command -v "$$tool" >/dev/null 2>&1; then printf '%s\n' "Missing cross-toolchain binary $$tool."; missing=1; fi; \
+	done; \
+	if [ "$$missing" -ne 0 ]; then printf '%s\n' \
+	  'Install the MinGW cross-toolchains (32-bit for the BGM runtime, 64-bit for the patcher):' \
+	  '  Debian/Ubuntu:  sudo apt-get install -y gcc-mingw-w64-i686 gcc-mingw-w64-x86-64' \
+	  '  Fedora:         sudo dnf install mingw32-gcc mingw64-gcc' \
+	  '  macOS:          brew install mingw-w64' ; exit 2; fi
+
+check: dependencies check-mingw
 	@cargo test --workspace
 	@cd apps/resource-studio && bun run check && bun test
 	@cd apps/translator-workshop && bun run check && bun test
@@ -121,7 +137,7 @@ check-payloads:
 	  for component in dubbing sprites runtime; do if [ ! -f "content/patches/$$language/$$component.dmpatch" ]; then printf '%s\n' "Missing content/patches/$$language/$$component.dmpatch."; missing=1; fi; done; \
 	done; test $$missing -eq 0
 
-prepare: check-resources check-payloads
+prepare: dependencies check-mingw check-resources check-payloads
 	@mkdir -p apps/resource-studio/local-game/origin
 	@cp $(BASE_DIR)/strings.dat apps/resource-studio/local-game/origin/strings.dat
 	@cp $(BASE_DIR)/voice.dat apps/resource-studio/local-game/origin/voice.dat
@@ -158,15 +174,26 @@ check-studio: check-language
 	  if [ ! -f "apps/resource-studio/local-game/origin/$$file" ]; then printf '%s\n' "Missing apps/resource-studio/local-game/origin/$$file. Run make prepare."; missing=1; fi; \
 	done; test $$missing -eq 0
 
+check-origin:
+	@missing=0; for file in strings.dat voice.dat; do \
+	  if [ ! -f "apps/resource-studio/local-game/origin/$$file" ]; then printf '%s\n' "Missing apps/resource-studio/local-game/origin/$$file. Run make prepare."; missing=1; fi; \
+	done; test $$missing -eq 0
+
 apply-dubbing: check-studio
 	@cd apps/resource-studio && bun run dubbing:check $(LANGUAGE) && bun run dubbing:sync $(LANGUAGE)
+	@cd apps/resource-studio && bun run dubbing:catalogue
 
 export-dubbing: check-studio
 	@cd apps/resource-studio && bun run dubbing:export $(LANGUAGE) && bun run dubbing:check $(LANGUAGE)
+	@cd apps/resource-studio && bun run dubbing:catalogue
 
-import-contribution:
+import-contribution: dependencies check-origin
 	@test -n "$(CONTRIBUTION)" || { printf '%s\n' 'Usage: make import-contribution CONTRIBUTION=workspace/<contribution>.zip'; exit 2; }
-	@cd apps/resource-studio && bun run dubbing:import -- "../../$(CONTRIBUTION)"
+	@cd apps/resource-studio && bun run dubbing:import "../../$(CONTRIBUTION)"
+	@cd apps/resource-studio && bun run dubbing:catalogue
+
+update-catalogue: dependencies check-origin
+	@cd apps/resource-studio && bun run dubbing:catalogue
 
 studio-en:
 	@cd apps/resource-studio && bun run dev-en
@@ -174,7 +201,7 @@ studio-en:
 studio-vi:
 	@cd apps/resource-studio && bun run dev-vi
 
-build-dubbing: check-publish check-game export-dubbing
+build-dubbing: check-publish check-game check-mingw export-dubbing
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts \
 	  --language "$(LANGUAGE)" \
@@ -183,16 +210,15 @@ build-dubbing: check-publish check-game export-dubbing
 	  --output-dir "$(PATCH_DIR)/$(LANGUAGE)" \
 	  --target dubbing
 
-build-sprites: check-publish check-game check-studio
+build-sprites: check-publish check-game check-studio check-mingw
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target sprites
 
-build-runtime: check-publish check-game check-studio
+build-runtime: check-publish check-game check-studio check-mingw
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target runtime --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 
-build-patch: check-language check-publish check-game check-studio
-	@cd apps/resource-studio && bun run dubbing:export $(LANGUAGE) && bun run dubbing:check $(LANGUAGE)
+build-patch: check-language check-publish check-game check-studio check-mingw export-dubbing
 	@mkdir -p "$(PATCH_DIR)/$(LANGUAGE)"
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target dubbing
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target sprites
@@ -207,7 +233,7 @@ translator-build:
 translator-dev:
 	@cd apps/translator-workshop && bun run dev
 
-build-patcher:
+build-patcher: check-mingw
 	@mkdir -p "$(RELEASE_DIR)"
 	@set --; \
 	if [ -d content/patches/english ]; then set -- "$$@" --english-payload-dir content/patches/english; else printf '%s\n' 'English components missing.'; fi; \

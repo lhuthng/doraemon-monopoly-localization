@@ -26,16 +26,52 @@ function kvMock() {
 }
 
 function bucketMock(name: string, hash: string, etag = 'etag-1') {
+  const store = new Map<
+    string,
+    { bytes: Uint8Array; etag: string; metadata: Record<string, string>; uploaded: Date }
+  >();
+  store.set(name, {
+    bytes: new TextEncoder().encode(`contents-of-${name}`),
+    etag,
+    metadata: { sha256: hash },
+    uploaded: new Date('2026-01-01T00:00:00.000Z')
+  });
   return {
     async get(key: string) {
-      if (key !== name) return null;
-      return { body: `contents-of-${name}`, httpEtag: etag, customMetadata: { sha256: hash } };
+      const entry = store.get(key);
+      if (!entry) return null;
+      return {
+        body: new Blob([entry.bytes]),
+        httpEtag: entry.etag,
+        size: entry.bytes.length,
+        uploaded: entry.uploaded,
+        customMetadata: entry.metadata
+      };
+    },
+    async head(key: string) {
+      const entry = store.get(key);
+      if (!entry) return null;
+      return {
+        httpEtag: entry.etag,
+        size: entry.bytes.length,
+        uploaded: entry.uploaded,
+        customMetadata: entry.metadata
+      };
+    },
+    async put(key: string, value: Uint8Array, options?: { customMetadata?: Record<string, string> }) {
+      store.set(key, {
+        bytes: new Uint8Array(value),
+        etag: `etag-${key}`,
+        metadata: options?.customMetadata ?? {},
+        uploaded: new Date('2026-02-02T00:00:00.000Z')
+      });
     }
   };
 }
 
 const COUPON = 'test-coupon-abcdef';
 const COUPON_HASH = '51f93440562066327d5fd9853132244d24c5bbdc334fb300535c3de2a3e430d1';
+const OTHER_COUPON = 'other-coupon-xyz';
 
 function makeEnv(overrides: Partial<Env> = {}): Env {
   const kv = kvMock();
@@ -204,5 +240,130 @@ describe('handleRequest', () => {
       env
     );
     expect(response.status).toBe(403);
+  });
+});
+
+describe('/api/work', () => {
+  test('saves and retrieves a work blob with a coupon', async () => {
+    const env = makeEnv();
+    const payload = new TextEncoder().encode('zstd-compressed-work-blob');
+    const put = await handleRequest(
+      new Request('https://gatekeeper/api/work', {
+        method: 'PUT',
+        body: payload,
+        headers: { 'X-Coupon': COUPON }
+      }),
+      env
+    );
+    expect(put.status).toBe(200);
+    const stored = JSON.parse(await put.text());
+    expect(stored.size).toBe(payload.length);
+    expect(stored.sha256).toBe(await sha256Hex('zstd-compressed-work-blob'));
+    expect(stored.uploadedAt).toBeTruthy();
+
+    const get = await handleRequest(
+      new Request('https://gatekeeper/api/work', { headers: { 'X-Coupon': COUPON } }),
+      env
+    );
+    expect(get.status).toBe(200);
+    expect(get.headers.get('X-Uploaded-At')).toBeTruthy();
+    expect(get.headers.get('X-SHA256')).toBe(stored.sha256);
+    expect(await get.arrayBuffer()).toEqual(payload.slice().buffer);
+
+    const head = await handleRequest(
+      new Request('https://gatekeeper/api/work', { method: 'HEAD', headers: { 'X-Coupon': COUPON } }),
+      env
+    );
+    expect(head.status).toBe(200);
+    expect(head.headers.get('X-Uploaded-At')).toBeTruthy();
+    expect(await head.text()).toBe('');
+  });
+
+  test('saves and retrieves a work blob with the maintainer secret', async () => {
+    const env = makeEnv();
+    const payload = new TextEncoder().encode('maintainer-work');
+    const put = await handleRequest(
+      new Request('https://gatekeeper/api/work', {
+        method: 'PUT',
+        body: payload,
+        headers: { Authorization: 'Bearer maintainer-secret' }
+      }),
+      env
+    );
+    expect(put.status).toBe(200);
+
+    const get = await handleRequest(
+      new Request('https://gatekeeper/api/work', { headers: { Authorization: 'Bearer maintainer-secret' } }),
+      env
+    );
+    expect(get.status).toBe(200);
+    expect(await get.text()).toBe('maintainer-work');
+  });
+
+  test('returns 401 without credentials', async () => {
+    const env = makeEnv();
+    const response = await handleRequest(
+      new Request('https://gatekeeper/api/work', { method: 'PUT', body: 'x' }),
+      env
+    );
+    expect(response.status).toBe(401);
+  });
+
+  test('returns 404 when nothing is saved yet', async () => {
+    const env = makeEnv();
+    const response = await handleRequest(
+      new Request('https://gatekeeper/api/work', { headers: { 'X-Coupon': COUPON } }),
+      env
+    );
+    expect(response.status).toBe(404);
+  });
+
+  test('isolates cloud work per coupon', async () => {
+    const otherHash = await sha256Hex(OTHER_COUPON);
+    const env = makeEnv({ COUPON_HASHES: JSON.stringify([COUPON_HASH, otherHash]) });
+    await handleRequest(
+      new Request('https://gatekeeper/api/work', {
+        method: 'PUT',
+        body: 'coupon-a-work',
+        headers: { 'X-Coupon': COUPON }
+      }),
+      env
+    );
+    const forA = await handleRequest(
+      new Request('https://gatekeeper/api/work', { headers: { 'X-Coupon': COUPON } }),
+      env
+    );
+    expect(await forA.text()).toBe('coupon-a-work');
+    const forB = await handleRequest(
+      new Request('https://gatekeeper/api/work', { headers: { 'X-Coupon': OTHER_COUPON } }),
+      env
+    );
+    expect(forB.status).toBe(404);
+  });
+
+  test('preflight allows PUT on the work endpoint', async () => {
+    const env = makeEnv({ ALLOWED_ORIGINS: 'https://workshop.example' });
+    const response = await handleRequest(
+      new Request('https://gatekeeper/api/work', {
+        method: 'OPTIONS',
+        headers: { Origin: 'https://workshop.example', 'Access-Control-Request-Method': 'PUT' }
+      }),
+      env
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Methods')).toContain('PUT');
+    expect(response.headers.get('Access-Control-Allow-Headers')).toContain('X-Coupon');
+  });
+
+  test('rejects unsupported methods on the work endpoint', async () => {
+    const env = makeEnv();
+    const response = await handleRequest(
+      new Request('https://gatekeeper/api/work', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer maintainer-secret' }
+      }),
+      env
+    );
+    expect(response.status).toBe(405);
   });
 });
