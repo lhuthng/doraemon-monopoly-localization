@@ -830,7 +830,6 @@
         <div class="flex flex-wrap items-center gap-3 border-b border-outline bg-white/80 px-4 py-3 sm:px-5">
           <div class="w-44 shrink-0 text-sm font-black text-navy">
             <PopoverSelect
-              label="Language"
               value={language}
               options={[
                 { value: 'english', label: 'English' },

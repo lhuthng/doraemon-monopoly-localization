@@ -23,7 +23,7 @@
         alt={label}
       />
     {:else}
-      <span>{label}: {options.find((option) => option.value === value)?.label ?? value}</span>
+      <span>{label ? `${label}: ` : ''}{options.find((option) => option.value === value)?.label ?? value}</span>
     {/if}
     <span class:chevron-open={open} class="popover-chevron" aria-hidden="true">⌄</span>
   </button>
