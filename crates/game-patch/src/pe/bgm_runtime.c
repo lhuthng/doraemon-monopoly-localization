@@ -67,6 +67,7 @@ typedef struct {
     DWORD generation;
     DWORD level;
     DWORD sample_rate, sample_bytes, half_frames, half_bytes, buffer_bytes;
+    int error;
     int active_track;
     int current_half;
     int playing;
@@ -251,7 +252,12 @@ static int decode(BYTE *target, DWORD frames) {
             return 0;
         }
         if (state.sample_bytes == 1) {
-            target[i] = (BYTE)(((int)sample + 32768) >> 8);
+            int x = (int)sample + state.error;
+            int q = (x + 32768 + 128) >> 8;
+            if (q < 0) q = 0;
+            if (q > 255) q = 255;
+            state.error = x - ((q << 8) - 32768);
+            target[i] = (BYTE)q;
         } else {
             target[i * 2] = (BYTE)sample;
             target[i * 2 + 1] = (BYTE)((uint16_t)sample >> 8);
@@ -407,6 +413,7 @@ static int start_timer(void) {
 static void close_locked(void) {
     ++state.generation;
     state.playing = 0;
+    state.error = 0;
     stop_timer();
     if (state.buffer) { com0(state.buffer,18); com0(state.buffer,2); state.buffer=0; }
     if (state.input) { game_free(state.input); state.input=0; }
