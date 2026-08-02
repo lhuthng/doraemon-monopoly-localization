@@ -229,6 +229,7 @@ describe('handleRequest', () => {
     );
     expect(response.status).toBe(204);
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://workshop.example');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 
   test('rejects a disallowed origin', async () => {
@@ -339,6 +340,17 @@ describe('/api/work', () => {
       env
     );
     expect(forB.status).toBe(404);
+  });
+
+  test('exposes work metadata headers to the browser', async () => {
+    const env = makeEnv();
+    const response = await handleRequest(
+      new Request('https://gatekeeper/api/work', { headers: { 'X-Coupon': COUPON }, method: 'HEAD' }),
+      env
+    );
+    const exposed = response.headers.get('Access-Control-Expose-Headers') ?? '';
+    expect(exposed).toContain('X-Uploaded-At');
+    expect(exposed).toContain('X-SHA256');
   });
 
   test('preflight allows PUT on the work endpoint', async () => {

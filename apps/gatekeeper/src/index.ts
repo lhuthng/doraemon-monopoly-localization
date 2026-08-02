@@ -62,7 +62,9 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, HEAD, PUT, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, X-Coupon, Content-Type',
+    'Access-Control-Expose-Headers': 'X-Uploaded-At, X-SHA256, ETag',
     'Access-Control-Max-Age': '86400',
+    'Cache-Control': 'no-store',
     Vary: 'Origin'
   };
   if (origin && originAllowed(request, env)) headers['Access-Control-Allow-Origin'] = origin;
