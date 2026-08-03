@@ -209,10 +209,10 @@ mod windows_app {
 
     fn log_color(state: TaskState) -> ( &'static str, slint::Color ) {
         match state {
-            TaskState::Working => ("[....]", slint::Color::from_rgb_u8(40, 110, 200)),
-            TaskState::Done    => ("[ OK ]", slint::Color::from_rgb_u8(45, 145, 85)),
-            TaskState::Skipped => ("[SKIP]", slint::Color::from_rgb_u8(190, 160, 45)),
-            TaskState::Failed  => ("[FAIL]", slint::Color::from_rgb_u8(200, 55, 55)),
+            TaskState::Working => ("[....]", slint::Color::from_rgb_u8(37, 99, 235)),
+            TaskState::Done    => ("[ OK ]", slint::Color::from_rgb_u8(22, 163, 74)),
+            TaskState::Skipped => ("[SKIP]", slint::Color::from_rgb_u8(234, 179, 8)),
+            TaskState::Failed  => ("[FAIL]", slint::Color::from_rgb_u8(220, 38, 38)),
         }
     }
 

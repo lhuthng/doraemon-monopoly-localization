@@ -58,7 +58,7 @@ export component PatcherUI inherits Window {
     VerticalLayout {
         Rectangle {
             height: 64px;
-            background: #1c6e8c;
+            background: #2563eb;
             HorizontalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
@@ -74,7 +74,7 @@ export component PatcherUI inherits Window {
                     Text {
                         text: root.subtitle;
                         font-size: 12px;
-                        color: #dfeff6;
+                        color: #bfdbfe;
                     }
                 }
             }
@@ -135,7 +135,7 @@ export component PatcherUI inherits Window {
                         Text {
                             text: root.music-hint;
                             wrap: word-wrap;
-                            color: #888;
+                            color: #64748b;
                             font-size: 12px;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
@@ -183,7 +183,7 @@ export component PatcherUI inherits Window {
                     }
                     HorizontalLayout {
                         spacing: 12px;
-                        Text { text: "Quality"; color: #555; vertical-alignment: center; }
+                        Text { text: "Quality"; color: #475569; vertical-alignment: center; }
                         quality := ComboBox {
                             model: root.quality-items;
                             current-index <=> root.quality-index;
@@ -202,7 +202,7 @@ export component PatcherUI inherits Window {
                 title: " Progress ";
                 Rectangle {
                     height: 20px;
-                    background: #e0e0e0;
+                    background: #e2e8f0;
                     border-radius: 4px;
                     clip: true;
                     Rectangle {
@@ -210,7 +210,7 @@ export component PatcherUI inherits Window {
                         y: 0;
                         height: parent.height;
                         width: parent.width * root.progress-value / 100;
-                        background: #1c6e8c;
+                        background: #2563eb;
                         border-radius: 4px;
                     }
                 }
@@ -266,12 +266,12 @@ export component PatcherUI inherits Window {
                             text: root.dialog-title;
                             font-size: 18px;
                             font-weight: 700;
-                            color: #1a1a1a;
+                            color: #1e293b;
                         }
                         Text {
                             text: root.dialog-text;
                             wrap: word-wrap;
-                            color: #333;
+                            color: #475569;
                         }
                         HorizontalLayout {
                             alignment: end;
