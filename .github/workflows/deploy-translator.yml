@@ -6,7 +6,7 @@ on:
     paths:
       - 'apps/translator-workshop/**'
       - 'packages/dubbing-core/**'
-      - 'apps/resource-studio/src/lib/generated-dubbing-catalogue.ts'
+      - 'apps/resource-studio/src/lib/generated-dubbing-catalogue.zst'
       - 'packages/dubbing-core/src/**'
   workflow_dispatch:
 

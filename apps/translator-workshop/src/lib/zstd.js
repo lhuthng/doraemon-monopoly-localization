@@ -9,12 +9,15 @@ function ensureReady() {
   return ready;
 }
 
-export async function compressWork(bytes) {
+export async function compressZstd(bytes, level = WORK_ZSTD_LEVEL) {
   await ensureReady();
-  return zstdCompress(bytes, WORK_ZSTD_LEVEL);
+  return zstdCompress(bytes, level);
 }
 
-export async function decompressWork(bytes) {
+export async function decompressZstd(bytes) {
   await ensureReady();
   return zstdDecompress(bytes);
 }
+
+export const compressWork = (bytes) => compressZstd(bytes, WORK_ZSTD_LEVEL);
+export const decompressWork = (bytes) => decompressZstd(bytes);

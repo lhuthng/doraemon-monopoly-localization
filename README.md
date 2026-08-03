@@ -122,7 +122,7 @@ The data flow:
   auto catalogue regen (apply/export/import/build-patch)
   or manual: make update-catalogue
            ▼
-  generated-dubbing-catalogue.ts  ──►  Translator Workshop site
+  generated-dubbing-catalogue.zst  ──►  Translator Workshop site
 ```
 
 Everything starts from `workspace/base/` (private originals) via `make prepare`,
@@ -242,7 +242,7 @@ make studio-vi
 make build-patch LANGUAGE=vietnamese PUBLISH=1
 
 # 5. Commit and push → the Translator site redeploys automatically
-git add content/dubbing content/patches apps/resource-studio/src/lib/generated-dubbing-catalogue.ts
+git add content/dubbing content/patches apps/resource-studio/src/lib/generated-dubbing-catalogue.zst
 git commit -m "Import contribution <name>"
 git push
 ```
@@ -274,7 +274,7 @@ make export-dubbing LANGUAGE=vietnamese
 make build-patch LANGUAGE=vietnamese PUBLISH=1
 
 # 4. Commit and push → the Translator site redeploys automatically
-git add content/dubbing content/patches apps/resource-studio/src/lib/generated-dubbing-catalogue.ts
+git add content/dubbing content/patches apps/resource-studio/src/lib/generated-dubbing-catalogue.zst
 git commit -m "Studio edits for Vietnamese"
 git push
 ```
@@ -315,7 +315,7 @@ Notes:
   to ignored `workspace/patches/` for a candidate build. `build-dubbing`,
   `build-sprites`, and `build-runtime` each build a single component if you need
   finer control.
-- The Translator Workshop catalogue (`generated-dubbing-catalogue.ts`) is
+- The Translator Workshop catalogue (`generated-dubbing-catalogue.zst`) is
   regenerated automatically by `import-contribution`, `apply-dubbing`, and
   `export-dubbing` (and therefore `build-patch`). Commit it together with the
   `content/dubbing/` changes so the deploy picks them up.

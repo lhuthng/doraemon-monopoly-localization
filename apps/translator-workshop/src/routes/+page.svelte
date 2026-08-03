@@ -1,5 +1,5 @@
 <script>
-  import catalogue from '$lib/catalogue';
+  import { loadCatalogue } from '$lib/catalogue';
   import DialogueRecord from '$lib/DialogueRecord.svelte';
   import GadgetVoiceRecord from '$lib/GadgetVoiceRecord.svelte';
   import VoiceOnlyRecord from '$lib/VoiceOnlyRecord.svelte';
@@ -36,7 +36,20 @@
     storedZip
   } from '@dubbing-core';
 
-  const data = catalogue;
+  let catalogueData = null;
+  let catalogueReady = $state(false);
+  const data = $derived(
+    catalogueReady
+      ? catalogueData
+      : {
+          format: DUBBING_FORMAT,
+          fingerprints: { strings: [], voice: [] },
+          languages: {
+            english: { records: [], voiceIds: [], dubbedVoiceIds: [] },
+            vietnamese: { records: [], voiceIds: [], dubbedVoiceIds: [] }
+          }
+        }
+  );
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const localKey = 'doraemon-monopoly-translator/v1';
@@ -613,6 +626,12 @@
   });
 
   onMount(async () => {
+    try {
+      catalogueData = await loadCatalogue();
+      catalogueReady = true;
+    } catch (catalogueError) {
+      error = String(catalogueError);
+    }
     const saved = localStorage.getItem(localKey);
     if (saved) {
       const state = JSON.parse(saved);

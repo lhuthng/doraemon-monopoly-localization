@@ -1,9 +1,11 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "doraemon-monopoly-localization",
+      "dependencies": {
+        "@bokuweb/zstd-wasm": "^0.0.27",
+      },
     },
     "apps/gatekeeper": {
       "name": "doraemon-monopoly-gatekeeper",

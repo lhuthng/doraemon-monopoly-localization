@@ -4,5 +4,8 @@
   "workspaces": [
     "packages/*",
     "apps/*"
-  ]
+  ],
+  "dependencies": {
+    "@bokuweb/zstd-wasm": "^0.0.27"
+  }
 }
