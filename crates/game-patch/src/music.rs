@@ -12,9 +12,16 @@ pub const TRACK_COUNT: usize = 10;
 pub const SAMPLE_RATE: u32 = 22_050;
 pub const BLOCK_FRAMES: usize = 4_096;
 pub const TRACK_FRAMES: [u32; TRACK_COUNT] = [
-    7_525_812, 2_865_912, 924_924, 2_394_924, 174_048, 2_130_324, 1_541_736, 1_376_802, 1_903_944,
-    308_994,
+    7_437_612, 2_821_812, 880_824, 2_350_824, 129_948, 2_086_224, 1_497_636, 1_332_702, 1_859_844,
+    264_894,
 ];
+
+/// Each disc audio track ends with 4 seconds of spill (2 seconds of silence
+/// followed by 2 seconds of the following track's opening). The game BGM
+/// trims that spill and reuses the previous track's trailing 2 seconds as the
+/// current track's opening, leaving a 2-second gap between the encoded track
+/// regions in the source stream that the encoder must skip.
+const SEGUE_BYTES: u64 = (44_100 * 2) as u64 * 4;
 
 const STEP_TABLE: [i32; 89] = [
     7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66,
@@ -127,7 +134,7 @@ fn encode_track<R: Read>(
     Ok(written)
 }
 
-fn encode_reader<R: Read>(
+fn encode_reader<R: Read + Seek>(
     source: &mut R,
     output: &Path,
     source_frames_per_output: u32,
@@ -158,6 +165,11 @@ fn encode_reader<R: Read>(
             source_frames_per_output as usize,
         )?;
         entries.push((index as u32 + 2, offset, length, frames));
+        if index + 1 != TRACK_COUNT {
+            source
+                .seek(SeekFrom::Current(SEGUE_BYTES as i64))
+                .map_err(|error| error.to_string())?;
+        }
     }
     let mut header = [0_u8; HEADER_SIZE];
     header[..8].copy_from_slice(MAGIC);
@@ -393,12 +405,12 @@ mod tests {
     }
 
     #[test]
-    fn all_track_durations_match_the_verified_disc() {
+    fn all_track_durations_match_the_corrected_music() {
         let seconds: Vec<_> = TRACK_FRAMES
             .into_iter()
             .map(|frames| (frames + SAMPLE_RATE - 1) / SAMPLE_RATE)
             .collect();
-        assert_eq!(seconds, [342, 130, 42, 109, 8, 97, 70, 63, 87, 15]);
+        assert_eq!(seconds, [338, 128, 40, 107, 6, 95, 68, 61, 85, 13]);
     }
 
     #[test]

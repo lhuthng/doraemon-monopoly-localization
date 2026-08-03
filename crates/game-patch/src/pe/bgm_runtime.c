@@ -86,7 +86,7 @@ static State state = { INVALID_FILE };
 __declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT5";
 
 static const DWORD track_frames[TRACKS] = {
-    7525812,2865912,924924,2394924,174048,2130324,1541736,1376802,1903944,308994
+    7437612,2821812,880824,2350824,129948,2086224,1497636,1332702,1859844,264894
 };
 
 static const int step_table[89] = {
