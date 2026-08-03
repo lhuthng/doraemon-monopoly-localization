@@ -1,15 +1,29 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
-const ENGLISH_PARTS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/english-parts.bin"));
-#[cfg(windows)]
-const VIETNAMESE_PARTS: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/vietnamese-parts.bin"));
+const PARTS_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/parts-bundle.bin"));
 #[cfg(windows)]
 const ENGLISH_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/english-payload.bin"));
 #[cfg(windows)]
 const VIETNAMESE_PAYLOAD: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/vietnamese-payload.bin"));
+
+/// Header prefix for zstd-compressed embedded data: four magic bytes followed
+/// by the little-endian decompressed length, then a zstd frame.
+const DZC_MAGIC: &[u8; 4] = b"DZC1";
+
+#[cfg(windows)]
+fn decompress(data: &[u8]) -> Vec<u8> {
+    if data.len() >= 12 && &data[..4] == DZC_MAGIC {
+        let original_len =
+            u64::from_le_bytes(data[4..12].try_into().unwrap()) as usize;
+        match zstd::bulk::decompress(&data[12..], original_len) {
+            Ok(bytes) => return bytes,
+            Err(e) => eprintln!("DIAG: embedded data failed to decompress ({e})"),
+        }
+    }
+    data.to_vec()
+}
 #[cfg(windows)]
 const ENGLISH_ICON: &[u8] = include_bytes!("../../../content/assets/icons/english.ico");
 #[cfg(windows)]
@@ -49,11 +63,13 @@ fn load_language(
     parts_blob: &[u8],
     monolithic: &[u8],
 ) -> Option<doraemon_game_patch::payload::Payload> {
+    let parts_blob = decompress(parts_blob);
+    let monolithic = decompress(monolithic);
     if parts_blob.len() < 5 {
         eprintln!("DIAG {lang_name}: parts_blob too small ({})", parts_blob.len());
     } else if &parts_blob[..5] != b"DPART" {
         eprintln!("DIAG {lang_name}: parts_blob has wrong magic ({:?}) — expecting DPART", &parts_blob[..5]);
-    } else if let Some(part_bytes) = decode_parts_blob(parts_blob) {
+    } else if let Some(part_bytes) = decode_parts_blob(&parts_blob) {
         let mut parts = Vec::new();
         let mut decoded = 0u32;
         let mut errors = 0u32;
@@ -76,7 +92,7 @@ fn load_language(
     }
     if !monolithic.is_empty() {
         eprintln!("DIAG {lang_name}: trying monolithic payload ({} bytes)", monolithic.len());
-        match doraemon_game_patch::payload::decode(monolithic) {
+        match doraemon_game_patch::payload::decode(&monolithic) {
             Ok(payload) => { eprintln!("DIAG {lang_name}: monolithic OK"); return Some(payload); }
             Err(e) => { eprintln!("DIAG {lang_name}: monolithic decode failed ({e})"); }
         }
@@ -249,10 +265,32 @@ mod windows_app {
             executable.parent().ok_or("the patcher executable has no parent game folder")?.to_path_buf()
         };
 
-        eprintln!("DIAG: ENGLISH_PARTS size={} ENGLISH_PAYLOAD size={}", super::ENGLISH_PARTS.len(), super::ENGLISH_PAYLOAD.len());
-        eprintln!("DIAG: VIETNAMESE_PARTS size={} VIETNAMESE_PAYLOAD size={}", super::VIETNAMESE_PARTS.len(), super::VIETNAMESE_PAYLOAD.len());
-        let english = super::load_language("English", super::ENGLISH_PARTS, super::ENGLISH_PAYLOAD);
-        let vietnamese = super::load_language("Vietnamese", super::VIETNAMESE_PARTS, super::VIETNAMESE_PAYLOAD);
+        let bundle = super::decompress(super::PARTS_BUNDLE);
+        let english_len = if bundle.len() >= 16 {
+            u64::from_le_bytes(bundle[0..8].try_into().unwrap()) as usize
+        } else {
+            0
+        };
+        let english_parts = if bundle.len() >= 8 + english_len {
+            &bundle[8..8 + english_len]
+        } else {
+            &[]
+        };
+        let vietnamese_len = if bundle.len() >= 8 + english_len + 8 {
+            let start = 8 + english_len;
+            u64::from_le_bytes(bundle[start..start + 8].try_into().unwrap()) as usize
+        } else {
+            0
+        };
+        let vietnamese_parts = if bundle.len() >= 8 + english_len + 8 + vietnamese_len {
+            &bundle[8 + english_len + 8..8 + english_len + 8 + vietnamese_len]
+        } else {
+            &[]
+        };
+        eprintln!("DIAG: PARTS_BUNDLE compressed={}B decompressed={}B (English parts={}B, Vietnamese parts={}B)", super::PARTS_BUNDLE.len(), bundle.len(), english_len, vietnamese_len);
+        eprintln!("DIAG: ENGLISH_PAYLOAD={}B VIETNAMESE_PAYLOAD={}B", super::ENGLISH_PAYLOAD.len(), super::VIETNAMESE_PAYLOAD.len());
+        let english = super::load_language("English", english_parts, super::ENGLISH_PAYLOAD);
+        let vietnamese = super::load_language("Vietnamese", vietnamese_parts, super::VIETNAMESE_PAYLOAD);
 
         let mut languages = vec![SharedString::from("<original>")];
         let english_index = english.as_ref().map(|_| { let i = languages.len() as i32; languages.push(SharedString::from("English")); i });
@@ -292,7 +330,7 @@ mod windows_app {
         if english.is_none() && vietnamese.is_none() {
             append_log(&log_model, TaskState::Failed, &format!(
                 "No embedded language payloads found. English parts blob={}B, Vietnamese parts blob={}B. The patch data may not have been linked in.",
-                super::ENGLISH_PARTS.len(), super::VIETNAMESE_PARTS.len()));
+                english_len, vietnamese_len));
         }
 
         let english = Rc::new(english);

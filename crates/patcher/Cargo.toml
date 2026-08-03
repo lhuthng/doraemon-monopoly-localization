@@ -11,7 +11,9 @@ doraemon-game-patch = { path = "../game-patch" }
 
 [build-dependencies]
 slint-build = "=1.9.2"
+zstd = "0.13"
 
 [target.'cfg(windows)'.dependencies]
 slint = { version = "=1.9.2", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2"] }
 winapi = { version = "0.3", features = ["winuser", "winerror"] }
+zstd = "0.13"

@@ -505,26 +505,10 @@ fn universal(arguments: &[String]) -> Result<(), String> {
             canon.to_string_lossy().to_string()
         });
 
-        // Also embed a merged legacy payload as a runtime fallback. The GUI
-        // prefers multipart data, but the fallback keeps a valid language
-        // available if an older build or environment cannot decode DPART.
-        let en_temp = output.join(".embedded-english-payload.dmpatch");
-        let vi_temp = output.join(".embedded-vietnamese-payload.dmpatch");
-        if let Some(payload) = &english {
-            fs::write(&en_temp, payload::encode(payload)?).map_err(|e| e.to_string())?;
-        }
-        if let Some(payload) = &vietnamese {
-            fs::write(&vi_temp, payload::encode(payload)?).map_err(|e| e.to_string())?;
-        }
-        let en_payload = english
-            .as_ref()
-            .map(|_| fs::canonicalize(&en_temp).map_err(|e| e.to_string()))
-            .transpose()?;
-        let vi_payload = vietnamese
-            .as_ref()
-            .map(|_| fs::canonicalize(&vi_temp).map_err(|e| e.to_string()))
-            .transpose()?;
-
+        // Component parts carry everything (including the runtime wrapper) inside
+        // the multipart data itself, so no monolithic fallback is embedded here.
+        // The patcher prefers multipart data, and a duplicate monolithic payload
+        // would only double the embedded size for no runtime benefit.
         let status = Command::new("cargo")
             .current_dir(&workspace)
             .args([
@@ -543,24 +527,8 @@ fn universal(arguments: &[String]) -> Result<(), String> {
                 "DORAEMON_PATCH_PARTS_VIETNAMESE",
                 vi_dir.as_deref().unwrap_or(""),
             )
-            .env(
-                "DORAEMON_PATCH_PAYLOAD_ENGLISH",
-                en_payload
-                    .as_ref()
-                    .map(|path| path.as_os_str())
-                    .unwrap_or_else(|| std::ffi::OsStr::new("")),
-            )
-            .env(
-                "DORAEMON_PATCH_PAYLOAD_VIETNAMESE",
-                vi_payload
-                    .as_ref()
-                    .map(|path| path.as_os_str())
-                    .unwrap_or_else(|| std::ffi::OsStr::new("")),
-            )
             .status()
             .map_err(|e| format!("start Cargo: {e}"))?;
-        fs::remove_file(&en_temp).ok();
-        fs::remove_file(&vi_temp).ok();
         if !status.success() {
             return Err(format!("Windows patcher build failed with {status}"));
         }
