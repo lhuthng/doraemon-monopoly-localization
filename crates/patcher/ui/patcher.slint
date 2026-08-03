@@ -1,0 +1,287 @@
+import { Button, CheckBox, ComboBox, GroupBox, ListView } from "std-widgets.slint";
+
+export struct LogRow {
+    text: string,
+    color: color,
+}
+
+export component PatcherUI inherits Window {
+    title: "Doraemon Monopoly Patcher";
+    preferred-width: 640px;
+    preferred-height: 780px;
+
+    in-out property <[string]> language-items;
+    in-out property <int> language-index;
+    in-out property <[string]> quality-items;
+    in-out property <int> quality-index;
+
+    in-out property <bool> no-disc;
+    in-out property <bool> no-reg;
+    in-out property <bool> local-audio;
+    in-out property <bool> modern-volume;
+    in-out property <bool> primary-8bit;
+    in-out property <bool> reduce-bgm;
+    in-out property <bool> optimize-voice;
+
+    in property <string> music-hint;
+    in property <string> subtitle;
+
+    in-out property <int> progress-value;
+    in property <bool> restore-mode;
+    in-out property <[LogRow]> log-model;
+
+    in property <bool> apply-enabled;
+    in property <bool> restore-enabled;
+    in property <bool> wrapper-enabled;
+    in property <bool> play-enabled;
+    in property <bool> compress-enabled;
+    in property <bool> refresh-enabled;
+    in property <bool> options-enabled;
+    in property <bool> audio-enabled;
+    in property <bool> local-audio-enabled;
+    in property <bool> reduce-bgm-enabled;
+
+    in property <bool> dialog-visible;
+    in property <string> dialog-title;
+    in property <string> dialog-text;
+
+    callback apply-patch();
+    callback apply-audio();
+    callback restore-backup();
+    callback add-wrapper();
+    callback play-game();
+    callback refresh-music();
+    callback audio-options-changed();
+    callback exit-app();
+    callback dialog-answer(bool);
+
+    VerticalLayout {
+        Rectangle {
+            height: 64px;
+            background: #1c6e8c;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                VerticalLayout {
+                    spacing: 2px;
+                    padding-top: 10px;
+                    Text {
+                        text: "Doraemon Monopoly Patcher";
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: white;
+                    }
+                    Text {
+                        text: root.subtitle;
+                        font-size: 12px;
+                        color: #dfeff6;
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            GroupBox {
+                title: " Patch options ";
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Text { text: "Language:"; vertical-alignment: center; }
+                        language := ComboBox {
+                            model: root.language-items;
+                            current-index <=> root.language-index;
+                            enabled: root.options-enabled;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 20px;
+                        VerticalLayout {
+                            spacing: 4px;
+                            CheckBox {
+                                text: "Skip disc check";
+                                checked <=> root.no-disc;
+                                enabled: root.options-enabled;
+                            }
+                            CheckBox {
+                                text: "Skip registry check";
+                                checked <=> root.no-reg;
+                                enabled: root.options-enabled;
+                            }
+                            CheckBox {
+                                text: "Use local music";
+                                checked <=> root.local-audio;
+                                enabled: root.options-enabled && root.local-audio-enabled;
+                            }
+                            CheckBox {
+                                text: "Fix volume control (Windows 7+ / CrossOver)";
+                                checked <=> root.modern-volume;
+                                enabled: root.options-enabled;
+                            }
+                            CheckBox {
+                                text: "Use 8-bit DirectSound output (Windows 95 / v86)";
+                                checked <=> root.primary-8bit;
+                                enabled: root.options-enabled;
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: root.music-hint;
+                            wrap: word-wrap;
+                            color: #888;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: "Refresh";
+                            enabled: root.refresh-enabled;
+                            clicked => { root.refresh-music(); }
+                        }
+                    }
+                }
+            }
+
+            GroupBox {
+                title: " Actions ";
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 8px;
+                    Button { text: "Apply patch"; enabled: root.apply-enabled; clicked => { root.apply-patch(); } }
+                    Button { text: "Restore backup"; enabled: root.restore-enabled; clicked => { root.restore-backup(); } }
+                    Button { text: "Add graphics wrapper"; enabled: root.wrapper-enabled; clicked => { root.add-wrapper(); } }
+                    Button { text: "Play"; enabled: root.play-enabled; clicked => { root.play-game(); } }
+                }
+            }
+
+            GroupBox {
+                title: " Audio ";
+                visible: root.audio-enabled;
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 16px;
+                        CheckBox {
+                            text: "Reduce BGM.dat";
+                            checked <=> root.reduce-bgm;
+                            enabled: root.reduce-bgm-enabled;
+                            toggled => { root.audio-options-changed(); }
+                        }
+                        CheckBox {
+                            text: "Reduce Voice.dat";
+                            checked <=> root.optimize-voice;
+                            toggled => { root.audio-options-changed(); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Text { text: "Quality"; color: #555; vertical-alignment: center; }
+                        quality := ComboBox {
+                            model: root.quality-items;
+                            current-index <=> root.quality-index;
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: "Compress";
+                            enabled: root.compress-enabled;
+                            clicked => { root.apply-audio(); }
+                        }
+                    }
+                }
+            }
+
+            GroupBox {
+                title: " Progress ";
+                Rectangle {
+                    height: 20px;
+                    background: #e0e0e0;
+                    border-radius: 4px;
+                    clip: true;
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        height: parent.height;
+                        width: parent.width * root.progress-value / 100;
+                        background: #1c6e8c;
+                        border-radius: 4px;
+                    }
+                }
+            }
+
+            GroupBox {
+                title: " Log ";
+                ListView {
+                    height: 180px;
+                    for row in root.log-model: Rectangle {
+                        height: 22px;
+                        HorizontalLayout {
+                            padding-left: 4px;
+                            Text {
+                                text: row.text;
+                                color: row.color;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                Button {
+                    text: "Exit";
+                    clicked => { root.exit-app(); }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        visible: root.dialog-visible;
+        background: #00000080;
+        TouchArea { enabled: false; }
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 480px;
+                    height: 190px;
+                    background: white;
+                    border-radius: 10px;
+                    VerticalLayout {
+                        padding: 22px;
+                        spacing: 12px;
+                        Text {
+                            text: root.dialog-title;
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: #1a1a1a;
+                        }
+                        Text {
+                            text: root.dialog-text;
+                            wrap: word-wrap;
+                            color: #333;
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            Button { text: "No"; clicked => { root.dialog-answer(false); } }
+                            Button { text: "Yes"; clicked => { root.dialog-answer(true); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

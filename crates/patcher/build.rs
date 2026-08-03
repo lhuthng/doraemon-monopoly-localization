@@ -1,5 +1,6 @@
 use std::{env, fs, path::PathBuf, process::Command};
 fn main() {
+    slint_build::compile("ui/patcher.slint").unwrap();
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
     // Multipart format (new): read a directory of .dmpatch part files

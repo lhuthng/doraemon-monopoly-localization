@@ -20,7 +20,6 @@ fn main() {
     eprintln!("Doraemon patcher GUI is Windows-only. Use patch-build on this platform.");
 }
 
-/// Decode a "DPART" composite blob into a Vec of PayloadPart bytes.
 #[cfg(windows)]
 fn decode_parts_blob(blob: &[u8]) -> Option<Vec<Vec<u8>>> {
     if blob.len() < 7 || &blob[..5] != b"DPART" {
@@ -44,15 +43,12 @@ fn decode_parts_blob(blob: &[u8]) -> Option<Vec<Vec<u8>>> {
     Some(parts)
 }
 
-/// Try to load a language: first check multipart parts, then monolithic
-/// payload. Returns the merged Payload or None if no data is available.
 #[cfg(windows)]
 fn load_language(
     lang_name: &str,
     parts_blob: &[u8],
     monolithic: &[u8],
 ) -> Option<doraemon_game_patch::payload::Payload> {
-    // Try multipart format first
     if parts_blob.len() < 5 {
         eprintln!("DIAG {lang_name}: parts_blob too small ({})", parts_blob.len());
     } else if &parts_blob[..5] != b"DPART" {
@@ -64,14 +60,8 @@ fn load_language(
         for bytes in &part_bytes {
             if !bytes.is_empty() {
                 match doraemon_game_patch::payload::decode_part(bytes) {
-                    Ok(part) => {
-                        decoded += 1;
-                        parts.push(part);
-                    }
-                    Err(e) => {
-                        errors += 1;
-                        eprintln!("DIAG {lang_name}: decode_part failed ({e})");
-                    }
+                    Ok(part) => { decoded += 1; parts.push(part); }
+                    Err(e) => { errors += 1; eprintln!("DIAG {lang_name}: decode_part failed ({e})"); }
                 }
             }
         }
@@ -84,17 +74,11 @@ fn load_language(
         }
         eprintln!("DIAG {lang_name}: multipart failed: {decoded} decoded, {errors} errors");
     }
-    // Fall back to monolithic
     if !monolithic.is_empty() {
         eprintln!("DIAG {lang_name}: trying monolithic payload ({} bytes)", monolithic.len());
         match doraemon_game_patch::payload::decode(monolithic) {
-            Ok(payload) => {
-                eprintln!("DIAG {lang_name}: monolithic OK");
-                return Some(payload);
-            }
-            Err(e) => {
-                eprintln!("DIAG {lang_name}: monolithic decode failed ({e})");
-            }
+            Ok(payload) => { eprintln!("DIAG {lang_name}: monolithic OK"); return Some(payload); }
+            Err(e) => { eprintln!("DIAG {lang_name}: monolithic decode failed ({e})"); }
         }
     } else {
         eprintln!("DIAG {lang_name}: monolithic payload is empty");
@@ -105,8 +89,7 @@ fn load_language(
 
 #[cfg(windows)]
 mod windows_app {
-    extern crate native_windows_gui as nwg;
-
+    use slint::{SharedString, Timer, TimerMode, VecModel};
     use doraemon_game_patch::{
         cue,
         install::{self, ApplyOptions, TaskProgress, TaskState},
@@ -114,7 +97,7 @@ mod windows_app {
         payload::{self, Payload},
     };
     use std::{
-        cell::Cell,
+        cell::{Cell, RefCell},
         fs::OpenOptions,
         io::Write,
         panic::{self, AssertUnwindSafe},
@@ -125,89 +108,560 @@ mod windows_app {
         time::Duration,
     };
 
-    const WS_CHILD: u32 = 0x40000000;
-    const WS_VISIBLE: u32 = 0x10000000;
-    const BS_GROUPBOX: u32 = 0x00000007;
-    const WM_SETFONT: u32 = 0x0030;
-    const WM_SETICON: u32 = 0x0080;
-    const ICON_SMALL: usize = 0;
-    const ICON_BIG: usize = 1;
-    const IMAGE_ICON: u32 = 1;
+    slint::include_modules!();
 
-    extern "system" {
-        fn GetModuleHandleW(name: *const u16) -> *mut core::ffi::c_void;
-        fn LoadImageW(
-            hinst: *mut core::ffi::c_void,
-            name: *const u16,
-            typ: u32,
-            cx: i32,
-            cy: i32,
-            flags: u32,
-        ) -> *mut core::ffi::c_void;
-        fn SendMessageW(
-            hwnd: *mut core::ffi::c_void,
-            msg: u32,
-            wparam: usize,
-            lparam: isize,
-        ) -> isize;
-        fn DestroyIcon(icon: *mut core::ffi::c_void) -> i32;
+    fn cue_files(game: &std::path::Path) -> Vec<PathBuf> {
+        let mut cues: Vec<_> = std::fs::read_dir(game).into_iter().flatten()
+            .filter_map(Result::ok).map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("cue")))
+            .collect();
+        cues.sort();
+        cues
     }
 
-    #[derive(Default)]
-    struct Ui {
-        window: nwg::Window,
-        title_bar: nwg::Label,
-        subtitle: nwg::Label,
-        title_font: nwg::Font,
-        group_font: nwg::Font,
-        log_font: nwg::Font,
-        options_group: nwg::ControlHandle,
-        language_label: nwg::Label,
-        language: nwg::ComboBox<String>,
-        no_disc: nwg::CheckBox,
-        no_reg: nwg::CheckBox,
-        local_audio: nwg::CheckBox,
-        modern_volume: nwg::CheckBox,
-        primary_audio_8bit: nwg::CheckBox,
-        audio_group: nwg::ControlHandle,
-        reduce_bgm: nwg::CheckBox,
-        optimize_voice: nwg::CheckBox,
-        voice_quality_label: nwg::Label,
-        voice_quality: nwg::ComboBox<String>,
-        audio_apply: nwg::Button,
-
-        music: nwg::Label,
-        refresh_music: nwg::Button,
-        actions_group: nwg::ControlHandle,
-        apply: nwg::Button,
-        restore: nwg::Button,
-        wrapper: nwg::Button,
-        play: nwg::Button,
-        progress: nwg::ProgressBar,
-        log_group: nwg::ControlHandle,
-        log: nwg::RichTextBox,
-        exit: nwg::Button,
-        option_hints: Vec<nwg::Label>,
-        option_tooltips: nwg::Tooltip,
-        timer: nwg::AnimationTimer,
-        icon_large: Option<*mut core::ffi::c_void>,
-        icon_small: Option<*mut core::ffi::c_void>,
+    fn find_cue(game: &std::path::Path) -> Option<PathBuf> {
+        cue_files(game).into_iter().find(|p| cue::valid_cue(p))
     }
 
-    impl Drop for Ui {
-        fn drop(&mut self) {
-            unsafe {
-                if let Some(icon) = self.icon_large.take() {
-                    DestroyIcon(icon);
+    fn has_music(game: &std::path::Path) -> bool {
+        music::valid(&game.join("BGM.dat"))
+            || find_cue(game).is_some()
+            || cue::valid_wav(&game.join("DoraemonMusic.wav"))
+    }
+
+    fn music_text(game: &std::path::Path) -> String {
+        let mut message = if music::valid(&game.join("BGM.dat")) {
+            "♪ Local music is ready: BGM.dat found.".into()
+        } else if cue::valid_wav(&game.join("DoraemonMusic.wav")) {
+            "♪ DoraemonMusic.wav found. I'll compress it into BGM.dat when you apply.".into()
+        } else if let Some(path) = find_cue(game) {
+            format!("♪ Disc music found: {}. I'll prepare it when you apply.",
+                path.file_name().unwrap_or_default().to_string_lossy())
+        } else if let Some(path) = cue_files(game).into_iter().next() {
+            format!("♫ I found {}, but its matching BIN is missing or incomplete. The game will be quiet for now.",
+                path.file_name().unwrap_or_default().to_string_lossy())
+        } else {
+            String::new()
+        };
+        let legacy: Vec<_> = ["Music.dat", "doraudio.dll"].into_iter()
+            .filter(|n| game.join(n).exists()).collect();
+        if !legacy.is_empty() {
+            if !message.is_empty() { message.push_str("  "); }
+            message.push_str(&format!("Unused legacy {} found; this patcher will leave {} untouched.",
+                legacy.join(" and "), if legacy.len() == 1 { "it" } else { "them" }));
+        }
+        message
+    }
+
+    fn write_diagnostic(game: &std::path::Path, state: TaskState, message: &str) {
+        let state = match state { TaskState::Working => "WORKING", TaskState::Done => "DONE", TaskState::Skipped => "SKIPPED", TaskState::Failed => "FAILED" };
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(game.join("Doraemon-Patcher-diagnostic.log")) {
+            let _ = writeln!(file, "[{state}] {message}"); let _ = file.flush(); let _ = file.sync_all();
+        }
+    }
+
+    fn apply_game_icon(game: &std::path::Path, icon: &[u8]) -> Result<(), String> {
+        use std::{ffi::OsStr, iter, os::windows::ffi::OsStrExt};
+        extern "system" {
+            fn BeginUpdateResourceW(path: *const u16, delete_existing: i32) -> *mut core::ffi::c_void;
+            fn UpdateResourceW(handle: *mut core::ffi::c_void, kind: *const u16, name: *const u16, language: u16, data: *const core::ffi::c_void, len: u32) -> i32;
+            fn EndUpdateResourceW(handle: *mut core::ffi::c_void, discard: i32) -> i32;
+        }
+        if icon.len() < 22 || icon[0..4] != [0, 0, 1, 0] { return Err("embedded game icon is invalid".into()); }
+        let count = u16::from_le_bytes(icon[4..6].try_into().unwrap()) as usize;
+        if count == 0 || count > 3 || icon.len() < 6 + count * 16 { return Err("embedded game icon directory is invalid".into()); }
+        let mut images = Vec::with_capacity(count);
+        let mut group = icon[..6].to_vec();
+        for index in 0..count {
+            let entry = &icon[6 + index * 16..22 + index * 16];
+            let size = u32::from_le_bytes(entry[8..12].try_into().unwrap()) as usize;
+            let offset = u32::from_le_bytes(entry[12..16].try_into().unwrap()) as usize;
+            let image = icon.get(offset..offset + size).ok_or("embedded game icon image is truncated")?;
+            let resource_id = index as u16 + 1;
+            group.extend_from_slice(&entry[..12]);
+            group.extend_from_slice(&resource_id.to_le_bytes());
+            images.push((resource_id, image));
+        }
+        let path: Vec<u16> = OsStr::new(&game.join("Doraemon.exe")).encode_wide().chain(iter::once(0)).collect();
+        let handle = unsafe { BeginUpdateResourceW(path.as_ptr(), 0) };
+        if handle.is_null() { return Err(format!("open executable resources: {}", std::io::Error::last_os_error())); }
+        let mut images_ok = true;
+        for (resource_id, image) in images {
+            images_ok = images_ok && unsafe { UpdateResourceW(handle, 3usize as *const u16, resource_id as usize as *const u16, 0x409, image.as_ptr().cast(), image.len() as u32) } != 0;
+        }
+        let group_ok = images_ok && unsafe { UpdateResourceW(handle, 14usize as *const u16, 101usize as *const u16, 0x409, group.as_ptr().cast(), group.len() as u32) } != 0;
+        let committed = unsafe { EndUpdateResourceW(handle, if group_ok { 0 } else { 1 }) } != 0;
+        if group_ok && committed { Ok(()) } else { Err(format!("update executable icon: {}", std::io::Error::last_os_error())) }
+    }
+
+    fn empty_payload() -> Payload {
+        Payload { language: payload::Language::Custom, profiles: Vec::new(), strings: None, voice: None, bundled: Vec::new() }
+    }
+
+    struct PendingApply {
+        game: PathBuf, payload: Payload, icon: Option<&'static [u8]>, options: ApplyOptions, executable: PathBuf,
+    }
+
+    enum PendingDialog {
+        KeepAudio(Box<PendingApply>),
+        WrapperConfig { config_path: PathBuf },
+    }
+
+    fn log_color(state: TaskState) -> ( &'static str, slint::Color ) {
+        match state {
+            TaskState::Working => ("[....]", slint::Color::from_rgb_u8(40, 110, 200)),
+            TaskState::Done    => ("[ OK ]", slint::Color::from_rgb_u8(45, 145, 85)),
+            TaskState::Skipped => ("[SKIP]", slint::Color::from_rgb_u8(190, 160, 45)),
+            TaskState::Failed  => ("[FAIL]", slint::Color::from_rgb_u8(200, 55, 55)),
+        }
+    }
+
+    fn append_log(model: &VecModel<LogRow>, state: TaskState, message: &str) {
+        let (marker, color) = log_color(state);
+        let clean = message.replace('…', "...").replace(['—', '–'], "-");
+        model.push(LogRow { text: SharedString::from(format!("{marker} {clean}")), color });
+    }
+
+    fn enable_controls(ui: &PatcherUI, busy: bool, rm: bool, backup: bool, wrapper: bool, play: bool, game: &std::path::Path) {
+        ui.set_options_enabled(!rm && !busy);
+        ui.set_audio_enabled(!rm && !busy);
+        ui.set_apply_enabled(!rm && !busy);
+        ui.set_restore_enabled(backup && !busy);
+        ui.set_wrapper_enabled(wrapper && !rm && !busy);
+        ui.set_play_enabled(play && !busy);
+        ui.set_refresh_enabled(!rm && !busy);
+        ui.set_local_audio_enabled(has_music(game) && !rm && !busy);
+        ui.set_reduce_bgm_enabled(has_music(game) && !rm && !busy);
+        let compress = !rm && !busy && (ui.get_reduce_bgm() || ui.get_optimize_voice());
+        ui.set_compress_enabled(compress);
+    }
+
+    struct AppContext {
+        restore_mode: bool, has_backup: bool, wrapper_available: bool, can_play: bool,
+    }
+
+    pub fn run() -> Result<(), String> {
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        let restore_mode = executable.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("Restore.exe"));
+        let game_path = if restore_mode {
+            executable.parent().and_then(std::path::Path::parent).ok_or("Restore.exe must be inside the backup folder")?.to_path_buf()
+        } else {
+            executable.parent().ok_or("the patcher executable has no parent game folder")?.to_path_buf()
+        };
+
+        eprintln!("DIAG: ENGLISH_PARTS size={} ENGLISH_PAYLOAD size={}", super::ENGLISH_PARTS.len(), super::ENGLISH_PAYLOAD.len());
+        eprintln!("DIAG: VIETNAMESE_PARTS size={} VIETNAMESE_PAYLOAD size={}", super::VIETNAMESE_PARTS.len(), super::VIETNAMESE_PAYLOAD.len());
+        let english = super::load_language("English", super::ENGLISH_PARTS, super::ENGLISH_PAYLOAD);
+        let vietnamese = super::load_language("Vietnamese", super::VIETNAMESE_PARTS, super::VIETNAMESE_PAYLOAD);
+
+        let mut languages = vec![SharedString::from("<original>")];
+        let english_index = english.as_ref().map(|_| { let i = languages.len() as i32; languages.push(SharedString::from("English")); i });
+        let vietnamese_index = vietnamese.as_ref().map(|_| { let i = languages.len() as i32; languages.push(SharedString::from("Vietnamese")); i });
+
+        let wrapper_available = english.as_ref().or(vietnamese.as_ref()).is_some_and(|p|
+            p.bundled.iter().any(|f| !f.name.eq_ignore_ascii_case("doraudio.dll")));
+
+        let ui = Rc::new(PatcherUI::new().map_err(|e| e.to_string())?);
+        let log_model: Rc<VecModel<LogRow>> = Rc::new(VecModel::default());
+        ui.set_log_model(log_model.clone().into());
+        let quality = ["Original", "High", "Balanced", "Compact"].into_iter().map(SharedString::from).collect::<Vec<_>>();
+        ui.set_quality_items(slint::VecModel::from_slice(&quality));
+        ui.set_language_index(0);
+        ui.set_quality_index(0);
+        ui.set_language_items(slint::VecModel::from_slice(&languages));
+        ui.set_restore_mode(restore_mode);
+        ui.set_no_disc(true);
+        ui.set_no_reg(true);
+
+        let ctx = Rc::new(AppContext {
+            restore_mode,
+            has_backup: game_path.join("backup").is_dir(),
+            wrapper_available,
+            can_play: game_path.join("Doraemon.exe").is_file(),
+        });
+        let busy = Rc::new(Cell::new(false));
+        ui.set_subtitle(SharedString::from(if restore_mode { "Restore the exact original files kept in this backup." } else { "Choose a language, then pick the compatibility extras you want." }));
+        ui.set_music_hint(SharedString::from(music_text(&game_path)));
+        enable_controls(&ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, &game_path);
+
+        append_log(&log_model, TaskState::Skipped, "Ready. Applying a new choice restores the original files first.");
+        if restore_mode {
+            ui.set_subtitle(SharedString::from("Restore Doraemon Monopoly"));
+            append_log(&log_model, TaskState::Working, "Ready to restore the original game files.");
+        }
+        if english.is_none() && vietnamese.is_none() {
+            append_log(&log_model, TaskState::Failed, &format!(
+                "No embedded language payloads found. English parts blob={}B, Vietnamese parts blob={}B. The patch data may not have been linked in.",
+                super::ENGLISH_PARTS.len(), super::VIETNAMESE_PARTS.len()));
+        }
+
+        let english = Rc::new(english);
+        let vietnamese = Rc::new(vietnamese);
+        let game = Rc::new(game_path);
+        let (tx, rx) = mpsc::channel::<UiEvent>();
+        let pending_dialog: Rc<RefCell<Option<PendingDialog>>> = Rc::new(RefCell::new(None));
+
+        // ---- Close / Exit ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let close_busy = busy.clone();
+            let close_log = log_model.clone();
+            ui.on_exit_app(move || {
+                if close_busy.get() { append_log(&close_log, TaskState::Working, "Please wait for the current task to finish."); }
+                else if let Some(ui) = ui_weak.upgrade() { let _ = ui.window().hide(); }
+            });
+        }
+        {
+            let req_busy = busy.clone();
+            ui.window().on_close_requested(move || {
+                if req_busy.get() { slint::CloseRequestResponse::KeepWindowShown } else { slint::CloseRequestResponse::HideWindow }
+            });
+        }
+
+        // ---- Dialog answer ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let dlg_pending = pending_dialog.clone();
+            let dlg_busy = busy.clone();
+            let dlg_ctx = ctx.clone();
+            let dlg_tx = tx.clone();
+            let dlg_game = game.clone();
+            ui.on_dialog_answer(move |yes| {
+                let Some(dlg_ui) = ui_weak.upgrade() else { return };
+                match dlg_pending.borrow_mut().take() {
+                    Some(PendingDialog::KeepAudio(mut p)) => {
+                        dlg_ui.set_dialog_visible(false);
+                        p.options.keep_compressed_audio = yes;
+                        spawn_apply(&dlg_tx, *p, false);
+                    }
+                    Some(PendingDialog::WrapperConfig { config_path }) => {
+                        dlg_ui.set_dialog_visible(false);
+                        if yes { let _ = std::process::Command::new(&config_path).spawn(); }
+                        dlg_busy.set(false);
+                        enable_controls(&dlg_ui, false, dlg_ctx.restore_mode, dlg_ctx.has_backup, dlg_ctx.wrapper_available, dlg_ctx.can_play, &dlg_game);
+                    }
+                    None => { dlg_ui.set_dialog_visible(false); }
                 }
-                if let Some(icon) = self.icon_small.take() {
-                    DestroyIcon(icon);
+            });
+        }
+
+        // ---- Apply patch ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let en = english.clone();
+            let vi = vietnamese.clone();
+            let ei = english_index;
+            let vii = vietnamese_index;
+            let exe = executable.clone();
+            let t = tx.clone();
+            let pd = pending_dialog.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            let l = log_model.clone();
+            ui.on_apply_patch(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                if b.get() || c.restore_mode { return; }
+                b.set(true);
+                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                append_log(&l, TaskState::Working, "Starting Apply…");
+                let _ = std::fs::remove_file(g.join("Doraemon-Patcher-diagnostic.log"));
+                write_diagnostic(&g, TaskState::Working, "Apply patch button pressed.");
+
+                let backup = g.join("backup");
+                let compressed = if backup.is_dir() { install::compressed_audio_files(&backup, &g).ok() } else { None };
+                let ask = compressed.as_ref().is_some_and(|c| !c.is_empty());
+                let sel = ui.get_language_index();
+                let options = ApplyOptions {
+                    no_disc: ui.get_no_disc(), no_reg: ui.get_no_reg(), local_audio: ui.get_local_audio(),
+                    modern_volume: ui.get_modern_volume(), primary_audio_8bit: ui.get_primary_8bit(),
+                    cue: find_cue(&g), reduce_bgm: false, optimize_voice: false,
+                    voice_compression: doraemon_game_patch::voice::Compression::Original, keep_compressed_audio: false,
+                };
+                let payload = if Some(sel) == ei { en.as_ref().as_ref().expect("English available").clone() }
+                    else if Some(sel) == vii { vi.as_ref().as_ref().expect("Vietnamese available").clone() }
+                    else {
+                        let mut p = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned().unwrap_or_else(empty_payload);
+                        p.language = payload::Language::Custom; p.profiles.clear(); p.strings = None; p.voice = None; p
+                    };
+                let icon = if Some(sel) == ei { Some(super::ENGLISH_ICON) } else if Some(sel) == vii { Some(super::VIETNAMESE_ICON) } else { None };
+                let pending = PendingApply { game: (*g).clone(), payload, icon, options, executable: exe.clone() };
+                if ask {
+                    let list = compressed.unwrap().join("\n- ");
+                    pd.borrow_mut().replace(PendingDialog::KeepAudio(Box::new(pending)));
+                    ui.set_dialog_title(SharedString::from("Keep compressed audio?"));
+                    ui.set_dialog_text(SharedString::from(format!("The following audio file{} been modified since the last patch:\n- {list}\n\nKeep the current compressed audio?\n(Choosing Yes will skip restoring and regenerating these files.)",
+                        if list.contains('\n') { "s have" } else { " has" })));
+                    ui.set_dialog_visible(true);
+                } else {
+                    spawn_apply(&t, pending, false);
+                }
+            });
+        }
+
+        // ---- Compress audio ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let en = english.clone();
+            let vi = vietnamese.clone();
+            let exe = executable.clone();
+            let t = tx.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            let l = log_model.clone();
+            ui.on_apply_audio(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                if b.get() || c.restore_mode { return; }
+                if !(ui.get_reduce_bgm() || ui.get_optimize_voice()) { return; }
+                b.set(true);
+                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                append_log(&l, TaskState::Working, "Preparing audio…");
+                write_diagnostic(&g, TaskState::Working, "Apply audio button pressed.");
+                let options = ApplyOptions {
+                    no_disc: false, no_reg: false, local_audio: false, modern_volume: false, primary_audio_8bit: false,
+                    cue: find_cue(&g), reduce_bgm: ui.get_reduce_bgm(), optimize_voice: ui.get_optimize_voice(),
+                    voice_compression: match ui.get_quality_index() { 1 => doraemon_game_patch::voice::Compression::High, 2 => doraemon_game_patch::voice::Compression::Balanced, 3 => doraemon_game_patch::voice::Compression::Compact, _ => doraemon_game_patch::voice::Compression::Original },
+                    keep_compressed_audio: false,
+                };
+                let mut payload = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned().unwrap_or_else(empty_payload);
+                payload.language = payload::Language::Custom; payload.profiles.clear(); payload.strings = None; payload.voice = None;
+                spawn_apply(&t, PendingApply { game: (*g).clone(), payload, icon: None, options, executable: exe.clone() }, true);
+            });
+        }
+
+        // ---- Restore ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let t = tx.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            let l = log_model.clone();
+            ui.on_restore_backup(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                if b.get() { return; }
+                b.set(true);
+                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                append_log(&l, TaskState::Working, "Restoring original files…");
+                let backup = g.join("backup");
+                let tx = t.clone();
+                thread::spawn(move || {
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| install::restore(&backup)))
+                        .unwrap_or_else(|_| Err("The restore task stopped unexpectedly; no files were restored.".into()));
+                    let _ = tx.send(UiEvent::Restored(result));
+                });
+            });
+        }
+
+        // ---- Add wrapper ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let en = english.clone();
+            let vi = vietnamese.clone();
+            let t = tx.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            let l = log_model.clone();
+            ui.on_add_wrapper(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                if b.get() || c.restore_mode { return; }
+                b.set(true);
+                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                append_log(&l, TaskState::Working, "Adding the graphics wrapper…");
+                let payload = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned().unwrap_or_else(empty_payload);
+                let tx = t.clone();
+                let game = (*g).clone();
+                thread::spawn(move || {
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| install::add_wrapper(&game, &payload)))
+                        .unwrap_or_else(|_| Err("The graphics-wrapper task stopped unexpectedly; no files were added.".into()));
+                    let _ = tx.send(UiEvent::Wrapper(result));
+                });
+            });
+        }
+
+        // ---- Play ----
+        {
+            let g = game.clone();
+            let l = log_model.clone();
+            ui.on_play_game(move || {
+                let exe = g.join("Doraemon.exe");
+                match std::process::Command::new(&exe).current_dir(&*g).spawn() {
+                    Ok(_) => append_log(&l, TaskState::Done, "Launched Doraemon.exe."),
+                    Err(e) => append_log(&l, TaskState::Failed, &format!("Could not launch Doraemon.exe: {e}")),
+                }
+            });
+        }
+
+        // ---- Refresh music ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            ui.on_refresh_music(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                if b.get() || c.restore_mode { return; }
+                ui.set_music_hint(SharedString::from(music_text(&g)));
+                let ok = has_music(&g);
+                ui.set_local_audio_enabled(ok);
+                ui.set_reduce_bgm_enabled(ok);
+            });
+        }
+
+        // ---- Audio options toggled ----
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let b = busy.clone();
+            let c = ctx.clone();
+            ui.on_audio_options_changed(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                let compress = !c.restore_mode && !b.get() && (ui.get_reduce_bgm() || ui.get_optimize_voice());
+                ui.set_compress_enabled(compress);
+            });
+        }
+
+        // ---- Event pump ----
+        let timer_ui = Rc::downgrade(&ui);
+        let timer = Timer::default();
+        let timer_rx = rx;
+        let timer_pd = pending_dialog.clone();
+        let timer_ctx = ctx.clone();
+        let timer_g = game.clone();
+        let timer_b = busy.clone();
+        let timer_l = log_model.clone();
+        timer.start(TimerMode::Repeated, Duration::from_millis(120), move || {
+            if let Some(ui) = timer_ui.upgrade() {
+                drain_events(&ui, &timer_rx, &timer_l, &timer_b, &timer_ctx, &timer_g, &timer_pd);
+            }
+        });
+
+        let result = ui.run().map_err(|e| e.to_string());
+        timer.stop();
+        result
+    }
+
+    fn spawn_apply(
+        tx: &mpsc::Sender<UiEvent>,
+        mut pending: PendingApply, audio_only: bool,
+    ) {
+        if audio_only {
+            pending.options.no_disc = false; pending.options.no_reg = false;
+            pending.options.local_audio = false; pending.options.modern_volume = false;
+            pending.options.primary_audio_8bit = false;
+        }
+        let PendingApply { game: g, payload, icon, options, executable } = pending;
+        let wants = payload.language != payload::Language::Custom || options.no_disc || options.no_reg
+            || options.local_audio || options.modern_volume || options.primary_audio_8bit
+            || options.reduce_bgm || options.optimize_voice;
+        let tx = tx.clone();
+        let game = g.clone();
+        let game_clone = game.clone();
+        thread::spawn(move || {
+            let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                let backup = game.join("backup");
+                if backup.is_dir() && !audio_only {
+                    let mut saved: Vec<(String, Vec<u8>)> = Vec::new();
+                    if options.keep_compressed_audio {
+                        for name in &["voice.dat", "BGM.dat"] {
+                            let path = game.join(name);
+                            if path.exists() { if let Ok(data) = std::fs::read(&path) { saved.push((name.to_string(), data)); } }
+                        }
+                    }
+                    let msg = if options.keep_compressed_audio { "Restoring original files while keeping your compressed audio…" }
+                        else if wants { "Restoring the original files before applying your new choices…" }
+                        else { "No patch choices selected; restoring the original files…" };
+                    let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: msg.into(), progress: Some(3) }));
+                    let restored = install::restore(&backup)?;
+                    for (name, data) in &saved { let _ = std::fs::write(game.join(name), data); }
+                    let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Done, message: format!("Original files restored: {}.", restored.join(", ")), progress: Some(10) }));
+                    if !wants { return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing selected, so the game is back to its original files.".into() }); }
+                } else if !wants {
+                    return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing is selected and no backup was found. The game is unchanged.".into() });
+                }
+                let mut report = install::apply_with_progress(&game, &payload, &options, &executable, &mut |u| { let _ = tx.send(UiEvent::Progress(u)); })?;
+                if let Some(icon) = icon {
+                    let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: "Applying the selected game icon…".into(), progress: Some(98) }));
+                    apply_game_icon(&game, icon)?;
+                    report.changed.push("Doraemon.exe icon".into());
+                }
+                Ok(report)
+            })).unwrap_or_else(|_| Err("The patch task stopped unexpectedly; no files were installed.".into()));
+            match &result {
+                Ok(_) => write_diagnostic(&game_clone, TaskState::Done, "Apply finished successfully."),
+                Err(e) => write_diagnostic(&game_clone, TaskState::Failed, &format!("Apply failed: {e}")),
+            }
+            let _ = tx.send(UiEvent::Finished(result));
+        });
+    }
+
+    fn wrapper_config_prompt(ui: &PatcherUI, pd: &Rc<RefCell<Option<PendingDialog>>>, game: &std::path::Path) {
+        let config_path = ["cnc-ddraw config.exe", "ddrawcfg.exe"].iter()
+            .find_map(|n| { let p = game.join(n); if p.exists() { Some(p) } else { None } });
+        let Some(config_path) = config_path else { return; };
+        pd.borrow_mut().replace(PendingDialog::WrapperConfig { config_path });
+        ui.set_dialog_title(SharedString::from("Graphics Wrapper"));
+        ui.set_dialog_text(SharedString::from("The graphics wrapper has been installed.\n\nWould you like to open the configuration tool now?\n(Recommended for first-time use on Crossover or Wine.)"));
+        ui.set_dialog_visible(true);
+    }
+
+    fn drain_events(
+        ui: &PatcherUI, rx: &mpsc::Receiver<UiEvent>, log_model: &VecModel<LogRow>,
+        busy: &Rc<Cell<bool>>, ctx: &AppContext, game: &std::path::Path,
+        pd: &Rc<RefCell<Option<PendingDialog>>>,
+    ) {
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                UiEvent::Progress(u) => { if let Some(pct) = u.progress { ui.set_progress_value(pct as i32); } append_log(log_model, u.state, &u.message); }
+                UiEvent::Finished(Ok(r)) => {
+                    ui.set_progress_value(100);
+                    append_log(log_model, TaskState::Done, if r.changed.is_empty() { "Apply finished: everything requested was already in place." } else { "Apply finished successfully." });
+                    append_log(log_model, TaskState::Done, &r.audio);
+                    ui.set_music_hint(SharedString::from(music_text(game)));
+                    let ok = has_music(game);
+                    ui.set_local_audio_enabled(ok); ui.set_reduce_bgm_enabled(ok);
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                }
+                UiEvent::Finished(Err(e)) => {
+                    ui.set_progress_value(0);
+                    append_log(log_model, TaskState::Failed, &format!("Apply failed: {e}"));
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                }
+                UiEvent::Restored(Ok(files)) => {
+                    ui.set_progress_value(100);
+                    append_log(log_model, TaskState::Done, &format!("Restored and verified: {}.", files.join(", ")));
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                }
+                UiEvent::Restored(Err(e)) => {
+                    ui.set_progress_value(0);
+                    append_log(log_model, TaskState::Failed, &format!("Restore failed: {e}"));
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                }
+                UiEvent::Wrapper(Ok(files)) if files.is_empty() => {
+                    ui.set_progress_value(100);
+                    append_log(log_model, TaskState::Skipped, "The graphics wrapper is already installed.");
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                }
+                UiEvent::Wrapper(Ok(files)) => {
+                    ui.set_progress_value(100);
+                    append_log(log_model, TaskState::Done, &format!("Graphics wrapper added: {} files.", files.len()));
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    wrapper_config_prompt(ui, pd, game);
+                }
+                UiEvent::Wrapper(Err(e)) => {
+                    ui.set_progress_value(0);
+                    append_log(log_model, TaskState::Failed, &format!("Graphics wrapper failed: {e}"));
+                    busy.set(false);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
                 }
             }
-            self.options_group.destroy();
-            self.audio_group.destroy();
-            self.actions_group.destroy();
-            self.log_group.destroy();
         }
     }
 
@@ -217,1188 +671,15 @@ mod windows_app {
         Restored(Result<Vec<String>, String>),
         Wrapper(Result<Vec<String>, String>),
     }
-
-    fn cue_files(game: &std::path::Path) -> Vec<PathBuf> {
-        let mut cues: Vec<_> = std::fs::read_dir(game)
-            .into_iter()
-            .flatten()
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.extension()
-                    .is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("cue"))
-            })
-            .collect();
-        cues.sort();
-        cues
-    }
-
-    fn find_cue(game: &std::path::Path) -> Option<PathBuf> {
-        cue_files(game)
-            .into_iter()
-            .find(|path| cue::valid_cue(path))
-    }
-
-    fn music_text(game: &std::path::Path) -> String {
-        let mut message = if music::valid(&game.join("BGM.dat")) {
-            "♪ Local music is ready: BGM.dat found.".into()
-        } else if cue::valid_wav(&game.join("DoraemonMusic.wav")) {
-            "♪ DoraemonMusic.wav found. I'll compress it into BGM.dat when you apply.".into()
-        } else if let Some(path) = find_cue(game) {
-            format!(
-                "♪ Disc music found: {}. I'll prepare it when you apply.",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            )
-        } else if let Some(path) = cue_files(game).into_iter().next() {
-            format!(
-                "♫ I found {}, but its matching BIN is missing or incomplete. The game will be quiet for now.",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            )
-        } else {
-            String::new()
-        };
-        let legacy: Vec<_> = ["Music.dat", "doraudio.dll"]
-            .into_iter()
-            .filter(|name| game.join(name).exists())
-            .collect();
-        if !legacy.is_empty() {
-            if !message.is_empty() {
-                message.push_str("  ");
-            }
-            message.push_str(&format!(
-                "Unused legacy {} found; this patcher will leave {} untouched.",
-                legacy.join(" and "),
-                if legacy.len() == 1 { "it" } else { "them" }
-            ));
-        }
-        message
-    }
-
-    fn append_log(ui: &Ui, state: TaskState, message: &str) {
-        let marker = match state {
-            TaskState::Working => "[....]",
-            TaskState::Done => "[ OK ]",
-            TaskState::Skipped => "[SKIP]",
-            TaskState::Failed => "[FAIL]",
-        };
-        let color = match state {
-            TaskState::Working => [40, 110, 200],
-            TaskState::Done => [45, 145, 85],
-            TaskState::Skipped => [190, 160, 45],
-            TaskState::Failed => [200, 55, 55],
-        };
-        let message = message
-            .replace('…', "...")
-            .replace('—', "-")
-            .replace('–', "-");
-        let start = ui.log.len();
-        ui.log.appendln(&format!("{marker} {message}"));
-        let end = ui.log.len();
-        ui.log.set_selection(start..end);
-        ui.log.set_char_format(&nwg::CharFormat {
-            text_color: Some(color),
-            ..Default::default()
-        });
-        ui.log.set_selection(end..end);
-    }
-
-    fn apply_game_icon(game: &std::path::Path, icon: &[u8]) -> Result<(), String> {
-        use std::{ffi::OsStr, iter, os::windows::ffi::OsStrExt};
-        extern "system" {
-            fn BeginUpdateResourceW(
-                path: *const u16,
-                delete_existing: i32,
-            ) -> *mut core::ffi::c_void;
-            fn UpdateResourceW(
-                handle: *mut core::ffi::c_void,
-                kind: *const u16,
-                name: *const u16,
-                language: u16,
-                data: *const core::ffi::c_void,
-                len: u32,
-            ) -> i32;
-            fn EndUpdateResourceW(handle: *mut core::ffi::c_void, discard: i32) -> i32;
-        }
-        if icon.len() < 22 || &icon[0..4] != [0, 0, 1, 0] {
-            return Err("embedded game icon is invalid".into());
-        }
-        let count = u16::from_le_bytes(icon[4..6].try_into().unwrap()) as usize;
-        if count == 0 || count > 3 || icon.len() < 6 + count * 16 {
-            return Err("embedded game icon directory is invalid".into());
-        }
-        let mut images = Vec::with_capacity(count);
-        let mut group = icon[..6].to_vec();
-        for index in 0..count {
-            let entry = &icon[6 + index * 16..22 + index * 16];
-            let size = u32::from_le_bytes(entry[8..12].try_into().unwrap()) as usize;
-            let offset = u32::from_le_bytes(entry[12..16].try_into().unwrap()) as usize;
-            let image = icon
-                .get(offset..offset + size)
-                .ok_or("embedded game icon image is truncated")?;
-            let resource_id = index as u16 + 1;
-            group.extend_from_slice(&entry[..12]);
-            group.extend_from_slice(&resource_id.to_le_bytes());
-            images.push((resource_id, image));
-        }
-        let path: Vec<u16> = OsStr::new(&game.join("Doraemon.exe"))
-            .encode_wide()
-            .chain(iter::once(0))
-            .collect();
-        let handle = unsafe { BeginUpdateResourceW(path.as_ptr(), 0) };
-        if handle.is_null() {
-            return Err(format!(
-                "open executable resources: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
-        let mut images_ok = true;
-        for (resource_id, image) in images {
-            images_ok = images_ok
-                && unsafe {
-                    UpdateResourceW(
-                        handle,
-                        3usize as *const u16,
-                        resource_id as usize as *const u16,
-                        0x409,
-                        image.as_ptr().cast(),
-                        image.len() as u32,
-                    )
-                } != 0;
-        }
-        let group_ok = images_ok
-            && unsafe {
-                UpdateResourceW(
-                    handle,
-                    14usize as *const u16,
-                    101usize as *const u16,
-                    0x409,
-                    group.as_ptr().cast(),
-                    group.len() as u32,
-                )
-            } != 0;
-        let committed = unsafe { EndUpdateResourceW(handle, if group_ok { 0 } else { 1 }) } != 0;
-        if group_ok && committed {
-            Ok(())
-        } else {
-            Err(format!(
-                "update executable icon: {}",
-                std::io::Error::last_os_error()
-            ))
-        }
-    }
-
-    fn write_diagnostic(game: &std::path::Path, state: TaskState, message: &str) {
-        let state = match state {
-            TaskState::Working => "WORKING",
-            TaskState::Done => "DONE",
-            TaskState::Skipped => "SKIPPED",
-            TaskState::Failed => "FAILED",
-        };
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(game.join("Doraemon-Patcher-diagnostic.log"))
-        {
-            let _ = writeln!(file, "[{state}] {message}");
-            let _ = file.flush();
-            let _ = file.sync_all();
-        }
-    }
-
-    fn make_group_box(
-        parent: &nwg::Window,
-        text: &str,
-        x: i32,
-        y: i32,
-        w: i32,
-        h: i32,
-        font: &nwg::Font,
-    ) -> Result<nwg::ControlHandle, nwg::NwgError> {
-        use winapi::shared::minwindef::{LPARAM, TRUE, WPARAM};
-        use winapi::um::winuser::SendMessageW;
-
-        let handle = nwg::ControlBase::build_hwnd()
-            .class_name("BUTTON")
-            .forced_flags(WS_CHILD)
-            .flags(WS_VISIBLE | BS_GROUPBOX)
-            .text(text)
-            .size((w, h))
-            .position((x, y))
-            .parent(Some(parent.handle.into()))
-            .build()?;
-
-        if let Some(hwnd) = handle.hwnd() {
-            unsafe {
-                SendMessageW(hwnd, WM_SETFONT, font.handle as WPARAM, TRUE as LPARAM);
-            }
-        }
-        Ok(handle)
-    }
-
-    fn prompt_run_config(game: &std::path::Path, window: &nwg::Window) {
-        let config_names = ["cnc-ddraw config.exe", "ddrawcfg.exe"];
-        let config_path = config_names.iter().find_map(|name| {
-            let path = game.join(name);
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
-        });
-        let Some(config_path) = config_path else {
-            return;
-        };
-        let params = nwg::MessageParams {
-            title: "Graphics Wrapper",
-            content: "The graphics wrapper has been installed.\n\nWould you like to open the configuration tool now?\n(Recommended for first-time use on Crossover or Wine.)",
-            buttons: nwg::MessageButtons::YesNo,
-            icons: nwg::MessageIcons::Question,
-        };
-        if nwg::modal_message(window, &params) == nwg::MessageChoice::Yes {
-            let _ = std::process::Command::new(&config_path).spawn();
-        }
-    }
-
-    impl Ui {
-        fn build(game: &std::path::Path, languages: Vec<String>) -> Result<Self, nwg::NwgError> {
-            let mut ui = Self::default();
-
-            nwg::Window::builder()
-                .size((640, 754))
-                .position((300, 150))
-                .title("Doraemon Monopoly Patcher")
-                .flags(
-                    nwg::WindowFlags::WINDOW
-                        | nwg::WindowFlags::MINIMIZE_BOX
-                        | nwg::WindowFlags::VISIBLE,
-                )
-                .build(&mut ui.window)?;
-
-            if let Some(hwnd) = ui.window.handle.hwnd() {
-                let hinstance =
-                    unsafe { GetModuleHandleW(core::ptr::null()) };
-                if !hinstance.is_null() {
-                    unsafe {
-                        let large = LoadImageW(
-                            hinstance,
-                            1 as *const u16,
-                            IMAGE_ICON,
-                            32,
-                            32,
-                            0,
-                        );
-                        let small = LoadImageW(
-                            hinstance,
-                            1 as *const u16,
-                            IMAGE_ICON,
-                            16,
-                            16,
-                            0,
-                        );
-                        if !large.is_null() {
-                            ui.icon_large = Some(large);
-                            SendMessageW(hwnd.cast(), WM_SETICON, ICON_BIG, large as isize);
-                        }
-                        if !small.is_null() {
-                            ui.icon_small = Some(small);
-                            SendMessageW(hwnd.cast(), WM_SETICON, ICON_SMALL, small as isize);
-                        }
-                    }
-                }
-            }
-
-            // -- Fonts --
-
-            nwg::Font::builder()
-                .family("Tahoma")
-                .size(16)
-                .weight(700)
-                .build(&mut ui.title_font)?;
-
-            nwg::Font::builder()
-                .family("Tahoma")
-                .weight(700)
-                .build(&mut ui.group_font)?;
-
-            nwg::Font::builder()
-                .family("Consolas")
-                .size(18)
-                .build(&mut ui.log_font)?;
-
-            // -- Title banner --
-
-            nwg::Label::builder()
-                .text("Doraemon Monopoly Patcher")
-                .position((16, 12))
-                .size((608, 28))
-                .parent(&ui.window)
-                .build(&mut ui.title_bar)?;
-            ui.title_bar.set_font(Some(&ui.title_font));
-
-            nwg::Label::builder()
-                .text("Choose a language, then pick the compatibility extras you want.")
-                .position((16, 42))
-                .size((608, 18))
-                .parent(&ui.window)
-                .build(&mut ui.subtitle)?;
-
-            // -- Options group box --
-
-            ui.options_group = make_group_box(
-                &ui.window,
-                " Patch options ",
-                12,
-                66,
-                616,
-                238,
-                &ui.group_font,
-            )?;
-
-            nwg::Label::builder()
-                .text("Language:")
-                .position((24, 88))
-                .size((592, 18))
-                .parent(&ui.window)
-                .build(&mut ui.language_label)?;
-
-            nwg::ComboBox::builder()
-                .collection(languages)
-                .selected_index(Some(0))
-                .position((24, 112))
-                .size((180, 26))
-                .parent(&ui.window)
-                .build(&mut ui.language)?;
-
-            nwg::CheckBox::builder()
-                .text("Skip disc check")
-                .check_state(nwg::CheckBoxState::Checked)
-                .position((24, 145))
-                .size((420, 20))
-                .parent(&ui.window)
-                .build(&mut ui.no_disc)?;
-
-            nwg::CheckBox::builder()
-                .text("Skip registry check")
-                .check_state(nwg::CheckBoxState::Checked)
-                .position((24, 169))
-                .size((420, 20))
-                .parent(&ui.window)
-                .build(&mut ui.no_reg)?;
-
-            let has_music = music::valid(&game.join("BGM.dat"))
-                || find_cue(game).is_some()
-                || cue::valid_wav(&game.join("DoraemonMusic.wav"));
-            nwg::CheckBox::builder()
-                .text("Use local music")
-                .check_state(if has_music {
-                    nwg::CheckBoxState::Checked
-                } else {
-                    nwg::CheckBoxState::Unchecked
-                })
-                .enabled(has_music)
-                .position((24, 193))
-                .size((420, 20))
-                .parent(&ui.window)
-                .build(&mut ui.local_audio)?;
-
-            nwg::CheckBox::builder()
-                .text("Fix volume control (Windows 7+ / CrossOver)")
-                .check_state(nwg::CheckBoxState::Unchecked)
-                .position((24, 217))
-                .size((440, 20))
-                .parent(&ui.window)
-                .build(&mut ui.modern_volume)?;
-
-            nwg::CheckBox::builder()
-                .text("Use 8-bit DirectSound output (Windows 95 / v86)")
-                .check_state(nwg::CheckBoxState::Unchecked)
-                .position((24, 241))
-                .size((440, 20))
-                .parent(&ui.window)
-                .build(&mut ui.primary_audio_8bit)?;
-
-            nwg::Label::builder()
-                .text(&music_text(game))
-                .position((24, 265))
-                .size((420, 28))
-                .parent(&ui.window)
-                .build(&mut ui.music)?;
-
-            nwg::Button::builder()
-                .text("Refresh")
-                .position((520, 270))
-                .size((85, 24))
-                .parent(&ui.window)
-                .build(&mut ui.refresh_music)?;
-
-            // -- Actions group box --
-
-            ui.actions_group =
-                make_group_box(&ui.window, " Actions ", 12, 314, 616, 56, &ui.group_font)?;
-
-            nwg::Button::builder()
-                .text("Apply patch")
-                .position((24, 332))
-                .size((125, 30))
-                .parent(&ui.window)
-                .build(&mut ui.apply)?;
-
-            nwg::Button::builder()
-                .text("Restore backup")
-                .enabled(game.join("backup").is_dir())
-                .position((160, 332))
-                .size((130, 30))
-                .parent(&ui.window)
-                .build(&mut ui.restore)?;
-
-            nwg::Button::builder()
-                .text("Add graphics wrapper")
-                .enabled(true)
-                .position((301, 332))
-                .size((165, 30))
-                .parent(&ui.window)
-                .build(&mut ui.wrapper)?;
-
-            nwg::Button::builder()
-                .text("Play")
-                .enabled(game.join("Doraemon.exe").is_file())
-                .position((477, 332))
-                .size((128, 30))
-                .parent(&ui.window)
-                .build(&mut ui.play)?;
-
-            // -- Audio group box --
-
-            ui.audio_group =
-                make_group_box(&ui.window, " Audio ", 12, 380, 616, 94, &ui.group_font)?;
-
-            nwg::CheckBox::builder()
-                .text("Reduce BGM.dat")
-                .check_state(nwg::CheckBoxState::Unchecked)
-                .enabled(
-                    find_cue(game).is_some()
-                        || cue::valid_wav(&game.join("DoraemonMusic.wav")),
-                )
-                .position((24, 402))
-                .size((180, 20))
-                .parent(&ui.window)
-                .build(&mut ui.reduce_bgm)?;
-
-            nwg::CheckBox::builder()
-                .text("Reduce Voice.dat")
-                .check_state(nwg::CheckBoxState::Unchecked)
-                .position((220, 402))
-                .size((210, 20))
-                .parent(&ui.window)
-                .build(&mut ui.optimize_voice)?;
-
-            nwg::Label::builder()
-                .text("Quality:")
-                .position((24, 434))
-                .size((60, 20))
-                .parent(&ui.window)
-                .build(&mut ui.voice_quality_label)?;
-
-            nwg::ComboBox::builder()
-                .collection(vec![
-                    "Original".into(),
-                    "High".into(),
-                    "Balanced".into(),
-                    "Compact".into(),
-                ])
-                .selected_index(Some(0))
-                .position((88, 430))
-                .size((190, 26))
-                .parent(&ui.window)
-                .build(&mut ui.voice_quality)?;
-
-            nwg::Button::builder()
-                .text("Compress")
-                .enabled(false)
-                .position((480, 424))
-                .size((125, 30))
-                .parent(&ui.window)
-                .build(&mut ui.audio_apply)?;
-
-            // -- Progress bar --
-
-            nwg::ProgressBar::builder()
-                .range(0..100)
-                .pos(0)
-                .step(1)
-                .size((616, 22))
-                .position((12, 484))
-                .parent(&ui.window)
-                .build(&mut ui.progress)?;
-
-            // -- Log group box --
-
-            ui.log_group =
-                make_group_box(&ui.window, " Log ", 12, 516, 616, 190, &ui.group_font)?;
-
-            nwg::RichTextBox::builder()
-                .text("")
-                .readonly(true)
-                .position((24, 538))
-                .size((592, 158))
-                .parent(&ui.window)
-                .build(&mut ui.log)?;
-            ui.log.set_font(Some(&ui.log_font));
-            ui.log.set_background_color([250, 250, 248]);
-
-            // -- Exit button --
-
-            nwg::Button::builder()
-                .text("Exit")
-                .position((548, 714))
-                .size((80, 24))
-                .parent(&ui.window)
-                .build(&mut ui.exit)?;
-
-            for (text, x, y, width) in [
-                ("┄┄┄┄┄┄┄┄┄", 24, 99, 82),
-                ("┄┄┄┄┄┄┄┄┄┄┄┄", 42, 157, 116),
-                ("┄┄┄┄┄┄┄┄┄┄┄┄┄┄", 42, 181, 130),
-                ("┄┄┄┄┄┄┄┄┄┄┄", 42, 205, 105),
-                ("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄", 42, 229, 270),
-                ("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄", 42, 253, 290),
-                ("┄┄┄┄┄┄┄┄", 42, 414, 82),
-                ("┄┄┄┄┄┄┄┄┄┄", 238, 414, 96),
-                ("┄┄┄┄┄┄", 24, 445, 55),
-            ] {
-                let mut hint = nwg::Label::default();
-                nwg::Label::builder()
-                    .text(text)
-                    .position((x, y))
-                    .size((width, 12))
-                    .parent(&ui.window)
-                    .build(&mut hint)?;
-                ui.option_hints.push(hint);
-            }
-            nwg::Tooltip::builder()
-                .default_decoration(Some("Why this option?"), Some(nwg::TooltipIcon::Info))
-                .register(&ui.language, "Select which localized game resources to install. <original> keeps the current language.")
-                .register(&ui.option_hints[0], "Select which localized game resources to install. <original> keeps the current language.")
-                .register(&ui.no_disc, "Bypasses the original CD check so supported installations can start without the disc mounted.")
-                .register(&ui.option_hints[1], "Bypasses the original CD check so supported installations can start without the disc mounted.")
-                .register(&ui.no_reg, "Bypasses the old Setup registry requirement, which is often missing on newer Windows and Wine.")
-                .register(&ui.option_hints[2], "Bypasses the old Setup registry requirement, which is often missing on newer Windows and Wine.")
-                .register(&ui.local_audio, "Streams a verified BGM.dat through DirectSound instead of using CD/MCI music.")
-                .register(&ui.option_hints[3], "Streams a verified BGM.dat through DirectSound instead of using CD/MCI music.")
-                .register(&ui.modern_volume, "Routes the legacy mixer controls through DirectSound so volume works on Windows 7+ and CrossOver.")
-                .register(&ui.option_hints[4], "Routes the legacy mixer controls through DirectSound so volume works on Windows 7+ and CrossOver.")
-                .register(&ui.primary_audio_8bit, "Keeps 22,050 Hz stereo but uses 8-bit samples, forcing Windows 95/v86 onto SB16 DMA1 instead of the distorted 16-bit DMA5 path.")
-                .register(&ui.option_hints[5], "Keeps 22,050 Hz stereo but uses 8-bit samples, forcing Windows 95/v86 onto SB16 DMA1 instead of the distorted 16-bit DMA5 path.")
-                .register(&ui.reduce_bgm, "Re-encodes disc music more compactly to reduce BGM.dat size.")
-                .register(&ui.option_hints[6], "Re-encodes disc music more compactly to reduce BGM.dat size.")
-                .register(&ui.optimize_voice, "Re-encodes voice clips more compactly to reduce Voice.dat size.")
-                .register(&ui.option_hints[7], "Re-encodes voice clips more compactly to reduce Voice.dat size.")
-                .register(&ui.voice_quality, "Choose the size/quality balance used when compressing BGM.dat or Voice.dat.")
-                .register(&ui.option_hints[8], "Choose the size/quality balance used when compressing BGM.dat or Voice.dat.")
-                .build(&mut ui.option_tooltips)?;
-
-            nwg::AnimationTimer::builder()
-                .parent(&ui.window)
-                .interval(Duration::from_millis(120))
-                .active(true)
-                .build(&mut ui.timer)?;
-
-            Ok(ui)
-        }
-    }
-
-    pub fn run() -> Result<(), String> {
-        nwg::init().map_err(|error| error.to_string())?;
-        nwg::Font::set_global_family("Tahoma").map_err(|error| error.to_string())?;
-
-        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-        let restore_mode = executable
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("Restore.exe"));
-        let game = if restore_mode {
-            executable
-                .parent()
-                .and_then(std::path::Path::parent)
-                .ok_or("Restore.exe must be inside the backup folder")?
-                .to_path_buf()
-        } else {
-            executable
-                .parent()
-                .ok_or("the patcher executable has no parent game folder")?
-                .to_path_buf()
-        };
-
-        eprintln!("DIAG: ENGLISH_PARTS size={} ENGLISH_PAYLOAD size={}", super::ENGLISH_PARTS.len(), super::ENGLISH_PAYLOAD.len());
-        eprintln!("DIAG: VIETNAMESE_PARTS size={} VIETNAMESE_PAYLOAD size={}", super::VIETNAMESE_PARTS.len(), super::VIETNAMESE_PAYLOAD.len());
-        let english = super::load_language("English", super::ENGLISH_PARTS, super::ENGLISH_PAYLOAD);
-        let vietnamese = super::load_language("Vietnamese", super::VIETNAMESE_PARTS, super::VIETNAMESE_PAYLOAD);
-
-        let mut languages = vec!["<original>".into()];
-        let english_index = english.as_ref().map(|_| {
-            let index = languages.len();
-            languages.push("English".into());
-            index
-        });
-        let vietnamese_index = vietnamese.as_ref().map(|_| {
-            let index = languages.len();
-            languages.push("Vietnamese".into());
-            index
-        });
-
-        let wrapper_available = english
-            .as_ref()
-            .or(vietnamese.as_ref())
-            .is_some_and(|payload| {
-                payload
-                    .bundled
-                    .iter()
-                    .any(|file| !file.name.eq_ignore_ascii_case("doraudio.dll"))
-            });
-
-        let ui = Rc::new(Ui::build(&game, languages).map_err(|error| error.to_string())?);
-        if english.is_none() && vietnamese.is_none() {
-            append_log(
-                &ui,
-                TaskState::Failed,
-                &format!(
-                    "No embedded language payloads found. English parts blob={}B, Vietnamese parts blob={}B. The patch data may not have been linked in.",
-                    super::ENGLISH_PARTS.len(),
-                    super::VIETNAMESE_PARTS.len(),
-                ),
-            );
-        }
-        append_log(
-            &ui,
-            TaskState::Skipped,
-            "Ready. Applying a new choice restores the original files first.",
-        );
-        if restore_mode {
-            ui.window.set_text("Restore Doraemon Monopoly");
-            ui.title_bar.set_text("Restore Doraemon Monopoly");
-            ui.subtitle
-                .set_text("Restore the exact original files kept in this backup.");
-            ui.apply.set_enabled(false);
-            ui.audio_apply.set_enabled(false);
-            ui.reduce_bgm.set_enabled(false);
-            ui.optimize_voice.set_enabled(false);
-            ui.voice_quality.set_enabled(false);
-            ui.wrapper.set_enabled(false);
-            ui.play.set_enabled(game.join("Doraemon.exe").is_file());
-            ui.no_disc.set_enabled(false);
-            ui.no_reg.set_enabled(false);
-            ui.local_audio.set_enabled(false);
-            ui.modern_volume.set_enabled(false);
-            ui.primary_audio_8bit.set_enabled(false);
-            append_log(
-                &ui,
-                TaskState::Working,
-                "Ready to restore the original game files.",
-            );
-        }
-
-        let english = Rc::new(english);
-        let vietnamese = Rc::new(vietnamese);
-        let game = Rc::new(game);
-        let busy = Rc::new(Cell::new(false));
-        let events_ui = ui.clone();
-        let events_game = game.clone();
-        let events_payload = english.clone();
-        let events_vietnamese = vietnamese.clone();
-        let events_english_index = english_index;
-        let events_vietnamese_index = vietnamese_index;
-        let events_wrapper_available = wrapper_available;
-        let events_busy = busy.clone();
-        let (events_tx, events_rx) = mpsc::channel::<UiEvent>();
-        let handler = nwg::full_bind_event_handler(
-            &ui.window.handle,
-            move |event, _data, handle| {
-                let ui = &events_ui;
-                if (event == nwg::Event::OnWindowClose)
-                    || (event == nwg::Event::OnButtonClick && handle == ui.exit.handle)
-                {
-                    if events_busy.get() {
-                        append_log(
-                            &ui,
-                            TaskState::Working,
-                            "Please wait for the current task to finish.",
-                        );
-                    } else {
-                        nwg::stop_thread_dispatch();
-                    }
-                } else if event == nwg::Event::OnTimerTick && handle == ui.timer.handle {
-                    while let Ok(event) = events_rx.try_recv() {
-                        match event {
-                            UiEvent::Progress(update) => {
-                                if let Some(pct) = update.progress {
-                                    ui.progress.set_pos(pct as u32);
-                                }
-                                append_log(&ui, update.state, &update.message)
-                            }
-                            UiEvent::Finished(Ok(report)) => {
-                                ui.progress.set_pos(100);
-                                append_log(
-                                    &ui,
-                                    TaskState::Done,
-                                    if report.changed.is_empty() {
-                                        "Apply finished: everything requested was already in place."
-                                    } else {
-                                        "Apply finished successfully."
-                                    },
-                                );
-                                append_log(&ui, TaskState::Done, &report.audio);
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.music.set_text(&music_text(&events_game));
-                                ui.local_audio.set_enabled(
-                                    music::valid(&events_game.join("BGM.dat"))
-                                        || find_cue(&events_game).is_some()
-                                        || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
-                                );
-                                events_busy.set(false);
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.wrapper
-                                    .set_enabled(events_wrapper_available && !restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                                ui.refresh_music.set_enabled(!restore_mode);
-                            }
-                            UiEvent::Finished(Err(error)) => {
-                                ui.progress.set_pos(0);
-                                append_log(
-                                    &ui,
-                                    TaskState::Failed,
-                                    &format!("Apply failed: {error}"),
-                                );
-                                events_busy.set(false);
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.wrapper
-                                    .set_enabled(events_wrapper_available && !restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                                ui.refresh_music.set_enabled(!restore_mode);
-                            }
-                            UiEvent::Restored(Ok(files)) => {
-                                ui.progress.set_pos(100);
-                                append_log(
-                                    &ui,
-                                    TaskState::Done,
-                                    &format!("Restored and verified: {}.", files.join(", ")),
-                                );
-                                events_busy.set(false);
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.wrapper
-                                    .set_enabled(events_wrapper_available && !restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                                ui.music.set_text(&music_text(&events_game));
-                                ui.local_audio.set_enabled(
-                                    music::valid(&events_game.join("BGM.dat"))
-                                        || find_cue(&events_game).is_some()
-                                        || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
-                                );
-                                ui.refresh_music.set_enabled(!restore_mode);
-                            }
-                            UiEvent::Restored(Err(error)) => {
-                                ui.progress.set_pos(0);
-                                append_log(
-                                    &ui,
-                                    TaskState::Failed,
-                                    &format!("Restore failed: {error}"),
-                                );
-                                events_busy.set(false);
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.wrapper
-                                    .set_enabled(events_wrapper_available && !restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                            }
-                            UiEvent::Wrapper(Ok(files)) if files.is_empty() => {
-                                ui.progress.set_pos(100);
-                                append_log(
-                                    &ui,
-                                    TaskState::Skipped,
-                                    "The graphics wrapper is already installed.",
-                                );
-                                events_busy.set(false);
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.wrapper.set_enabled(!restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                            }
-                            UiEvent::Wrapper(Ok(files)) => {
-                                ui.progress.set_pos(100);
-                                append_log(
-                                    &ui,
-                                    TaskState::Done,
-                                    &format!("Graphics wrapper added: {} files.", files.len()),
-                                );
-                                events_busy.set(false);
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.wrapper.set_enabled(!restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                                prompt_run_config(&events_game, &events_ui.window);
-                            }
-                            UiEvent::Wrapper(Err(error)) => {
-                                ui.progress.set_pos(0);
-                                append_log(
-                                    &ui,
-                                    TaskState::Failed,
-                                    &format!("Graphics wrapper failed: {error}"),
-                                );
-                                events_busy.set(false);
-                                ui.apply.set_enabled(!restore_mode);
-                                ui.audio_apply.set_enabled(
-                                    !restore_mode
-                                        && (ui.optimize_voice.check_state()
-                                            == nwg::CheckBoxState::Checked
-                                            || ui.reduce_bgm.check_state()
-                                                == nwg::CheckBoxState::Checked),
-                                );
-                                ui.restore.set_enabled(events_game.join("backup").is_dir());
-                                ui.wrapper.set_enabled(!restore_mode);
-                                ui.play
-                                    .set_enabled(events_game.join("Doraemon.exe").is_file());
-                            }
-                        }
-                    }
-                } else if event == nwg::Event::OnButtonClick && handle == ui.refresh_music.handle {
-                    ui.music.set_text(&music_text(&events_game));
-                    let has_music = music::valid(&events_game.join("BGM.dat"))
-                        || find_cue(&events_game).is_some()
-                        || cue::valid_wav(&events_game.join("DoraemonMusic.wav"));
-                    ui.local_audio.set_enabled(has_music);
-                    ui.reduce_bgm.set_enabled(
-                        find_cue(&events_game).is_some()
-                            || cue::valid_wav(&events_game.join("DoraemonMusic.wav")),
-                    );
-                } else if event == nwg::Event::OnButtonClick
-                    && (handle == ui.optimize_voice.handle || handle == ui.reduce_bgm.handle)
-                {
-                    ui.audio_apply.set_enabled(
-                        !restore_mode
-                            && (ui.optimize_voice.check_state() == nwg::CheckBoxState::Checked
-                                || ui.reduce_bgm.check_state() == nwg::CheckBoxState::Checked),
-                    );
-                } else if event == nwg::Event::OnButtonClick
-                    && (handle == ui.apply.handle || handle == ui.audio_apply.handle)
-                {
-                    let audio_only = handle == ui.audio_apply.handle;
-                    events_busy.set(true);
-                    ui.apply.set_enabled(false);
-                    ui.audio_apply.set_enabled(false);
-                    ui.restore.set_enabled(false);
-                    ui.wrapper.set_enabled(false);
-                    ui.play.set_enabled(false);
-                    ui.refresh_music.set_enabled(false);
-                    append_log(
-                        &ui,
-                        TaskState::Working,
-                        if audio_only {
-                            "Preparing audio…"
-                        } else {
-                            "Starting Apply…"
-                        },
-                    );
-                    let _ =
-                        std::fs::remove_file(events_game.join("Doraemon-Patcher-diagnostic.log"));
-                    write_diagnostic(
-                        &events_game,
-                        TaskState::Working,
-                        if audio_only {
-                            "Apply audio button pressed."
-                        } else {
-                            "Apply patch button pressed."
-                        },
-                    );
-                    let backup_path = events_game.join("backup");
-                    let keep_compressed = !audio_only && backup_path.is_dir()
-                        && install::compressed_audio_files(&backup_path, &events_game)
-                            .is_ok_and(|compressed| {
-                                if compressed.is_empty() {
-                                    return false;
-                                }
-                                let content = format!(
-                                    "The following audio file{} been modified since the last patch:\n- {}\n\nKeep the current compressed audio?\n(Choosing Yes will skip restoring and regenerating these files.)",
-                                    if compressed.len() == 1 { " has" } else { "s have" },
-                                    compressed.join("\n- ")
-                                );
-                                nwg::modal_message(
-                                    &ui.window,
-                                    &nwg::MessageParams {
-                                        title: "Keep compressed audio?",
-                                        content: &content,
-                                        buttons: nwg::MessageButtons::YesNo,
-                                        icons: nwg::MessageIcons::Question,
-                                    },
-                                ) == nwg::MessageChoice::Yes
-                            });
-                    let options = ApplyOptions {
-                        no_disc: !audio_only
-                            && ui.no_disc.check_state() == nwg::CheckBoxState::Checked,
-                        no_reg: !audio_only
-                            && ui.no_reg.check_state() == nwg::CheckBoxState::Checked,
-                        local_audio: !audio_only
-                            && ui.local_audio.check_state() == nwg::CheckBoxState::Checked,
-                        modern_volume: !audio_only
-                            && ui.modern_volume.check_state() == nwg::CheckBoxState::Checked,
-                        primary_audio_8bit: !audio_only
-                            && ui.primary_audio_8bit.check_state()
-                                == nwg::CheckBoxState::Checked,
-                        cue: find_cue(&events_game),
-                        reduce_bgm: audio_only
-                            && ui.reduce_bgm.check_state() == nwg::CheckBoxState::Checked,
-                        optimize_voice: audio_only
-                            && ui.optimize_voice.check_state() == nwg::CheckBoxState::Checked,
-                        voice_compression: match ui.voice_quality.selection() { Some(1) => doraemon_game_patch::voice::Compression::High, Some(2) => doraemon_game_patch::voice::Compression::Balanced, Some(3) => doraemon_game_patch::voice::Compression::Compact, _ => doraemon_game_patch::voice::Compression::Original },
-                        keep_compressed_audio: keep_compressed,
-                    };
-                    let game = (*events_game).clone();
-                    let selection = ui.language.selection();
-                    let payload = if !audio_only && selection == events_english_index {
-                        events_payload
-                            .as_ref()
-                            .as_ref()
-                            .expect("English is available")
-                            .clone()
-                    } else if !audio_only && selection == events_vietnamese_index {
-                        events_vietnamese
-                            .as_ref()
-                            .as_ref()
-                            .expect("Vietnamese is available")
-                            .clone()
-                    } else {
-                        let mut payload = events_payload
-                            .as_ref()
-                            .as_ref()
-                            .or(events_vietnamese.as_ref().as_ref())
-                            .cloned()
-                            .unwrap_or(Payload {
-                                language: payload::Language::Custom,
-                                profiles: Vec::new(),
-                                strings: None,
-                                voice: None,
-                                bundled: Vec::new(),
-                            });
-                        payload.language = payload::Language::Custom;
-                        payload.profiles.clear();
-                        payload.strings = None;
-                        payload.voice = None;
-                        payload
-                    };
-                    let icon = if !audio_only && selection == events_english_index {
-                        Some(super::ENGLISH_ICON)
-                    } else if !audio_only && selection == events_vietnamese_index {
-                        Some(super::VIETNAMESE_ICON)
-                    } else {
-                        None
-                    };
-                    let executable = executable.clone();
-                    let tx = events_tx.clone();
-                    thread::spawn(move || {
-                        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                            let wants_changes = payload.language != payload::Language::Custom
-                                || options.no_disc
-                                || options.no_reg
-                                || options.local_audio
-                                || options.modern_volume
-                                || options.primary_audio_8bit
-                                || options.reduce_bgm
-                                || options.optimize_voice;
-                            let backup = game.join("backup");
-                            if backup.is_dir() && !audio_only {
-                                let mut saved_compressed: Vec<(String, Vec<u8>)> = Vec::new();
-                                if options.keep_compressed_audio {
-                                    for name in &["voice.dat", "BGM.dat"] {
-                                        let path = game.join(name);
-                                        if path.exists() {
-                                            if let Ok(data) = std::fs::read(&path) {
-                                                saved_compressed.push((name.to_string(), data));
-                                            }
-                                        }
-                                    }
-                                }
-                                let message = if options.keep_compressed_audio {
-                                    "Restoring original files while keeping your compressed audio…"
-                                } else if wants_changes {
-                                    "Restoring the original files before applying your new choices…"
-                                } else {
-                                    "No patch choices selected; restoring the original files…"
-                                };
-                                let update = TaskProgress { state: TaskState::Working, message: message.into(), progress: Some(3) };
-                                write_diagnostic(&game, update.state, &update.message);
-                                let _ = tx.send(UiEvent::Progress(update));
-                                let restored = install::restore(&backup)?;
-                                for (name, data) in &saved_compressed {
-                                    let target = game.join(name);
-                                    let _ = std::fs::write(&target, data);
-                                }
-                                let update = TaskProgress { state: TaskState::Done, message: format!("Original files restored: {}.", restored.join(", ")), progress: Some(10) };
-                                write_diagnostic(&game, update.state, &update.message);
-                                let _ = tx.send(UiEvent::Progress(update));
-                                if !wants_changes {
-                                    return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing selected, so the game is back to its original files.".into() });
-                                }
-                            } else if !wants_changes {
-                                return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing is selected and no backup was found. The game is unchanged.".into() });
-                            }
-                            let mut report = install::apply_with_progress(
-                                &game,
-                                &payload,
-                                &options,
-                                &executable,
-                                &mut |update| {
-                                    write_diagnostic(&game, update.state, &update.message);
-                                    let _ = tx.send(UiEvent::Progress(update));
-                                },
-                            )?;
-                            if let Some(icon) = icon {
-                                let update = TaskProgress { state: TaskState::Working, message: "Applying the selected game icon…".into(), progress: Some(98) };
-                                let _ = tx.send(UiEvent::Progress(update));
-                                apply_game_icon(&game, icon)?;
-                                report.changed.push("Doraemon.exe icon".into());
-                            }
-                            Ok(report)
-                        }))
-                        .unwrap_or_else(|_| {
-                            Err(
-                                "The patch task stopped unexpectedly; no files were installed."
-                                    .into(),
-                            )
-                        });
-                        match &result {
-                            Ok(_) => write_diagnostic(
-                                &game,
-                                TaskState::Done,
-                                "Apply finished successfully.",
-                            ),
-                            Err(error) => write_diagnostic(
-                                &game,
-                                TaskState::Failed,
-                                &format!("Apply failed: {error}"),
-                            ),
-                        }
-                        let _ = tx.send(UiEvent::Finished(result));
-                    });
-                } else if event == nwg::Event::OnButtonClick && handle == ui.restore.handle {
-                    events_busy.set(true);
-                    ui.apply.set_enabled(false);
-                    ui.audio_apply.set_enabled(false);
-                    ui.restore.set_enabled(false);
-                    ui.wrapper.set_enabled(false);
-                    ui.play.set_enabled(false);
-                    append_log(&ui, TaskState::Working, "Restoring original files…");
-                    let backup = events_game.join("backup");
-                    let tx = events_tx.clone();
-                    thread::spawn(move || {
-                        let result =
-                            panic::catch_unwind(AssertUnwindSafe(|| install::restore(&backup)))
-                                .unwrap_or_else(|_| {
-                                    Err(
-                                "The restore task stopped unexpectedly; no files were restored."
-                                    .into(),
-                            )
-                                });
-                        let _ = tx.send(UiEvent::Restored(result));
-                    });
-                } else if event == nwg::Event::OnButtonClick && handle == ui.wrapper.handle {
-                    events_busy.set(true);
-                    ui.apply.set_enabled(false);
-                    ui.audio_apply.set_enabled(false);
-                    ui.restore.set_enabled(false);
-                    ui.wrapper.set_enabled(false);
-                    ui.play.set_enabled(false);
-                    append_log(&ui, TaskState::Working, "Adding the graphics wrapper…");
-                    let game = (*events_game).clone();
-                    let payload = events_payload
-                        .as_ref()
-                        .as_ref()
-                        .or(events_vietnamese.as_ref().as_ref())
-                        .cloned()
-                        .unwrap_or(Payload {
-                            language: payload::Language::Custom,
-                            profiles: Vec::new(),
-                            strings: None,
-                            voice: None,
-                            bundled: Vec::new(),
-                        });
-                    let tx = events_tx.clone();
-                    thread::spawn(move || {
-                        let result = panic::catch_unwind(AssertUnwindSafe(|| install::add_wrapper(&game, &payload)))
-                            .unwrap_or_else(|_| Err("The graphics-wrapper task stopped unexpectedly; no files were added.".into()));
-                        let _ = tx.send(UiEvent::Wrapper(result));
-                    });
-                } else if event == nwg::Event::OnButtonClick && handle == ui.play.handle {
-                    let game_exe = events_game.join("Doraemon.exe");
-                    match std::process::Command::new(&game_exe)
-                        .current_dir(&*events_game)
-                        .spawn()
-                    {
-                        Ok(_) => append_log(&ui, TaskState::Done, "Launched Doraemon.exe."),
-                        Err(error) => append_log(
-                            &ui,
-                            TaskState::Failed,
-                            &format!("Could not launch Doraemon.exe: {error}"),
-                        ),
-                    }
-                }
-            },
-        );
-        nwg::dispatch_thread_events();
-        nwg::unbind_event_handler(&handler);
-        Ok(())
-    }
 }
 
 #[cfg(windows)]
 fn main() {
     if let Err(error) = windows_app::run() {
-        native_windows_gui::error_message("Doraemon patcher", &error);
+        use std::iter;
+        use winapi::um::winuser::{MB_OK, MessageBoxW};
+        let wide: Vec<u16> = error.encode_utf16().chain(iter::once(0)).collect();
+        let title: Vec<u16> = "Doraemon patcher".encode_utf16().chain(iter::once(0)).collect();
+        unsafe { MessageBoxW(std::ptr::null_mut(), wide.as_ptr(), title.as_ptr(), MB_OK); }
     }
 }
