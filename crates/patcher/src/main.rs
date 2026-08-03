@@ -129,6 +129,29 @@ mod windows_app {
     const WS_VISIBLE: u32 = 0x10000000;
     const BS_GROUPBOX: u32 = 0x00000007;
     const WM_SETFONT: u32 = 0x0030;
+    const WM_SETICON: u32 = 0x0080;
+    const ICON_SMALL: usize = 0;
+    const ICON_BIG: usize = 1;
+    const IMAGE_ICON: u32 = 1;
+
+    extern "system" {
+        fn GetModuleHandleW(name: *const u16) -> *mut core::ffi::c_void;
+        fn LoadImageW(
+            hinst: *mut core::ffi::c_void,
+            name: *const u16,
+            typ: u32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> *mut core::ffi::c_void;
+        fn SendMessageW(
+            hwnd: *mut core::ffi::c_void,
+            msg: u32,
+            wparam: usize,
+            lparam: isize,
+        ) -> isize;
+        fn DestroyIcon(icon: *mut core::ffi::c_void) -> i32;
+    }
 
     #[derive(Default)]
     struct Ui {
@@ -167,10 +190,20 @@ mod windows_app {
         option_hints: Vec<nwg::Label>,
         option_tooltips: nwg::Tooltip,
         timer: nwg::AnimationTimer,
+        icon_large: Option<*mut core::ffi::c_void>,
+        icon_small: Option<*mut core::ffi::c_void>,
     }
 
     impl Drop for Ui {
         fn drop(&mut self) {
+            unsafe {
+                if let Some(icon) = self.icon_large.take() {
+                    DestroyIcon(icon);
+                }
+                if let Some(icon) = self.icon_small.take() {
+                    DestroyIcon(icon);
+                }
+            }
             self.options_group.destroy();
             self.audio_group.destroy();
             self.actions_group.destroy();
@@ -440,6 +473,39 @@ mod windows_app {
                         | nwg::WindowFlags::VISIBLE,
                 )
                 .build(&mut ui.window)?;
+
+            if let Some(hwnd) = ui.window.handle.hwnd() {
+                let hinstance =
+                    unsafe { GetModuleHandleW(core::ptr::null()) };
+                if !hinstance.is_null() {
+                    unsafe {
+                        let large = LoadImageW(
+                            hinstance,
+                            1 as *const u16,
+                            IMAGE_ICON,
+                            32,
+                            32,
+                            0,
+                        );
+                        let small = LoadImageW(
+                            hinstance,
+                            1 as *const u16,
+                            IMAGE_ICON,
+                            16,
+                            16,
+                            0,
+                        );
+                        if !large.is_null() {
+                            ui.icon_large = Some(large);
+                            SendMessageW(hwnd.cast(), WM_SETICON, ICON_BIG, large as isize);
+                        }
+                        if !small.is_null() {
+                            ui.icon_small = Some(small);
+                            SendMessageW(hwnd.cast(), WM_SETICON, ICON_SMALL, small as isize);
+                        }
+                    }
+                }
+            }
 
             // -- Fonts --
 

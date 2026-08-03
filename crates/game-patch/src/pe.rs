@@ -29,6 +29,11 @@ const PORT_BGM_OFFSET: usize = 0x2000;
 const TITLE_PREFIX: &[u8] = b"Version ";
 const TITLE_SUFFIX: &[u8] = b" - Patched by Thang\0";
 
+const GAME_ICON_ENGLISH: &[u8] =
+    include_bytes!("../../../content/assets/icons/english.ico");
+const GAME_ICON_VIETNAMESE: &[u8] =
+    include_bytes!("../../../content/assets/icons/vietnamese.ico");
+
 /// Routes an encoded byte to the Chinese path or one of the CC/CD Vietnamese
 /// two-byte paths. The second byte is consumed only for a recognized prefix.
 fn prefix_check(a: &mut Asm, chinese: &'static str, check_cd: &'static str, second: &'static str) {
@@ -1429,6 +1434,16 @@ pub fn patch_language_runtime(
     let compatibility = patch_compatible(&output, no_disc, local_audio, no_reg, modern_volume)?;
     output = compatibility.bytes;
     actions.extend(compatibility.actions);
+    let icon = if vietnamese {
+        GAME_ICON_VIETNAMESE
+    } else {
+        GAME_ICON_ENGLISH
+    };
+    let with_icon = patch_game_icon(&output, icon)?;
+    if with_icon != output {
+        output = with_icon;
+        actions.push("replaced the game executable icon".into());
+    }
     Ok(CompatibilityPatch {
         bytes: output,
         actions,
@@ -1586,9 +1601,344 @@ pub fn patch_compatible(
     Err("unsupported Doraemon.exe layout; it may be a different release or an unknown modification, so no bytes were changed".into())
 }
 
+/// Extracts the two 32-bit BGRA images (32x32 then 16x16) from a `.ico` file.
+fn icon_images(ico: &[u8]) -> Result<Vec<(u8, u8, Vec<u8>)>> {
+    if ico.len() < 6 || ico[0..2] != [0, 0] {
+        return Err("unsupported icon container".into());
+    }
+    let count = u16::from_le_bytes(ico[4..6].try_into().unwrap()) as usize;
+    if count != 2 {
+        return Err("expected a two-image 32-bit icon file".into());
+    }
+    let mut images = Vec::new();
+    for index in 0..count {
+        let entry = 6 + index * 16;
+        let width = ico[entry];
+        let height = ico[entry + 1];
+        let bit_count = u16::from_le_bytes(ico[entry + 6..entry + 8].try_into().unwrap());
+        if bit_count != 32 {
+            return Err("icon image is not 32-bit".into());
+        }
+        let size =
+            u32::from_le_bytes(ico[entry + 8..entry + 12].try_into().unwrap()) as usize;
+        let offset =
+            u32::from_le_bytes(ico[entry + 12..entry + 16].try_into().unwrap()) as usize;
+        let dib = ico
+            .get(offset..offset + size)
+            .ok_or("icon image extends outside the file")?;
+        images.push((width, height, dib.to_vec()));
+    }
+    images.sort_by_key(|(width, _, _)| std::cmp::Reverse(*width));
+    Ok(images)
+}
+
+/// Reads the resource directory entries at `rel` (an offset from the resource
+/// root) as `(name, offset_to)` pairs.
+fn resource_entries(input: &[u8], root: usize, rel: u32) -> Result<Vec<(u32, u32)>> {
+    let offset = root + rel as usize;
+    let named = u16::from_le_bytes(
+        input
+            .get(offset + 12..offset + 14)
+            .ok_or("truncated resource directory")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let ids = u16::from_le_bytes(
+        input
+            .get(offset + 14..offset + 16)
+            .ok_or("truncated resource directory")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let mut out = Vec::with_capacity(named + ids);
+    for index in 0..named + ids {
+        let entry = offset + 16 + index * 8;
+        let name = u32::from_le_bytes(
+            input
+                .get(entry..entry + 4)
+                .ok_or("truncated resource directory")?
+                .try_into()
+                .unwrap(),
+        );
+        let offset_to = u32::from_le_bytes(
+            input
+                .get(entry + 4..entry + 8)
+                .ok_or("truncated resource directory")?
+                .try_into()
+                .unwrap(),
+        );
+        out.push((name, offset_to));
+    }
+    Ok(out)
+}
+
+/// Returns the raw file offset of a resource data entry (rva, size) at `rel`.
+fn resource_data_raw(input: &[u8], root: usize, rel: u32) -> Result<(usize, usize)> {
+    let offset = root + rel as usize;
+    let rva =
+        u32::from_le_bytes(
+            input
+                .get(offset..offset + 4)
+                .ok_or("truncated resource data")?
+                .try_into()
+                .unwrap(),
+        );
+    let size =
+        u32::from_le_bytes(
+            input
+                .get(offset + 4..offset + 8)
+                .ok_or("truncated resource data")?
+                .try_into()
+                .unwrap(),
+        ) as usize;
+    Ok((rva as usize, size))
+}
+
+/// Replaces the executable's icon group and RT_ICON images with the supplied
+/// 32-bit `.ico` file. New image data is appended in a dedicated trailing
+/// section so the change works whether or not `.rsrc` is the last section.
+/// Returns `input` unchanged when the icon is already installed.
+pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
+    let images = icon_images(ico)?;
+    let pe = u32::from_le_bytes(
+        input
+            .get(0x3c..0x40)
+            .ok_or("truncated DOS header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let count = u16::from_le_bytes(
+        input
+            .get(pe + 6..pe + 8)
+            .ok_or("truncated PE header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let optional = u16::from_le_bytes(
+        input
+            .get(pe + 20..pe + 22)
+            .ok_or("truncated PE header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let table = pe + 24 + optional;
+    let image_base = u32::from_le_bytes(
+        input
+            .get(pe + 24 + 28..pe + 24 + 32)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    );
+    let section_alignment = u32::from_le_bytes(
+        input
+            .get(pe + 24 + 32..pe + 24 + 36)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    );
+    let file_alignment = u32::from_le_bytes(
+        input
+            .get(pe + 24 + 36..pe + 24 + 40)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    );
+    let headers_size = u32::from_le_bytes(
+        input
+            .get(pe + 24 + 60..pe + 24 + 64)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+
+    let resource_rva = u32::from_le_bytes(
+        input
+            .get(pe + 24 + 96 + 16..pe + 24 + 96 + 20)
+            .ok_or("truncated resource data directory")?
+            .try_into()
+            .unwrap(),
+    );
+    let (rsrc_header, root_raw) = {
+        let mut found = None;
+        for index in 0..count {
+            let offset = table + index * 40;
+            let va = u32::from_le_bytes(input[offset + 12..offset + 16].try_into().unwrap());
+            let vsize =
+                u32::from_le_bytes(input[offset + 16..offset + 20].try_into().unwrap());
+            let raw =
+                u32::from_le_bytes(input[offset + 20..offset + 24].try_into().unwrap()) as usize;
+            if resource_rva >= va && resource_rva < va + vsize {
+                found = Some((offset, raw + (resource_rva - va) as usize));
+                break;
+            }
+        }
+        found.ok_or("resource RVA does not map to a section")?
+    };
+    let _ = (rsrc_header, image_base);
+
+    // Walk to the RT_ICON type directory and the RT_GROUP_ICON #101 slot.
+    let mut icon_dir: Option<u32> = None;
+    let mut group_dir: Option<u32> = None;
+    for (name, offset_to) in resource_entries(input, root_raw, 0)? {
+        if name >> 31 != 0 {
+            continue;
+        }
+        match name {
+            3 => icon_dir = Some(offset_to & 0x7fff_ffff),
+            14 => group_dir = Some(offset_to & 0x7fff_ffff),
+            _ => {}
+        }
+    }
+    let icon_dir = icon_dir.ok_or("executable has no RT_ICON resources")?;
+    let group_dir = group_dir.ok_or("executable has no RT_GROUP_ICON resources")?;
+
+    let mut group_data_rel: Option<u32> = None;
+    for (name, offset_to) in resource_entries(input, root_raw, group_dir)? {
+        if name >> 31 != 0 {
+            continue;
+        }
+        if name == 101 {
+            for (_, lang_offset) in resource_entries(input, root_raw, offset_to & 0x7fff_ffff)? {
+                if lang_offset >> 31 == 0 {
+                    group_data_rel = Some(lang_offset & 0x7fff_ffff);
+                    break;
+                }
+            }
+        }
+    }
+    let group_data_rel = group_data_rel.ok_or("executable has no icon group 101")?;
+    let (group_rva, group_size) = resource_data_raw(input, root_raw, group_data_rel)?;
+    let group_raw = {
+        let mut found = None;
+        for index in 0..count {
+            let offset = table + index * 40;
+            let va = u32::from_le_bytes(input[offset + 12..offset + 16].try_into().unwrap());
+            let vsize =
+                u32::from_le_bytes(input[offset + 16..offset + 20].try_into().unwrap());
+            let raw =
+                u32::from_le_bytes(input[offset + 20..offset + 24].try_into().unwrap()) as usize;
+            if (group_rva as u32) >= va && (group_rva as u32) < va + vsize {
+                found = Some(raw + (group_rva as u32 - va) as usize);
+                break;
+            }
+        }
+        found.ok_or("icon group RVA does not map to a section")?
+    };
+    let group = input
+        .get(group_raw..group_raw + group_size)
+        .ok_or("icon group extends outside the executable")?;
+    let referenced = u16::from_le_bytes(group[4..6].try_into().unwrap()) as usize;
+    if referenced < 2 {
+        return Err("icon group references fewer than two images".into());
+    }
+    let mut ids = Vec::with_capacity(referenced);
+    for index in 0..referenced {
+        ids.push(u16::from_le_bytes(group[6 + index * 14 + 12..6 + index * 14 + 14].try_into().unwrap()));
+    }
+
+    // Build the replacement GRPICONDIR (two 32-bit images reusing ids[0..2]).
+    let mut new_group = Vec::with_capacity(34);
+    new_group.extend_from_slice(&[0, 0, 1, 0]);
+    new_group.extend_from_slice(&(images.len() as u16).to_le_bytes());
+    for (index, (width, height, dib)) in images.iter().enumerate() {
+        new_group.push(*width);
+        new_group.push(*height);
+        new_group.push(0);
+        new_group.push(0);
+        new_group.extend_from_slice(&1u16.to_le_bytes());
+        new_group.extend_from_slice(&32u16.to_le_bytes());
+        new_group.extend_from_slice(&(dib.len() as u32).to_le_bytes());
+        new_group.extend_from_slice(&ids[index].to_le_bytes());
+    }
+    if group.get(..new_group.len()) == Some(new_group.as_slice()) {
+        return Ok(input.to_vec());
+    }
+
+    // Locate the RT_ICON data entries for the two referenced ids.
+    let mut icon_data: Vec<u32> = Vec::new();
+    for (name, offset_to) in resource_entries(input, root_raw, icon_dir)? {
+        if name >> 31 != 0 {
+            continue;
+        }
+        if icon_data.len() < 2 && ids[..2].contains(&(name as u16)) {
+            for (_, lang_offset) in resource_entries(input, root_raw, offset_to & 0x7fff_ffff)? {
+                if lang_offset >> 31 == 0 {
+                    icon_data.push(lang_offset & 0x7fff_ffff);
+                    break;
+                }
+            }
+        }
+    }
+    if icon_data.len() < 2 {
+        return Err("icon group references missing RT_ICON resources".into());
+    }
+
+    // Compute the trailing section placement for the new image data.
+    let mut image_end = 0u32;
+    for index in 0..count {
+        let offset = table + index * 40;
+        let va = u32::from_le_bytes(input[offset + 12..offset + 16].try_into().unwrap());
+        let vsize = u32::from_le_bytes(input[offset + 16..offset + 20].try_into().unwrap());
+        let rsize = u32::from_le_bytes(input[offset + 8..offset + 12].try_into().unwrap());
+        let end = va.saturating_add(vsize.max(rsize));
+        if end > image_end {
+            image_end = end;
+        }
+    }
+    let data_len: usize = images.iter().map(|(_, _, dib)| dib.len()).sum();
+    let new_va = (image_end + section_alignment - 1) & !(section_alignment - 1);
+    let new_raw = (input.len() + file_alignment as usize - 1) & !(file_alignment as usize - 1);
+    let raw_data_len = (data_len + file_alignment as usize - 1) & !(file_alignment as usize - 1);
+    let mut output = vec![0_u8; new_raw + raw_data_len];
+    output[..input.len()].copy_from_slice(input);
+
+    // Write the two 32-bit DIBs and remember their RVAs.
+    let mut cursor = new_raw;
+    let mut dib_rva = Vec::with_capacity(2);
+    for (_, _, dib) in &images {
+        dib_rva.push(new_va + (cursor - new_raw) as u32);
+        output[cursor..cursor + dib.len()].copy_from_slice(dib);
+        cursor += dib.len();
+    }
+
+    // Point the existing RT_ICON data entries at the new images.
+    for (index, rel) in icon_data.iter().enumerate() {
+        let offset = root_raw + *rel as usize;
+        output[offset..offset + 4].copy_from_slice(&dib_rva[index].to_le_bytes());
+        output[offset + 4..offset + 8]
+            .copy_from_slice(&(images[index].2.len() as u32).to_le_bytes());
+    }
+
+    // Overwrite the group data in place and pad the old slot.
+    output[group_raw..group_raw + new_group.len()].copy_from_slice(&new_group);
+    output[group_raw + new_group.len()..group_raw + group_size].fill(0);
+    output[root_raw + group_data_rel as usize + 4..root_raw + group_data_rel as usize + 8]
+        .copy_from_slice(&(new_group.len() as u32).to_le_bytes());
+
+    // Append the new section header and grow the image size.
+    let header = table + count * 40;
+    if header + 40 > headers_size {
+        return Err("no room for icon data section header".into());
+    }
+    output[header..header + 8].copy_from_slice(b".icondat");
+    for (offset, value) in [
+        (8, data_len as u32),
+        (12, new_va),
+        (16, raw_data_len as u32),
+        (20, new_raw as u32),
+        (36, 0x4000_0040u32),
+    ] {
+        output[header + offset..header + offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    output[pe + 6..pe + 8].copy_from_slice(&((count + 1) as u16).to_le_bytes());
+    let new_image_end = (new_va + data_len as u32 + section_alignment - 1)
+        & !(section_alignment - 1);
+    output[pe + 24 + 56..pe + 24 + 60].copy_from_slice(&new_image_end.to_le_bytes());
+    Ok(output)
+}
+
 /// Builds the optional Vietnamese variant and the selected portable executable.
-pub fn build_variants(original: &[u8], vietnamese: bool) -> Result<(Option<Vec<u8>>, Vec<u8>)> {
-    // Runtime compatibility is established from PE sections and verified code
+pub fn build_variants(original: &[u8], vietnamese: bool) -> Result<(Option<Vec<u8>>, Vec<u8>)> {    // Runtime compatibility is established from PE sections and verified code
     // patterns. A harmless timestamp, checksum, resource, or overlay change
     // must not make an otherwise supported executable unusable.
     font_layout(original)?;
@@ -2003,6 +2353,41 @@ mod tests {
         assert_eq!(plain_vi.as_ref().unwrap().len(), original.len());
         assert_eq!(portable_vi.len(), original.len() + PORT_SIZE);
         assert_eq!(&plain_vi.unwrap()[0xcb00a..0xcb016], b"sysfont.dat\0");
+    }
+
+    #[test]
+    fn game_icon_replacements_are_installed_and_idempotent_when_fixture_is_available() {
+        let Ok(folder) = std::env::var("DORAEMON_TEST_DATA_DIR") else {
+            return;
+        };
+        let original = std::fs::read(std::path::Path::new(&folder).join("Doraemon.exe")).unwrap();
+
+        let english = patch_game_icon(&original, GAME_ICON_ENGLISH).unwrap();
+        assert!(english.len() > original.len(), "icon data must be appended");
+        assert!(find_section(&english, b".icondat").is_ok());
+        let english_again = patch_game_icon(&english, GAME_ICON_ENGLISH).unwrap();
+        assert_eq!(english, english_again, "re-applying the same icon must not grow the file");
+
+        let vietnamese = patch_game_icon(&original, GAME_ICON_VIETNAMESE).unwrap();
+        assert_ne!(english, vietnamese, "the two language icons must differ");
+
+        let runtime_vi = patch_language_runtime(&original, true, true, true, false, false).unwrap();
+        let runtime_en = patch_language_runtime(&original, false, true, true, false, false).unwrap();
+        assert!(find_section(&runtime_vi.bytes, b".icondat").is_ok());
+        assert!(find_section(&runtime_en.bytes, b".icondat").is_ok());
+        assert_ne!(runtime_vi.bytes, runtime_en.bytes);
+        assert!(runtime_vi
+            .actions
+            .iter()
+            .any(|action| action == "replaced the game executable icon"));
+        let on_portable = patch_game_icon(&runtime_en.bytes, GAME_ICON_ENGLISH).unwrap();
+        assert_eq!(on_portable, runtime_en.bytes, "portable re-apply must be a no-op");
+
+        if std::env::var("DORAEMON_TEST_DUMP_ICONS").is_ok() {
+            std::fs::write("/tmp/opencode/icon-english-patched.exe", &english).unwrap();
+            std::fs::write("/tmp/opencode/icon-vietnamese-patched.exe", &vietnamese).unwrap();
+            std::fs::write("/tmp/opencode/icon-runtime-english.exe", &runtime_en.bytes).unwrap();
+        }
     }
 
     #[test]
