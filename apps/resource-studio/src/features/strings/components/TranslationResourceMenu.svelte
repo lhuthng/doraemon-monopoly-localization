@@ -5,6 +5,7 @@
     hasVoice,
     onOriginalStrings,
     onModifiedStrings,
+    onProjectJson,
     onSysfont,
     onOriginalVoice,
     onModifiedVoice,
@@ -23,6 +24,7 @@
     hasVoice: boolean;
     onOriginalStrings: (event: Event) => void;
     onModifiedStrings: (event: Event) => void;
+    onProjectJson: (event: Event) => void;
     onSysfont: (event: Event) => void;
     onOriginalVoice: (event: Event) => void;
     onModifiedVoice: (event: Event) => void;
@@ -55,6 +57,9 @@
           accept=".dat,application/octet-stream"
           onchange={onModifiedStrings}
         />
+      </label>
+      <label class="load-button"
+        >Import project JSON<input type="file" accept=".json,application/json" onchange={onProjectJson} />
       </label>
       <label class="load-button"
         >sysfont.dat<input type="file" accept=".dat,application/octet-stream" onchange={onSysfont} />

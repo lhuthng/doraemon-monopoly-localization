@@ -2,7 +2,12 @@
   import { onMount } from 'svelte';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
   import StudioHeader from '../../lib/components/StudioHeader.svelte';
-  import { parseStrings, parseSysFont, rebuildStrings, type StringRecord } from '@doraemon-monopoly/dubbing-core';
+  import {
+    parseStrings,
+    parseSysFont,
+    rebuildStrings,
+    type StringRecord
+  } from '@doraemon-monopoly/dubbing-core';
   import {
     assertCompatibleVoiceArchives,
     normalizeAudioFile,
@@ -733,6 +738,60 @@
     input.value = '';
   }
 
+  async function importProjectJson(file: Blob, name: string) {
+    loadError = '';
+    exportStatus = '';
+    try {
+      if (!records.length)
+        throw new Error('Load the original strings-origin.dat before importing a project JSON file.');
+      const parsed = JSON.parse(await file.text()) as Partial<TranslationFile>;
+      if (!parsed || !Array.isArray(parsed.translations))
+        throw new Error(
+          'This file does not look like an exported project JSON (missing translations array).'
+        );
+      const importedById = new Map(
+        parsed.translations
+          .filter((entry) => entry && typeof entry.id === 'string')
+          .map((entry) => [entry.id, entry.translation])
+      );
+      const now = Date.now();
+      const nextTranslations = { ...translations };
+      const nextMeta = { ...translationMeta };
+      let matched = 0;
+      let changed = 0;
+
+      for (const record of records) {
+        const importedText = importedById.get(record.id);
+        if (importedText === undefined || typeof importedText !== 'string') continue;
+        matched += 1;
+        const normalized = importedText.replaceAll('\\N', '\n');
+        if (normalized === sourceText(record) || normalized === '') {
+          delete nextTranslations[record.id];
+          delete nextMeta[record.id];
+        } else {
+          nextTranslations[record.id] = normalized;
+          nextMeta[record.id] = { origin: 'imported', updatedAt: now };
+          changed += 1;
+        }
+      }
+
+      if (!matched) throw new Error('No matching record IDs were found in this project JSON file.');
+      translations = nextTranslations;
+      translationMeta = nextMeta;
+      localStorage.setItem('doraemon-translations', JSON.stringify(translations));
+      localStorage.setItem('doraemon-translation-meta', JSON.stringify(translationMeta));
+      exportStatus = `Imported ${name}: ${changed} translated records filled; ${matched - changed} records match the original or are blank and remain empty.`;
+    } catch (error) {
+      loadError = `${name}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  async function projectJsonInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.files?.[0]) await importProjectJson(input.files[0], input.files[0].name);
+    input.value = '';
+  }
+
   function translationOrigin(id: string) {
     return translationMeta[id]?.origin;
   }
@@ -1036,6 +1095,7 @@
     hasVoice={!!voiceManifest}
     onOriginalStrings={originalInput}
     onModifiedStrings={translatedArchiveInput}
+    onProjectJson={projectJsonInput}
     onSysfont={sysfontInput}
     onOriginalVoice={originalVoiceInput}
     onModifiedVoice={modifiedVoiceInput}
