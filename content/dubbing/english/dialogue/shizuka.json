@@ -252,7 +252,7 @@
     },
     {
       "id": "006/067",
-      "translation": "With the little bee, you can't punish me with Dorayaki!"
+      "translation": "With the little bee protecting me, you can't take my Dorayaki as punishment!"
     },
     {
       "id": "006/068",
@@ -272,7 +272,7 @@
     },
     {
       "id": "006/072",
-      "translation": "You can't punish me with Dorayaki!"
+      "translation": "You can't take my Dorayaki as punishment!"
     },
     {
       "id": "006/073",
@@ -488,15 +488,15 @@
     },
     {
       "id": "006/133",
-      "translation": "Gained ["
+      "translation": "*Gained ["
     },
     {
       "id": "006/134",
-      "translation": "Lost ["
+      "translation": "*Lost ["
     },
     {
       "id": "006/135",
-      "translation": "]!"
+      "translation": "]!*"
     }
   ]
 }

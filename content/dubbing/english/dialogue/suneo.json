@@ -232,7 +232,7 @@
     },
     {
       "id": "007/064",
-      "translation": "Upside down the pen! Upside down the pen! Paying rent becomes collecting rent!"
+      "translation": "Reverse Pen! Reverse Pen! Paying rent becomes collecting rent!"
     },
     {
       "id": "007/065",
@@ -256,7 +256,7 @@
     },
     {
       "id": "007/070",
-      "translation": "Ah! Me? You? What? What? ? ?"
+      "translation": "Ah! Me? You? What? What?!"
     },
     {
       "id": "007/071",
@@ -372,7 +372,7 @@
     },
     {
       "id": "007/099",
-      "translation": "Ah! You can relax now!"
+      "translation": "Ah! I can relax now!"
     },
     {
       "id": "007/100",
@@ -480,15 +480,15 @@
     },
     {
       "id": "007/133",
-      "translation": "Gained ["
+      "translation": "*Gained ["
     },
     {
       "id": "007/134",
-      "translation": "Lost ["
+      "translation": "*Lost ["
     },
     {
       "id": "007/135",
-      "translation": "]!"
+      "translation": "]!*"
     }
   ]
 }

@@ -24,7 +24,7 @@
     },
     {
       "id": "003/005",
-      "translation": "Oh no... THis doesn't look good."
+      "translation": "Oh no... This doesn't look good."
     },
     {
       "id": "003/006",
@@ -44,7 +44,7 @@
     },
     {
       "id": "003/010",
-      "translation": "Come one, don't do that!"
+      "translation": "Come on, don't do that!"
     },
     {
       "id": "003/011",
@@ -480,15 +480,15 @@
     },
     {
       "id": "003/133",
-      "translation": "Gained ["
+      "translation": "*Gained ["
     },
     {
       "id": "003/134",
-      "translation": "Lost ["
+      "translation": "*Lost ["
     },
     {
       "id": "003/135",
-      "translation": "]!"
+      "translation": "]!*"
     }
   ]
 }
