@@ -10,8 +10,11 @@ export component PatcherUI inherits Window {
     preferred-width: 640px;
     preferred-height: 780px;
 
-    in-out property <[string]> language-items;
-    in-out property <int> language-index;
+    in-out property <bool> language-original;
+    in-out property <bool> language-english;
+    in-out property <bool> language-vietnamese;
+    in property <bool> language-english-enabled;
+    in property <bool> language-vietnamese-enabled;
     in-out property <[string]> quality-items;
     in-out property <int> quality-index;
 
@@ -45,6 +48,11 @@ export component PatcherUI inherits Window {
     in property <string> dialog-title;
     in property <string> dialog-text;
 
+    in-out property <bool> play-dialog-visible;
+    in-out property <[string]> play-build-items;
+    in-out property <int> play-build-index;
+    in property <string> play-dialog-title;
+
     callback apply-patch();
     callback apply-audio();
     callback restore-backup();
@@ -54,6 +62,8 @@ export component PatcherUI inherits Window {
     callback audio-options-changed();
     callback exit-app();
     callback dialog-answer(bool);
+    callback play-confirm();
+    callback play-cancel();
 
     VerticalLayout {
         Rectangle {
@@ -91,12 +101,23 @@ export component PatcherUI inherits Window {
                     spacing: 6px;
                     HorizontalLayout {
                         spacing: 12px;
-                        Text { text: "Language:"; vertical-alignment: center; }
-                        language := ComboBox {
-                            model: root.language-items;
-                            current-index <=> root.language-index;
+                        Text { text: "Languages:"; vertical-alignment: center; }
+                        CheckBox {
+                            text: "<original>";
+                            checked <=> root.language-original;
                             enabled: root.options-enabled;
-                            horizontal-stretch: 1;
+                        }
+                        CheckBox {
+                            text: "English";
+                            visible: root.language-english-enabled;
+                            checked <=> root.language-english;
+                            enabled: root.options-enabled;
+                        }
+                        CheckBox {
+                            text: "Vietnamese";
+                            visible: root.language-vietnamese-enabled;
+                            checked <=> root.language-vietnamese;
+                            enabled: root.options-enabled;
                         }
                     }
                     HorizontalLayout {
@@ -278,6 +299,50 @@ export component PatcherUI inherits Window {
                             spacing: 8px;
                             Button { text: "No"; clicked => { root.dialog-answer(false); } }
                             Button { text: "Yes"; clicked => { root.dialog-answer(true); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        visible: root.play-dialog-visible;
+        background: #00000080;
+        TouchArea { enabled: false; }
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 480px;
+                    height: 190px;
+                    background: white;
+                    border-radius: 10px;
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        Text {
+                            text: root.play-dialog-title;
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: #1e293b;
+                        }
+                        Text {
+                            text: "Choose which build to play:";
+                            color: #475569;
+                        }
+                        play := ComboBox {
+                            model: root.play-build-items;
+                            current-index <=> root.play-build-index;
+                            horizontal-stretch: 1;
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            Button { text: "Cancel"; clicked => { root.play-cancel(); } }
+                            Button { text: "Play"; primary: true; clicked => { root.play-confirm(); } }
                         }
                     }
                 }

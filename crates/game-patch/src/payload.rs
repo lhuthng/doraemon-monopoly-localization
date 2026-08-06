@@ -21,6 +21,17 @@ impl Language {
             Self::Custom => "Portable compatibility",
         }
     }
+
+    /// Short per-language suffix used to build split builds, e.g. the
+    /// `vi` in `Doraemon-vi.exe` and `sprite1-vi.dat`. The `<original>` build
+    /// has no suffix.
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::Vietnamese => "vi",
+            Self::Custom => "",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -135,6 +135,33 @@ mod windows_app {
         cues
     }
 
+    /// Finds every runnable game build in the folder: `Doraemon.exe` plus any
+    /// suffixed split build such as `Doraemon-en.exe` / `Doraemon-vi.exe`.
+    fn find_builds(game: &std::path::Path) -> Vec<PathBuf> {
+        let mut builds: Vec<_> = std::fs::read_dir(game).into_iter().flatten()
+            .filter_map(Result::ok).map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension().is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("exe"))
+                    && p.file_name().and_then(std::ffi::OsStr::to_str).is_some_and(|n| {
+                        let lower = n.to_ascii_lowercase();
+                        lower.starts_with("doraemon") && lower.ends_with(".exe")
+                    })
+            })
+            .collect();
+        builds.sort();
+        builds
+    }
+
+    /// Launches a chosen game executable from its own folder.
+    fn launch_game(game: &std::path::Path, exe: &std::path::Path, log_model: &VecModel<LogRow>) {
+        let name = exe.file_name().unwrap_or_default().to_string_lossy();
+        match std::process::Command::new(exe).current_dir(game).spawn() {
+            Ok(_) => append_log(log_model, TaskState::Done, &format!("Launched {name}.")),
+            Err(e) => append_log(log_model, TaskState::Failed, &format!("Could not launch {name}: {e}")),
+        }
+    }
+
     fn find_cue(game: &std::path::Path) -> Option<PathBuf> {
         cue_files(game).into_iter().find(|p| cue::valid_cue(p))
     }
@@ -176,7 +203,7 @@ mod windows_app {
         }
     }
 
-    fn apply_game_icon(game: &std::path::Path, icon: &[u8]) -> Result<(), String> {
+    fn apply_game_icon(exe_path: &std::path::Path, icon: &[u8]) -> Result<(), String> {
         use std::{ffi::OsStr, iter, os::windows::ffi::OsStrExt};
         extern "system" {
             fn BeginUpdateResourceW(path: *const u16, delete_existing: i32) -> *mut core::ffi::c_void;
@@ -198,7 +225,7 @@ mod windows_app {
             group.extend_from_slice(&resource_id.to_le_bytes());
             images.push((resource_id, image));
         }
-        let path: Vec<u16> = OsStr::new(&game.join("Doraemon.exe")).encode_wide().chain(iter::once(0)).collect();
+        let path: Vec<u16> = OsStr::new(exe_path).encode_wide().chain(iter::once(0)).collect();
         let handle = unsafe { BeginUpdateResourceW(path.as_ptr(), 0) };
         if handle.is_null() { return Err(format!("open executable resources: {}", std::io::Error::last_os_error())); }
         let mut images_ok = true;
@@ -238,11 +265,11 @@ mod windows_app {
         model.push(LogRow { text: SharedString::from(format!("{marker} {clean}")), color });
     }
 
-    fn enable_controls(ui: &PatcherUI, busy: bool, rm: bool, backup: bool, wrapper: bool, play: bool, game: &std::path::Path) {
+    fn enable_controls(ui: &PatcherUI, busy: bool, rm: bool, wrapper: bool, play: bool, game: &std::path::Path) {
         ui.set_options_enabled(!rm && !busy);
         ui.set_audio_enabled(!rm && !busy);
         ui.set_apply_enabled(!rm && !busy);
-        ui.set_restore_enabled(backup && !busy);
+        ui.set_restore_enabled(install::has_restorable_backup(game) && !busy);
         ui.set_wrapper_enabled(wrapper && !rm && !busy);
         ui.set_play_enabled(play && !busy);
         ui.set_refresh_enabled(!rm && !busy);
@@ -253,7 +280,7 @@ mod windows_app {
     }
 
     struct AppContext {
-        restore_mode: bool, has_backup: bool, wrapper_available: bool, can_play: bool,
+        restore_mode: bool, wrapper_available: bool, can_play: bool,
     }
 
     pub fn run() -> Result<(), String> {
@@ -292,9 +319,8 @@ mod windows_app {
         let english = super::load_language("English", english_parts, super::ENGLISH_PAYLOAD);
         let vietnamese = super::load_language("Vietnamese", vietnamese_parts, super::VIETNAMESE_PAYLOAD);
 
-        let mut languages = vec![SharedString::from("<original>")];
-        let english_index = english.as_ref().map(|_| { let i = languages.len() as i32; languages.push(SharedString::from("English")); i });
-        let vietnamese_index = vietnamese.as_ref().map(|_| { let i = languages.len() as i32; languages.push(SharedString::from("Vietnamese")); i });
+        let english_available = english.is_some();
+        let vietnamese_available = vietnamese.is_some();
 
         let wrapper_available = english.as_ref().or(vietnamese.as_ref()).is_some_and(|p|
             p.bundled.iter().any(|f| !f.name.eq_ignore_ascii_case("doraudio.dll")));
@@ -304,23 +330,25 @@ mod windows_app {
         ui.set_log_model(log_model.clone().into());
         let quality = ["Original", "High", "Balanced", "Compact"].into_iter().map(SharedString::from).collect::<Vec<_>>();
         ui.set_quality_items(slint::VecModel::from_slice(&quality));
-        ui.set_language_index(0);
+        ui.set_language_original(true);
+        ui.set_language_english(english_available);
+        ui.set_language_vietnamese(vietnamese_available);
+        ui.set_language_english_enabled(english_available);
+        ui.set_language_vietnamese_enabled(vietnamese_available);
         ui.set_quality_index(0);
-        ui.set_language_items(slint::VecModel::from_slice(&languages));
         ui.set_restore_mode(restore_mode);
         ui.set_no_disc(true);
         ui.set_no_reg(true);
 
         let ctx = Rc::new(AppContext {
             restore_mode,
-            has_backup: game_path.join("backup").is_dir(),
             wrapper_available,
-            can_play: game_path.join("Doraemon.exe").is_file(),
+            can_play: !find_builds(&game_path).is_empty(),
         });
         let busy = Rc::new(Cell::new(false));
-        ui.set_subtitle(SharedString::from(if restore_mode { "Restore the exact original files kept in this backup." } else { "Choose a language, then pick the compatibility extras you want." }));
+        ui.set_subtitle(SharedString::from(if restore_mode { "Restore the exact original files kept in this backup." } else { "Tick the languages to install side-by-side, then pick the compatibility extras you want." }));
         ui.set_music_hint(SharedString::from(music_text(&game_path)));
-        enable_controls(&ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, &game_path);
+        enable_controls(&ui, false, ctx.restore_mode, ctx.wrapper_available, ctx.can_play, &game_path);
 
         append_log(&log_model, TaskState::Skipped, "Ready. Applying a new choice restores the original files first.");
         if restore_mode {
@@ -376,24 +404,21 @@ mod windows_app {
                         dlg_ui.set_dialog_visible(false);
                         if yes { let _ = std::process::Command::new(&config_path).spawn(); }
                         dlg_busy.set(false);
-                        enable_controls(&dlg_ui, false, dlg_ctx.restore_mode, dlg_ctx.has_backup, dlg_ctx.wrapper_available, dlg_ctx.can_play, &dlg_game);
+                        enable_controls(&dlg_ui, false, dlg_ctx.restore_mode, dlg_ctx.wrapper_available, dlg_ctx.can_play, &dlg_game);
                     }
                     None => { dlg_ui.set_dialog_visible(false); }
                 }
             });
         }
 
-        // ---- Apply patch ----
+// ---- Apply patch ----
         {
             let ui_weak = Rc::downgrade(&ui);
             let g = game.clone();
             let en = english.clone();
             let vi = vietnamese.clone();
-            let ei = english_index;
-            let vii = vietnamese_index;
             let exe = executable.clone();
             let t = tx.clone();
-            let pd = pending_dialog.clone();
             let b = busy.clone();
             let c = ctx.clone();
             let l = log_model.clone();
@@ -401,39 +426,43 @@ mod windows_app {
                 let Some(ui) = ui_weak.upgrade() else { return };
                 if b.get() || c.restore_mode { return; }
                 b.set(true);
-                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                enable_controls(&ui, true, c.restore_mode, c.wrapper_available, c.can_play, &g);
                 append_log(&l, TaskState::Working, "Starting Apply…");
                 let _ = std::fs::remove_file(g.join("Doraemon-Patcher-diagnostic.log"));
                 write_diagnostic(&g, TaskState::Working, "Apply patch button pressed.");
 
-                let backup = g.join("backup");
-                let compressed = if backup.is_dir() { install::compressed_audio_files(&backup, &g).ok() } else { None };
-                let ask = compressed.as_ref().is_some_and(|c| !c.is_empty());
-                let sel = ui.get_language_index();
                 let options = ApplyOptions {
                     no_disc: ui.get_no_disc(), no_reg: ui.get_no_reg(), local_audio: ui.get_local_audio(),
                     modern_volume: ui.get_modern_volume(), primary_audio_8bit: ui.get_primary_8bit(),
                     cue: find_cue(&g), reduce_bgm: false, optimize_voice: false,
                     voice_compression: doraemon_game_patch::voice::Compression::Original, keep_compressed_audio: false,
                 };
-                let payload = if Some(sel) == ei { en.as_ref().as_ref().expect("English available").clone() }
-                    else if Some(sel) == vii { vi.as_ref().as_ref().expect("Vietnamese available").clone() }
-                    else {
-                        let mut p = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned().unwrap_or_else(empty_payload);
-                        p.language = payload::Language::Custom; p.profiles.clear(); p.strings = None; p.voice = None; p
-                    };
-                let icon = if Some(sel) == ei { Some(super::ENGLISH_ICON) } else if Some(sel) == vii { Some(super::VIETNAMESE_ICON) } else { None };
-                let pending = PendingApply { game: (*g).clone(), payload, icon, options, executable: exe.clone() };
-                if ask {
-                    let list = compressed.unwrap().join("\n- ");
-                    pd.borrow_mut().replace(PendingDialog::KeepAudio(Box::new(pending)));
-                    ui.set_dialog_title(SharedString::from("Keep compressed audio?"));
-                    ui.set_dialog_text(SharedString::from(format!("The following audio file{} been modified since the last patch:\n- {list}\n\nKeep the current compressed audio?\n(Choosing Yes will skip restoring and regenerating these files.)",
-                        if list.contains('\n') { "s have" } else { " has" })));
-                    ui.set_dialog_visible(true);
-                } else {
-                    spawn_apply(&t, pending, false);
+                let include_original = ui.get_language_original();
+                let mut languages: Vec<install::SplitLanguage> = Vec::new();
+                if ui.get_language_english() {
+                    if let Some(payload) = en.as_ref().as_ref() {
+                        languages.push(install::SplitLanguage {
+                            language: payload::Language::English,
+                            payload: payload.clone(),
+                            icon: Some(super::ENGLISH_ICON.to_vec()),
+                        });
+                    }
                 }
+                if ui.get_language_vietnamese() {
+                    if let Some(payload) = vi.as_ref().as_ref() {
+                        languages.push(install::SplitLanguage {
+                            language: payload::Language::Vietnamese,
+                            payload: payload.clone(),
+                            icon: Some(super::VIETNAMESE_ICON.to_vec()),
+                        });
+                    }
+                }
+                if languages.is_empty() {
+                    spawn_original_restore(&t, (*g).clone());
+                    return;
+                }
+                let selection = install::SplitSelection { include_original, languages };
+                spawn_split_apply(&t, (*g).clone(), selection, options, exe.clone());
             });
         }
 
@@ -453,7 +482,7 @@ mod windows_app {
                 if b.get() || c.restore_mode { return; }
                 if !(ui.get_reduce_bgm() || ui.get_optimize_voice()) { return; }
                 b.set(true);
-                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                enable_controls(&ui, true, c.restore_mode, c.wrapper_available, c.can_play, &g);
                 append_log(&l, TaskState::Working, "Preparing audio…");
                 write_diagnostic(&g, TaskState::Working, "Apply audio button pressed.");
                 let options = ApplyOptions {
@@ -480,12 +509,12 @@ mod windows_app {
                 let Some(ui) = ui_weak.upgrade() else { return };
                 if b.get() { return; }
                 b.set(true);
-                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                enable_controls(&ui, true, c.restore_mode, c.wrapper_available, c.can_play, &g);
                 append_log(&l, TaskState::Working, "Restoring original files…");
-                let backup = g.join("backup");
+                let game = (*g).clone();
                 let tx = t.clone();
                 thread::spawn(move || {
-                    let result = panic::catch_unwind(AssertUnwindSafe(|| install::restore(&backup)))
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| install::restore_any(&game)))
                         .unwrap_or_else(|_| Err("The restore task stopped unexpectedly; no files were restored.".into()));
                     let _ = tx.send(UiEvent::Restored(result));
                 });
@@ -506,7 +535,7 @@ mod windows_app {
                 let Some(ui) = ui_weak.upgrade() else { return };
                 if b.get() || c.restore_mode { return; }
                 b.set(true);
-                enable_controls(&ui, true, c.restore_mode, c.has_backup, c.wrapper_available, c.can_play, &g);
+                enable_controls(&ui, true, c.restore_mode, c.wrapper_available, c.can_play, &g);
                 append_log(&l, TaskState::Working, "Adding the graphics wrapper…");
                 let payload = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned().unwrap_or_else(empty_payload);
                 let tx = t.clone();
@@ -521,13 +550,62 @@ mod windows_app {
 
         // ---- Play ----
         {
+            let ui_weak = Rc::downgrade(&ui);
             let g = game.clone();
             let l = log_model.clone();
+            let b = busy.clone();
             ui.on_play_game(move || {
-                let exe = g.join("Doraemon.exe");
-                match std::process::Command::new(&exe).current_dir(&*g).spawn() {
-                    Ok(_) => append_log(&l, TaskState::Done, "Launched Doraemon.exe."),
-                    Err(e) => append_log(&l, TaskState::Failed, &format!("Could not launch Doraemon.exe: {e}")),
+                let Some(ui) = ui_weak.upgrade() else { return };
+                let builds = find_builds(&g);
+                match builds.len() {
+                    0 => append_log(&l, TaskState::Failed, "No Doraemon.exe found to play; install a build first."),
+                    1 => launch_game(&g, &builds[0], &l),
+                    _ => {
+                        ui.set_play_build_items(slint::VecModel::from_slice(
+                            &builds.iter()
+                                .filter_map(|p| p.file_name().and_then(std::ffi::OsStr::to_str))
+                                .map(SharedString::from)
+                                .collect::<Vec<_>>(),
+                        ));
+                        ui.set_play_build_index(0);
+                        ui.set_play_dialog_title(SharedString::from("Pick a build to play"));
+                        ui.set_play_dialog_visible(true);
+                        b.set(true);
+                    }
+                }
+            });
+        }
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let l = log_model.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            ui.on_play_confirm(move || {
+                let Some(ui) = ui_weak.upgrade() else { return };
+                let index = ui.get_play_build_index();
+                let builds = find_builds(&g);
+                let index = if builds.len() > 0 { index.clamp(0, builds.len() as i32 - 1) as usize } else { 0 };
+                if let Some(path) = builds.get(index) {
+                    launch_game(&g, path, &l);
+                } else {
+                    append_log(&l, TaskState::Failed, "The chosen build is no longer available.");
+                }
+                b.set(false);
+                ui.set_play_dialog_visible(false);
+                enable_controls(&ui, false, c.restore_mode, c.wrapper_available, !find_builds(&g).is_empty(), &g);
+            });
+        }
+        {
+            let ui_weak = Rc::downgrade(&ui);
+            let g = game.clone();
+            let b = busy.clone();
+            let c = ctx.clone();
+            ui.on_play_cancel(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.set_play_dialog_visible(false);
+                    b.set(false);
+                    enable_controls(&ui, false, c.restore_mode, c.wrapper_available, !find_builds(&g).is_empty(), &g);
                 }
             });
         }
@@ -611,7 +689,7 @@ mod windows_app {
                         else if wants { "Restoring the original files before applying your new choices…" }
                         else { "No patch choices selected; restoring the original files…" };
                     let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: msg.into(), progress: Some(3) }));
-                    let restored = install::restore(&backup)?;
+                    let restored = install::restore_any(&game)?;
                     for (name, data) in &saved { let _ = std::fs::write(game.join(name), data); }
                     let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Done, message: format!("Original files restored: {}.", restored.join(", ")), progress: Some(10) }));
                     if !wants { return Ok(install::ApplyReport { changed: Vec::new(), audio: "Nothing selected, so the game is back to its original files.".into() }); }
@@ -621,7 +699,7 @@ mod windows_app {
                 let mut report = install::apply_with_progress(&game, &payload, &options, &executable, &mut |u| { let _ = tx.send(UiEvent::Progress(u)); })?;
                 if let Some(icon) = icon {
                     let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: "Applying the selected game icon…".into(), progress: Some(98) }));
-                    apply_game_icon(&game, icon)?;
+                    apply_game_icon(&game.join("Doraemon.exe"), icon)?;
                     report.changed.push("Doraemon.exe icon".into());
                 }
                 Ok(report)
@@ -629,6 +707,70 @@ mod windows_app {
             match &result {
                 Ok(_) => write_diagnostic(&game_clone, TaskState::Done, "Apply finished successfully."),
                 Err(e) => write_diagnostic(&game_clone, TaskState::Failed, &format!("Apply failed: {e}")),
+            }
+            let _ = tx.send(UiEvent::Finished(result));
+        });
+    }
+
+    /// Puts the game back to pristine originals: cleans up any prior split
+    /// install and any single-language backup, in either order that exists.
+    /// Used for the "original-only" selection (nothing ticked).
+    fn spawn_original_restore(tx: &mpsc::Sender<UiEvent>, game: PathBuf) {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                let mut changed: Vec<String> = Vec::new();
+                if let Ok(cleaned) = install::restore_split(&game) {
+                    changed.extend(cleaned);
+                }
+                let backup = game.join("backup");
+                if backup.is_dir() {
+                    let restored = install::restore(&backup)?;
+                    let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Done, message: format!("Original files restored: {}.", restored.join(", ")), progress: Some(95) }));
+                }
+                let pristine = changed.is_empty();
+                Ok::<install::ApplyReport, String>(install::ApplyReport {
+                    changed,
+                    audio: if pristine { "The game is already in its original state.".into() } else { "Original files restored.".into() },
+                })
+            })).unwrap_or_else(|_| Err("The restore task stopped unexpectedly.".into()));
+            let _ = tx.send(UiEvent::Finished(result));
+        });
+    }
+
+    /// Runs a split (multi-language) install. Restores any previous single or
+    /// split install first so the base resources come from the pristine game,
+    /// then applies every selected language and stamps each suffixed executable
+    /// with its language's icon.
+    fn spawn_split_apply(
+        tx: &mpsc::Sender<UiEvent>,
+        game: PathBuf,
+        selection: install::SplitSelection,
+        options: ApplyOptions,
+        executable: PathBuf,
+    ) {
+        let tx = tx.clone();
+        let game_clone = game.clone();
+        thread::spawn(move || {
+            let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: "Restoring the original files before installing the split build…".into(), progress: Some(3) }));
+                if let Ok(_) = install::restore_split(&game) {}
+                let backup = game.join("backup");
+                if backup.is_dir() { let _ = install::restore(&backup)?; }
+                let mut report = install::apply_split_with_progress(&game, &selection, &options, &executable, &mut |u| { let _ = tx.send(UiEvent::Progress(u)); })?;
+                for lang in &selection.languages {
+                    let exe_name = format!("Doraemon-{}.exe", lang.language.suffix());
+                    if let Some(icon) = &lang.icon {
+                        let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: format!("Applying the {} game icon…", lang.language.suffix()).into(), progress: Some(98) }));
+                        apply_game_icon(&game.join(&exe_name), icon)?;
+                        report.changed.push(format!("{exe_name} icon"));
+                    }
+                }
+                Ok(report)
+            })).unwrap_or_else(|_| Err("The split patch task stopped unexpectedly; no files were installed.".into()));
+            match &result {
+                Ok(_) => write_diagnostic(&game_clone, TaskState::Done, "Split apply finished successfully."),
+                Err(e) => write_diagnostic(&game_clone, TaskState::Failed, &format!("Split apply failed: {e}")),
             }
             let _ = tx.send(UiEvent::Finished(result));
         });
@@ -660,44 +802,44 @@ mod windows_app {
                     let ok = has_music(game);
                     ui.set_local_audio_enabled(ok); ui.set_reduce_bgm_enabled(ok);
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                 }
                 UiEvent::Finished(Err(e)) => {
                     ui.set_progress_value(0);
                     append_log(log_model, TaskState::Failed, &format!("Apply failed: {e}"));
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                 }
                 UiEvent::Restored(Ok(files)) => {
                     ui.set_progress_value(100);
                     append_log(log_model, TaskState::Done, &format!("Restored and verified: {}.", files.join(", ")));
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                 }
                 UiEvent::Restored(Err(e)) => {
                     ui.set_progress_value(0);
                     append_log(log_model, TaskState::Failed, &format!("Restore failed: {e}"));
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                 }
                 UiEvent::Wrapper(Ok(files)) if files.is_empty() => {
                     ui.set_progress_value(100);
                     append_log(log_model, TaskState::Skipped, "The graphics wrapper is already installed.");
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                 }
                 UiEvent::Wrapper(Ok(files)) => {
                     ui.set_progress_value(100);
                     append_log(log_model, TaskState::Done, &format!("Graphics wrapper added: {} files.", files.len()));
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                     wrapper_config_prompt(ui, pd, game);
                 }
                 UiEvent::Wrapper(Err(e)) => {
                     ui.set_progress_value(0);
                     append_log(log_model, TaskState::Failed, &format!("Graphics wrapper failed: {e}"));
                     busy.set(false);
-                    enable_controls(ui, false, ctx.restore_mode, ctx.has_backup, ctx.wrapper_available, ctx.can_play, game);
+                    enable_controls(ui, false, ctx.restore_mode, ctx.wrapper_available, !find_builds(game).is_empty(), game);
                 }
             }
         }

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     io::Write,
     path::{Component, Path, PathBuf},
@@ -131,6 +131,28 @@ fn find_file(folder: &Path, wanted: &str) -> Result<PathBuf> {
         }
     }
     Err(format!("missing {wanted} in {}", folder.display()))
+}
+
+/// Discovers the playable game executables in `folder` (any `doraemon*.exe`,
+/// e.g. `Doraemon.exe`, `Doraemon-en.exe`), sorted by name.
+fn find_builds(folder: &Path) -> Vec<PathBuf> {
+    let mut builds: Vec<PathBuf> = Vec::new();
+    if let Ok(rd) = fs::read_dir(folder) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let is_doraemon = path.is_file()
+                && path.extension().is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("exe"))
+                && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    let lower = n.to_ascii_lowercase();
+                    lower.starts_with("doraemon") && lower.ends_with(".exe")
+                });
+            if is_doraemon {
+                builds.push(path);
+            }
+        }
+    }
+    builds.sort();
+    builds
 }
 
 fn write_synced(path: &Path, data: &[u8]) -> Result<()> {
@@ -629,9 +651,21 @@ fn apply_audio(
             options.voice_compression,
             voice::Compression::Balanced | voice::Compression::Compact
         ) {
-            let executable = fs::read(find_file(folder, "Doraemon.exe")?)
-                .map_err(|error| format!("read Doraemon.exe: {error}"))?;
-            if executable.windows(7).any(|window| window == b"BGMRT3\0") {
+            // The compact BGM quality needs the local-music runtime, which is
+            // only installed once the executable has been patched (the old
+            // disc-based loader keeps the `BGMRT3` marker). A single-language
+            // apply has `Doraemon.exe`; a split install uses suffixed builds
+            // (`Doraemon-en.exe`), so scan whichever playable executables exist.
+            let exes: Vec<PathBuf> = if find_file(folder, "Doraemon.exe").is_ok() {
+                vec![find_file(folder, "Doraemon.exe").unwrap()]
+            } else {
+                find_builds(folder)
+            };
+            let any_old_loader = exes
+                .iter()
+                .filter_map(|p| fs::read(p).ok())
+                .any(|b| b.windows(7).any(|window| window == b"BGMRT3\0"));
+            if any_old_loader {
                 return Err(
                     "Apply patch once to update local music, then apply the smaller BGM quality"
                         .into(),
@@ -678,7 +712,13 @@ fn apply_audio(
     }
 
     let backup = folder.join("backup");
-    let reuse = backup.exists() && !discard_restored_backup(&backup, folder, sink)?;
+    // Only reuse the single-language backup when its manifest exists. A split
+    // install leaves `backup/split-manifest.json` instead, so there is nothing
+    // to merge here — start the audio backup fresh (the shared `original/`
+    // folder still holds the pristine files for both backups to use).
+    let reuse = backup.join("manifest.json").is_file()
+        && backup.exists()
+        && !discard_restored_backup(&backup, folder, sink)?;
     fs::create_dir_all(backup.join("original")).map_err(|error| error.to_string())?;
     let mut originals = if reuse {
         verified_backup_files(&backup)?
@@ -1393,10 +1433,433 @@ pub fn restore(backup: &Path) -> Result<Vec<String>> {
     Ok(restored)
 }
 
+// ---- Split (multiple-language) builds -----------------------------------
+
+/// One language build inside a [`SplitSelection`]. `icon` is the optional game
+/// icon byte array the Windows patcher applies to the produced executable.
+#[derive(Clone, Debug)]
+pub struct SplitLanguage {
+    pub language: Language,
+    pub payload: Payload,
+    pub icon: Option<Vec<u8>>,
+}
+
+/// The complete set of language builds to install together.
+///
+/// A split build never overwrites the original resources: a language that
+/// changes a file writes it under a suffixed name (`sprite1-vi.dat`), while a
+/// file that is unchanged for every selected language stays shared. The
+/// `<original>` build simply keeps `Doraemon.exe` and the original names, and
+/// is only present when `include_original` is set. Restoring means deleting the
+/// generated files again, which makes switching builds cheap and safe.
+#[derive(Clone, Debug)]
+pub struct SplitSelection {
+    /// Keep the `<original>` build (the untouched `Doraemon.exe` and the
+    /// original, shared resource files) playable beside the language builds.
+    pub include_original: bool,
+    /// The non-original language builds. At least one is required.
+    pub languages: Vec<SplitLanguage>,
+}
+
+/// On-disk resource names and every executable literal that references them.
+const SPLIT_RESOURCES: &[(&str, &[&str])] = &[
+    ("strings.dat", &["strings.dat"]),
+    ("voice.dat", &["voice.dat"]),
+    ("sysfont.dat", &["sysfont.dat"]),
+    ("Sprite1.dat", &["sprite1.dat"]),
+    ("sprite2.dat", &["sprite2.dat", "Sprite2.Dat"]),
+    ("bitmaps.dat", &["bitmaps.dat"]),
+];
+
+/// The suffixed filename a language build uses for a resource, e.g.
+/// `Sprite1.dat` -> `sprite1-vi.dat`. It is lower-cased so it matches the
+/// executable's literal case on both case-insensitive and case-aware disks.
+fn suffixed_name(base: &str, suffix: &str) -> String {
+    let lower = base.to_ascii_lowercase();
+    match lower.rfind('.') {
+        Some(pos) => format!("{}-{suffix}{}", &lower[..pos], &lower[pos..]),
+        None => format!("{lower}-{suffix}"),
+    }
+}
+
+/// Applies a language's single-file patches to one resource.
+fn language_resource(language: &SplitLanguage, base_name: &str, base: &[u8]) -> Result<Vec<u8>> {
+    match base_name {
+        "strings.dat" => match &language.payload.strings {
+            Some(patch) => strings::apply_patch(base, patch),
+            None => Ok(base.to_vec()),
+        },
+        "voice.dat" => match &language.payload.voice {
+            Some(patch) => voice::apply_patch(base, patch),
+            None => Ok(base.to_vec()),
+        },
+        _ => match language
+            .payload
+            .profiles
+            .iter()
+            .flat_map(|profile| &profile.files)
+            .find(|file| file.name.eq_ignore_ascii_case(base_name))
+        {
+            Some(patch) => patch.apply(base),
+            None => Ok(base.to_vec()),
+        },
+    }
+}
+
+/// The result of planning a split install: every file to create (suffixed
+/// resources plus one executable per language), the original files to move
+/// aside, and the per-executable resource-path rewrite needed.
+struct SplitPlan {
+    created: Vec<(String, Vec<u8>)>,
+    removed_originals: Vec<String>,
+}
+
+/// Computes, for a split selection and the pristine base resources, the exact
+/// set of files to create, originals to remove, and executable rewrites.
+/// Pure logic, split out so the runtime behavior is unit-testable.
+fn plan_split(
+    selection: &SplitSelection,
+    base_resources: &HashMap<String, Vec<u8>>,
+    base_exe: &[u8],
+    options: &ApplyOptions,
+    local_audio_enabled: bool,
+) -> Result<SplitPlan> {
+    // Each language's target bytes, per resource.
+    let mut lang_targets: Vec<HashMap<String, Vec<u8>>> = Vec::new();
+    for language in &selection.languages {
+        let mut targets = HashMap::new();
+        for (base_name, _) in SPLIT_RESOURCES {
+            let target = language_resource(language, base_name, &base_resources[*base_name])?;
+            targets.insert(base_name.to_string(), target);
+        }
+        lang_targets.push(targets);
+    }
+
+    let mut created: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut removed_originals: Vec<String> = Vec::new();
+    let mut exe_mapping: Vec<Vec<(String, String)>> = vec![Vec::new(); selection.languages.len()];
+
+    for (base_name, literals) in SPLIT_RESOURCES {
+        let base = &base_resources[*base_name];
+        let mut changed: Vec<usize> = Vec::new();
+        for (i, targets) in lang_targets.iter().enumerate() {
+            if &targets[*base_name] != base {
+                changed.push(i);
+            }
+        }
+        if changed.is_empty() {
+            // Unchanged in every selected language: keep the shared original.
+            continue;
+        }
+        // Each changed language gets its own suffixed file, and its executable
+        // is repointed at that file.
+        for &i in &changed {
+            let suffixed = suffixed_name(base_name, selection.languages[i].language.suffix());
+            let bytes = lang_targets[i][*base_name].clone();
+            for literal in *literals {
+                exe_mapping[i].push((literal.to_string(), suffixed.clone()));
+            }
+            created.push((suffixed, bytes));
+        }
+        // Drop the now-orphaned unsuffixed original when there is no `<original>`
+        // build and every selected language overrides this resource.
+        if !selection.include_original && changed.len() == selection.languages.len() {
+            removed_originals.push(base_name.to_string());
+        }
+    }
+
+    // One patched executable per language, plus the patched original build.
+    for (i, language) in selection.languages.iter().enumerate() {
+        let mut bytes = pe::patch_language_runtime(
+            base_exe,
+            language.language == Language::Vietnamese,
+            options.no_disc,
+            options.no_reg,
+            local_audio_enabled,
+            options.modern_volume,
+        )?
+        .bytes;
+        if options.primary_audio_8bit {
+            bytes = pe::patch_primary_directsound_8bit(&bytes)?;
+        }
+        if !exe_mapping[i].is_empty() {
+            bytes = pe::rewrite_resource_paths(&bytes, &exe_mapping[i])?;
+        }
+        created.push((
+            format!("Doraemon-{}.exe", language.language.suffix()),
+            bytes,
+        ));
+    }
+
+    // The `<original>` build is the base game patched in place: it runs without
+    // a disc while keeping the original resource names and the original icon.
+    // The pristine executable is set aside into the backup folder so it can be
+    // restored later. It never uses the extended Vietnamese font, so we apply
+    // only the compatibility edits and skip the runtime-language icon patch.
+    if selection.include_original {
+        let mut bytes = pe::patch_compatible(
+            base_exe,
+            options.no_disc,
+            options.local_audio,
+            options.no_reg,
+            options.modern_volume,
+        )?
+        .bytes;
+        if options.primary_audio_8bit {
+            bytes = pe::patch_primary_directsound_8bit(&bytes)?;
+        }
+        created.push(("Doraemon.exe".to_string(), bytes));
+        removed_originals.push("Doraemon.exe".to_string());
+    } else {
+        removed_originals.push("Doraemon.exe".to_string());
+    }
+    created.sort_by(|a, b| a.0.cmp(&b.0));
+    removed_originals.sort();
+    removed_originals.dedup();
+    Ok(SplitPlan {
+        created,
+        removed_originals,
+    })
+}
+
+/// Generates the split manifest stored inside the split backup directory. It
+/// records every file created (so restore can delete exactly those) and the
+/// original resource names moved aside (so restore can put them back). Written
+/// one entry per line so restore can be a simple, lossless parser.
+fn split_manifest(created: &[String], removed: &[String]) -> String {
+    let mut out = String::from("{\n  \"created\": [\n");
+    for name in created {
+        out.push_str(&format!("    \"{name}\",\n"));
+    }
+    out.push_str("  ],\n  \"removed\": [\n");
+    for name in removed {
+        out.push_str(&format!("    \"{name}\",\n"));
+    }
+    out.push_str("  ]\n}\n");
+    out
+}
+
+fn parse_split_names(manifest: &str) -> Result<(Vec<String>, Vec<String>)> {
+    let mut created = Vec::new();
+    let mut removed = Vec::new();
+    let mut section: Option<bool> = None;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("\"created\"") {
+            section = Some(true);
+            continue;
+        }
+        if trimmed.starts_with("\"removed\"") {
+            section = Some(false);
+            continue;
+        }
+        if trimmed.starts_with(']') || trimmed.starts_with('{') || trimmed.starts_with('}') {
+            continue;
+        }
+        let Some(is_created) = section else { continue };
+        if trimmed.is_empty() {
+            continue;
+        }
+        let name = trimmed.trim_end_matches(',').trim_matches('"').to_string();
+        if name.is_empty() {
+            return Err("empty entry in split manifest".into());
+        }
+        if is_created {
+            created.push(name);
+        } else {
+            removed.push(name);
+        }
+    }
+    Ok((created, removed))
+}
+
+/// Installs a split (multiple-language) build inside `folder`. Resources that a
+/// language changes are written under suffixed names; each language gets a
+/// patched, suffixed executable. Originals that become orphaned are moved
+/// aside to the split backup for cheap restore.
+pub fn apply_split_with_progress(
+    folder: &Path,
+    selection: &SplitSelection,
+    options: &ApplyOptions,
+    _patcher_exe: &Path,
+    sink: &mut ProgressSink<'_>,
+) -> Result<ApplyReport> {
+    if selection.languages.is_empty() {
+        return Err("at least one language must be selected".into());
+    }
+    if selection
+        .languages
+        .iter()
+        .any(|language| language.language == Language::Custom)
+    {
+        return Err("the portable profile cannot be installed as a split language".into());
+    }
+    if !folder.is_dir() {
+        return Err(format!("{} is not a game folder", folder.display()));
+    }
+    progress(
+        sink,
+        TaskState::Working,
+        "Preparing a split multi-language install…",
+        Some(0),
+    );
+
+    // -- Seed `backup/original/` with the pristine originals (source of truth).
+    // The backup is written once on the first install and is reused by every
+    // later apply and restore. The live root is never trusted after that: a
+    // reinstall may legitimately delete an original that no selected language
+    // uses, so the restore button must rebuild from the backup, not the root.
+    let backup = folder.join("backup");
+    let backup_original = backup.join("original");
+    fs::create_dir_all(&backup_original).map_err(|e| e.to_string())?;
+    let exe_path = find_file(folder, "Doraemon.exe")?;
+    let backup_exe = backup_original.join("Doraemon.exe");
+    if !backup_exe.exists() {
+        fs::copy(&exe_path, &backup_exe).map_err(|e| format!("backup Doraemon.exe: {e}"))?;
+    }
+    let mut base_resources: HashMap<String, Vec<u8>> = HashMap::new();
+    for (base_name, _) in SPLIT_RESOURCES {
+        let canonical = backup_original.join(base_name);
+        if !canonical.exists() {
+            let source = find_file(folder, base_name)?;
+            fs::copy(&source, &canonical)
+                .map_err(|e| format!("backup {}: {e}", base_name))?;
+        }
+        let bytes = fs::read(&canonical)
+            .map_err(|error| format!("backup {}: {error}", base_name))?;
+        base_resources.insert(base_name.to_string(), bytes);
+    }
+    let base_exe = fs::read(&backup_exe).map_err(|error| format!("backup Doraemon.exe: {error}"))?;
+
+    // -- Compute the exact file layout and bytes for every language. ---------
+    let plan = plan_split(selection, &base_resources, &base_exe, options, options.local_audio)?;
+
+    // -- Stage shared local music (all languages share one BGM stream). ------
+    let staging = folder.join(".doraemon-split-staging");
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir(&staging).map_err(|e| e.to_string())?;
+    let local_audio =
+        prepare_local_audio(folder, &staging, &selection.languages[0].payload, options, sink)?;
+    let mut created = plan.created;
+    for (name, staged, _digest) in local_audio.created {
+        let bytes = fs::read(&staged).map_err(|error| error.to_string())?;
+        created.push((name.to_string(), bytes));
+    }
+    created.sort_by(|a, b| a.0.cmp(&b.0));
+    created.dedup_by(|a, b| a.0 == b.0);
+
+    let mut changed = Vec::new();
+    let created_names: HashSet<String> = created.iter().map(|(name, _)| name.clone()).collect();
+    for (name, bytes) in &created {
+        progress(
+            sink,
+            TaskState::Working,
+            format!("Writing {name}…"),
+            Some(50),
+        );
+        write_synced(&folder.join(name), bytes)?;
+        changed.push(name.clone());
+    }
+    for name in &plan.removed_originals {
+        // A pristine original listed in `removed_originals` may have just been
+        // replaced by a patched build with the same name (the `<original>`
+        // `Doraemon.exe`). Never delete a file that was part of `created`.
+        if created_names.contains(name)
+            || !find_file(folder, name).map(|path| path.exists()).unwrap_or(false)
+        {
+            continue;
+        }
+        if let Ok(path) = find_file(folder, name) {
+            fs::remove_file(&path).map_err(|e| e.to_string())?;
+        }
+        changed.push(format!("<removed> {}", name));
+    }
+    write_synced(
+        &backup.join("split-manifest.json"),
+        split_manifest(&changed, &plan.removed_originals).as_bytes(),
+    )?;
+    fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+
+    progress(
+        sink,
+        TaskState::Done,
+        "Split multi-language install is ready.",
+        Some(100),
+    );
+    let audio = local_audio.summary;
+    Ok(ApplyReport { changed, audio })
+}
+
+/// Removes every file created by a split install and reinstates the originals
+/// that were set aside. Returns the names of the files that were cleaned up.
+pub fn restore_split(folder: &Path) -> Result<Vec<String>> {
+    let backup = folder.join("backup");
+    let manifest = fs::read_to_string(backup.join("split-manifest.json")).map_err(|error| {
+        format!(
+            "no split backup manifest at {}: {error}",
+            backup.join("split-manifest.json").display()
+        )
+    })?;
+    let (created, removed) = parse_split_names(&manifest)?;
+
+    let mut cleaned = Vec::new();
+    for name in created {
+        let path = folder.join(&name);
+        if path.exists() {
+            fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+            cleaned.push(name.clone());
+        }
+    }
+    for name in removed {
+        let source = backup.join("original").join(&name);
+        let target = folder.join(&name);
+        fs::copy(&source, &target).map_err(|e| e.to_string())?;
+        cleaned.push(format!("restored {name}"));
+    }
+    // Remove only the split marker; the shared `backup/original/` source of
+    // truth stays so a coexisting single-language backup keeps working.
+    let _ = fs::remove_file(backup.join("split-manifest.json"));
+    let staging = folder.join(".doraemon-split-staging");
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+    }
+    Ok(cleaned)
+}
+
+/// Restores every kind of backup present in `folder`: a split install (via its
+/// `split-manifest.json`) and/or a single-language install (via `manifest.json`).
+/// Returns the combined names of the files that were cleaned up or restored.
+pub fn restore_any(folder: &Path) -> Result<Vec<String>> {
+    let mut restored = Vec::new();
+    if folder.join("backup").join("split-manifest.json").is_file() {
+        restored.extend(restore_split(folder)?);
+    }
+    if folder.join("backup").join("manifest.json").is_file() {
+        restored.extend(restore(&folder.join("backup"))?);
+    }
+    Ok(restored)
+}
+
+/// True when a backup exists that the main "Restore backup" action can rebuild
+/// the original game from (either a split install or a single-language backup).
+pub fn has_restorable_backup(folder: &Path) -> bool {
+    let backup = folder.join("backup");
+    backup.join("split-manifest.json").is_file() || backup.join("manifest.json").is_file()
+}
+
+/// The visible backup directory used by split installs (and shared with the
+/// single-language install). Kept public so the patcher can surface its location.
+pub fn backup_dir(folder: &Path) -> std::path::PathBuf {
+    folder.join("backup")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::payload::{BundledFile, Language, PatchProfile};
+    use crate::sysfont;
 
     #[test]
     fn wrapper_installs_bundled_files_without_overwriting_different_files() {
@@ -1430,6 +1893,173 @@ mod tests {
         assert!(add_wrapper(&folder, &payload)
             .unwrap_err()
             .contains("different"));
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn only_vietnamese_sysfont_extends_the_font_table_when_fixtures_are_available() {
+        let (Ok(data_dir), Ok(parts_dir)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PARTS_ENGLISH"),
+        ) else {
+            return;
+        };
+        let base = fs::read(Path::new(&data_dir).join("sysfont.dat")).unwrap();
+        let base_count = sysfont::parse(&base).unwrap().glyphs.len();
+        assert_eq!(base_count, sysfont::ORIGINAL_GLYPHS);
+        let apply_sysfont = |dir: &std::path::Path| -> usize {
+            let mut parts = Vec::new();
+            for name in ["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"] {
+                let bytes = fs::read(dir.join(name)).unwrap();
+                parts.push(crate::payload::decode_part(&bytes).unwrap());
+            }
+            let payload = crate::merge_parts(&parts).unwrap();
+            let mut count = 0;
+            for profile in &payload.profiles {
+                for f in &profile.files {
+                    if f.name.eq_ignore_ascii_case("sysfont.dat") {
+                        count = sysfont::parse(&f.apply(&base).unwrap())
+                            .unwrap()
+                            .glyphs
+                            .len();
+                    }
+                }
+            }
+            count
+        };
+        let english_dir = Path::new(&parts_dir);
+        let vietnamese_dir = Path::new(&parts_dir)
+            .parent()
+            .unwrap()
+            .join("vietnamese");
+        let english_count = apply_sysfont(english_dir);
+        let vietnamese_count = apply_sysfont(&vietnamese_dir);
+        // English only reshapes the base 640 glyphs; only Vietnamese extends the
+        // font to 1920 glyphs (which is what requires the Vietnamese runtime hook).
+        assert_eq!(english_count, sysfont::ORIGINAL_GLYPHS);
+        assert_eq!(vietnamese_count, sysfont::EXTENDED_GLYPHS);
+    }
+
+    #[test]
+    fn split_apply_produces_every_executable_reference_when_fixtures_are_available() {
+        let (Ok(data_dir), Ok(parts_dir)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PARTS_ENGLISH"),
+        ) else {
+            return;
+        };
+        // Reconstruct the English payload from its three part files, exactly as
+        // the Windows patcher does.
+        let mut parts = Vec::new();
+        for name in ["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"] {
+            let bytes = std::fs::read(Path::new(&parts_dir).join(name)).unwrap();
+            parts.push(crate::payload::decode_part(&bytes).unwrap());
+        }
+        let payload = crate::merge_parts(&parts).unwrap();
+
+        let folder = std::env::temp_dir().join(format!(
+            "doraemon-split-apply-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir(&folder).unwrap();
+        fs::copy(Path::new(&data_dir).join("Doraemon.exe"), folder.join("Doraemon.exe")).unwrap();
+        for name in ["strings.dat", "voice.dat", "sysfont.dat", "Sprite1.dat", "sprite2.dat", "bitmaps.dat"] {
+            fs::copy(Path::new(&data_dir).join(name), folder.join(name)).unwrap();
+        }
+
+        let selection = SplitSelection {
+            include_original: true,
+            languages: vec![SplitLanguage {
+                language: Language::English,
+                payload: payload.clone(),
+                icon: None,
+            }],
+        };
+        apply_split_with_progress(
+            &folder,
+            &selection,
+            &ApplyOptions {
+                no_disc: false,
+                no_reg: false,
+                local_audio: false,
+                modern_volume: true,
+                cue: None,
+                ..ApplyOptions::default()
+            },
+            &std::env::current_exe().unwrap(),
+            &mut |_| {},
+        )
+        .unwrap();
+
+        // Every resource path the produced executable actually references must
+        // resolve to a file that now exists in the game folder. A reference that
+        // names a file absent on disk is exactly what makes the game copy a null
+        // buffer (a crash like the `rep movsl` with ESI=0 at startup).
+        let exe_bytes = fs::read(folder.join("Doraemon-en.exe")).unwrap();
+        let mut referenced = Vec::new();
+        let mut index = 0usize;
+        while index < exe_bytes.len() {
+            if (0x20..0x7f).contains(&exe_bytes[index]) {
+                let start = index;
+                while index < exe_bytes.len() && (0x20..0x7f).contains(&exe_bytes[index]) {
+                    index += 1;
+                }
+                let text = String::from_utf8_lossy(&exe_bytes[start..index]).into_owned();
+                if text.to_ascii_lowercase().ends_with(".dat") {
+                    referenced.push(text);
+                }
+            } else {
+                index += 1;
+            }
+        }
+        referenced.dedup();
+        eprintln!("doraemon-en.exe resource references: {referenced:?}");
+        // Runtime format strings (save%04d, map%04d, Database%04x, MGame*)
+        // are templates the engine expands at runtime; they are not shipped
+        // files. What matters for the loader is that every suffixed resource
+        // build the executable is rewired to use actually exists on disk.
+        let suffixed: Vec<&String> = referenced
+            .iter()
+            .filter(|text| text.to_ascii_lowercase().ends_with("-en.dat"))
+            .collect();
+        assert!(!suffixed.is_empty(), "no suffixed reference found");
+        for name in &suffixed {
+            assert!(
+                find_file(&folder, name).is_ok(),
+                "executable references '{name}' but no such file was produced"
+            );
+        }
+
+        // With `<original>` included, the in-place `Doraemon.exe` must be the
+        // patched original build (not the untouched, disc-requiring executable),
+        // and the pristine executable must have been set aside into the backup.
+        let base_exe = fs::read(Path::new(&data_dir).join("Doraemon.exe")).unwrap();
+        let in_place = fs::read(folder.join("Doraemon.exe")).unwrap();
+        assert_ne!(
+            &in_place, &base_exe,
+            "<original> build must patch Doraemon.exe in place"
+        );
+        let backup_orig_exe = fs::read(folder.join("backup/original/Doraemon.exe")).unwrap();
+        assert_eq!(&backup_orig_exe, &base_exe, "pristine original must be backed up");
+        // The backup is the source of truth: a split manifest exists, the
+        // pristine resources were seeded there, and the main Restore action can
+        // rebuild the game from them.
+        assert!(
+            folder.join("backup/split-manifest.json").is_file(),
+            "split install must leave a restore manifest in the visible backup folder"
+        );
+        assert!(
+            has_restorable_backup(&folder),
+            "the visible backup must be detected by the main Restore action"
+        );
+        for (base_name, _) in SPLIT_RESOURCES {
+            assert!(
+                folder.join("backup/original").join(base_name).is_file(),
+                "pristine {base_name} must be seeded into backup/original"
+            );
+        }
+
         fs::remove_dir_all(folder).unwrap();
     }
 
@@ -1691,6 +2321,83 @@ mod tests {
                 required.hash
             );
         }
+        restore(&folder.join("backup")).unwrap();
+        for required in &profile.required {
+            assert_eq!(
+                hash::file(&folder.join(&required.name)).unwrap(),
+                required.hash
+            );
+        }
         fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn suffixed_name_lowercases_and_inserts_suffix_before_extension() {
+        assert_eq!(suffixed_name("Sprite1.dat", "vi"), "sprite1-vi.dat");
+        assert_eq!(suffixed_name("strings.dat", "en"), "strings-en.dat");
+        assert_eq!(suffixed_name("bitmaps.dat", "en"), "bitmaps-en.dat");
+        assert_eq!(suffixed_name("NoExtension", "vi"), "noextension-vi");
+    }
+
+    #[test]
+    fn split_manifest_round_trips_created_and_removed_names() {
+        let created = vec!["sprite1-vi.dat".into(), "Doraemon-vi.exe".into()];
+        let removed = vec!["Doraemon.exe".into(), "Sprite1.dat".into()];
+        let manifest = split_manifest(&created, &removed);
+        let (parsed_created, parsed_removed) = parse_split_names(&manifest).unwrap();
+        assert_eq!(parsed_created, created);
+        assert_eq!(parsed_removed, removed);
+    }
+
+    #[test]
+    fn split_manifest_round_trips_empty_lists() {
+        let manifest = split_manifest(&[], &[]);
+        let (created, removed) = parse_split_names(&manifest).unwrap();
+        assert!(created.is_empty());
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn plan_split_rejects_no_language_and_writes_suffixed_files_when_fixture_is_available() {
+        let (Ok(base), Ok(payload_path)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PAYLOAD"),
+        ) else {
+            return;
+        };
+        let payload = crate::payload::decode(&fs::read(payload_path).unwrap()).unwrap();
+        let mut base_resources = HashMap::new();
+        for (base_name, _) in SPLIT_RESOURCES {
+            let bytes = fs::read(Path::new(&base).join(
+                if *base_name == "bitmaps.dat" { "bitmaps.dat" } else { base_name },
+            )).ok().unwrap_or_default();
+            base_resources.insert(base_name.to_string(), bytes);
+        }
+        let base_exe = fs::read(Path::new(&base).join("Doraemon.exe")).unwrap();
+        let selection = SplitSelection {
+            include_original: false,
+            languages: vec![SplitLanguage {
+                language: Language::Vietnamese,
+                payload: payload.clone(),
+                icon: None,
+            }],
+        };
+        let plan = plan_split(
+            &selection,
+            &base_resources,
+            &base_exe,
+            &ApplyOptions::default(),
+            false,
+        )
+        .unwrap();
+        assert!(plan
+            .created
+            .iter()
+            .any(|(name, _)| name.ends_with("-vi.exe")));
+        assert!(plan
+            .created
+            .iter()
+            .any(|(name, _)| name == "sprite1-vi.dat"));
+        assert!(plan.removed_originals.contains(&"Doraemon.exe".to_string()));
     }
 }

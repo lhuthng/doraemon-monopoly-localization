@@ -1601,24 +1601,24 @@ pub fn patch_compatible(
     Err("unsupported Doraemon.exe layout; it may be a different release or an unknown modification, so no bytes were changed".into())
 }
 
-/// Extracts the two 32-bit BGRA images (32x32 then 16x16) from a `.ico` file.
-fn icon_images(ico: &[u8]) -> Result<Vec<(u8, u8, Vec<u8>)>> {
+/// Extracts the images (8-bit palette and 32-bit BGRA, largest first) from a
+/// `.ico` file, preserving each image's planes and bit depth so legacy 8-bit
+/// icons can be installed for Win95 alongside 32-bit icons for modern systems.
+fn icon_images(ico: &[u8]) -> Result<Vec<(u8, u8, u16, u16, Vec<u8>)>> {
     if ico.len() < 6 || ico[0..2] != [0, 0] {
         return Err("unsupported icon container".into());
     }
     let count = u16::from_le_bytes(ico[4..6].try_into().unwrap()) as usize;
-    if count != 2 {
-        return Err("expected a two-image 32-bit icon file".into());
+    if count == 0 {
+        return Err("icon file has no images".into());
     }
-    let mut images = Vec::new();
+    let mut images = Vec::with_capacity(count);
     for index in 0..count {
         let entry = 6 + index * 16;
         let width = ico[entry];
         let height = ico[entry + 1];
+        let planes = u16::from_le_bytes(ico[entry + 4..entry + 6].try_into().unwrap());
         let bit_count = u16::from_le_bytes(ico[entry + 6..entry + 8].try_into().unwrap());
-        if bit_count != 32 {
-            return Err("icon image is not 32-bit".into());
-        }
         let size =
             u32::from_le_bytes(ico[entry + 8..entry + 12].try_into().unwrap()) as usize;
         let offset =
@@ -1626,9 +1626,9 @@ fn icon_images(ico: &[u8]) -> Result<Vec<(u8, u8, Vec<u8>)>> {
         let dib = ico
             .get(offset..offset + size)
             .ok_or("icon image extends outside the file")?;
-        images.push((width, height, dib.to_vec()));
+        images.push((width, height, planes, bit_count, dib.to_vec()));
     }
-    images.sort_by_key(|(width, _, _)| std::cmp::Reverse(*width));
+    images.sort_by_key(|(width, _, _, _, _)| std::cmp::Reverse(*width));
     Ok(images)
 }
 
@@ -1828,25 +1828,26 @@ pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
         .get(group_raw..group_raw + group_size)
         .ok_or("icon group extends outside the executable")?;
     let referenced = u16::from_le_bytes(group[4..6].try_into().unwrap()) as usize;
-    if referenced < 2 {
-        return Err("icon group references fewer than two images".into());
+    if referenced < images.len() {
+        return Err("icon group cannot hold all requested icon images".into());
     }
     let mut ids = Vec::with_capacity(referenced);
     for index in 0..referenced {
         ids.push(u16::from_le_bytes(group[6 + index * 14 + 12..6 + index * 14 + 14].try_into().unwrap()));
     }
 
-    // Build the replacement GRPICONDIR (two 32-bit images reusing ids[0..2]).
-    let mut new_group = Vec::with_capacity(34);
+    // Build the replacement GRPICONDIR, keeping each image's planes and bit
+    // depth so legacy 8-bit and modern 32-bit images coexist in one group.
+    let mut new_group = Vec::with_capacity(6 + 14 * images.len());
     new_group.extend_from_slice(&[0, 0, 1, 0]);
     new_group.extend_from_slice(&(images.len() as u16).to_le_bytes());
-    for (index, (width, height, dib)) in images.iter().enumerate() {
+    for (index, (width, height, planes, bit_count, dib)) in images.iter().enumerate() {
         new_group.push(*width);
         new_group.push(*height);
         new_group.push(0);
         new_group.push(0);
-        new_group.extend_from_slice(&1u16.to_le_bytes());
-        new_group.extend_from_slice(&32u16.to_le_bytes());
+        new_group.extend_from_slice(&planes.to_le_bytes());
+        new_group.extend_from_slice(&bit_count.to_le_bytes());
         new_group.extend_from_slice(&(dib.len() as u32).to_le_bytes());
         new_group.extend_from_slice(&ids[index].to_le_bytes());
     }
@@ -1860,7 +1861,7 @@ pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
         if name >> 31 != 0 {
             continue;
         }
-        if icon_data.len() < 2 && ids[..2].contains(&(name as u16)) {
+        if icon_data.len() < images.len() && ids[..images.len()].contains(&(name as u16)) {
             for (_, lang_offset) in resource_entries(input, root_raw, offset_to & 0x7fff_ffff)? {
                 if lang_offset >> 31 == 0 {
                     icon_data.push(lang_offset & 0x7fff_ffff);
@@ -1869,7 +1870,7 @@ pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
             }
         }
     }
-    if icon_data.len() < 2 {
+    if icon_data.len() < images.len() {
         return Err("icon group references missing RT_ICON resources".into());
     }
 
@@ -1885,17 +1886,17 @@ pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
             image_end = end;
         }
     }
-    let data_len: usize = images.iter().map(|(_, _, dib)| dib.len()).sum();
+    let data_len: usize = images.iter().map(|(_, _, _, _, dib)| dib.len()).sum();
     let new_va = (image_end + section_alignment - 1) & !(section_alignment - 1);
     let new_raw = (input.len() + file_alignment as usize - 1) & !(file_alignment as usize - 1);
     let raw_data_len = (data_len + file_alignment as usize - 1) & !(file_alignment as usize - 1);
     let mut output = vec![0_u8; new_raw + raw_data_len];
     output[..input.len()].copy_from_slice(input);
 
-    // Write the two 32-bit DIBs and remember their RVAs.
+    // Write the DIBs and remember their RVAs.
     let mut cursor = new_raw;
-    let mut dib_rva = Vec::with_capacity(2);
-    for (_, _, dib) in &images {
+    let mut dib_rva = Vec::with_capacity(images.len());
+    for (_, _, _, _, dib) in &images {
         dib_rva.push(new_va + (cursor - new_raw) as u32);
         output[cursor..cursor + dib.len()].copy_from_slice(dib);
         cursor += dib.len();
@@ -1906,7 +1907,7 @@ pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
         let offset = root_raw + *rel as usize;
         output[offset..offset + 4].copy_from_slice(&dib_rva[index].to_le_bytes());
         output[offset + 4..offset + 8]
-            .copy_from_slice(&(images[index].2.len() as u32).to_le_bytes());
+            .copy_from_slice(&(images[index].4.len() as u32).to_le_bytes());
     }
 
     // Overwrite the group data in place and pad the old slot.
@@ -1937,8 +1938,162 @@ pub fn patch_game_icon(input: &[u8], ico: &[u8]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// Rewrites the resource filenames embedded in an executable so a language
+/// build reads its own suffixed data files (e.g. `sprite1-vi.dat`).
+///
+/// The shipped game refers to each resource by a single literal filename that
+/// is pushed (or moved) as a 32-bit address into a file-opening routine. For every
+/// `(from, to)` pair where the names differ, this relocates the new string into a
+/// dedicated trailing section and repoints each `push`/`mov reg, imm32` reference
+/// that used the old address. Resources whose name is unchanged are left untouched,
+/// so an identical file is never duplicated.
+///
+/// It returns the input unchanged when every mapping is a no-op.
+pub fn rewrite_resource_paths(original: &[u8], mapping: &[(String, String)]) -> Result<Vec<u8>> {
+    let remaps: Vec<(Vec<u8>, Vec<u8>)> = mapping
+        .iter()
+        .filter(|(from, to)| from != to)
+        .map(|(from, to)| (from.as_bytes().to_vec(), to.as_bytes().to_vec()))
+        .collect();
+    if remaps.is_empty() {
+        return Ok(original.to_vec());
+    }
+
+    let pe = u32::from_le_bytes(
+        original
+            .get(0x3c..0x40)
+            .ok_or("truncated DOS header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let count = u16::from_le_bytes(
+        original
+            .get(pe + 6..pe + 8)
+            .ok_or("truncated PE header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let optional = u16::from_le_bytes(
+        original
+            .get(pe + 20..pe + 22)
+            .ok_or("truncated PE header")?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let table = pe + 24 + optional;
+    let image_base = u32::from_le_bytes(
+        original
+            .get(pe + 24 + 28..pe + 24 + 32)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    );
+    let section_alignment = u32::from_le_bytes(
+        original
+            .get(pe + 24 + 32..pe + 24 + 36)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    );
+    let file_alignment = u32::from_le_bytes(
+        original
+            .get(pe + 24 + 36..pe + 24 + 40)
+            .ok_or("truncated PE optional header")?
+            .try_into()
+            .unwrap(),
+    );
+
+    // Locate each source literal and remember its virtual address plus the new
+    // bytes that will replace it in a dedicated trailing section.
+    let mut old_vas: Vec<u32> = Vec::new();
+    let mut new_literals: Vec<Vec<u8>> = Vec::new();
+    for (from_byte, to_byte) in &remaps {
+        let mut needle = from_byte.clone();
+        needle.push(0);
+        let raw = find_bytes(original, &needle).ok_or_else(|| {
+            format!(
+                "the executable does not contain the resource path '{}'",
+                String::from_utf8_lossy(from_byte)
+            )
+        })?;
+        let old_va = raw_to_va(original, raw)?;
+        let mut new_lit = to_byte.clone();
+        new_lit.push(0);
+        old_vas.push(old_va);
+        new_literals.push(new_lit);
+    }
+    let data_len: usize = new_literals.iter().map(|literal| literal.len()).sum();
+
+    // Place the new filenames in a new trailing section, past every existing one.
+    let mut image_end = 0u32;
+    for index in 0..count {
+        let offset = table + index * 40;
+        let va = u32::from_le_bytes(original[offset + 12..offset + 16].try_into().unwrap());
+        let vsize = u32::from_le_bytes(original[offset + 8..offset + 12].try_into().unwrap());
+        let rsize = u32::from_le_bytes(original[offset + 16..offset + 20].try_into().unwrap());
+        image_end = image_end.max(va.saturating_add(vsize.max(rsize)));
+    }
+    let new_va = (image_end + section_alignment - 1) & !(section_alignment - 1);
+    let new_raw = (original.len() + file_alignment as usize - 1) & !(file_alignment as usize - 1);
+    let raw_data_len = (data_len + file_alignment as usize - 1) & !(file_alignment as usize - 1);
+    let mut output = vec![0_u8; new_raw + raw_data_len];
+    output[..original.len()].copy_from_slice(original);
+
+    let mut cursor = new_raw;
+    let mut new_vas: Vec<u32> = Vec::with_capacity(old_vas.len());
+    for literal in &new_literals {
+        new_vas.push(new_va + (cursor - new_raw) as u32);
+        output[cursor..cursor + literal.len()].copy_from_slice(literal);
+        cursor += literal.len();
+    }
+
+    // Repoint every push / mov reg,imm32 reference that used an old address.
+    for (index, &old_va) in old_vas.iter().enumerate() {
+        let new_va = new_vas[index];
+        let mut referenced = false;
+        for offset in 1..output.len() - 4 {
+            let opcode = output[offset];
+            if (opcode == 0x68 || (0xB8..=0xBF).contains(&opcode))
+                && u32::from_le_bytes(output[offset + 1..offset + 5].try_into().unwrap()) == old_va
+            {
+                output[offset + 1..offset + 5]
+                    .copy_from_slice(&(new_va + image_base).to_le_bytes());
+                referenced = true;
+            }
+        }
+        if !referenced {
+            return Err(format!(
+                "the executable never references the resource '{}'",
+                String::from_utf8_lossy(&remaps[index].0)
+            ));
+        }
+    }
+
+// Append the new section header and grow the image size.
+    let header = table + count * 40;
+    if header + 40 > original.len() {
+        return Err("no room for the resource-path section header".into());
+    }
+    for (offset, value) in [
+        (8, data_len as u32),
+        (12, new_va),
+        (16, raw_data_len as u32),
+        (20, new_raw as u32),
+        (36, 0x4000_0040u32),
+    ] {
+        output[header + offset..header + offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    output[header..header + 8].copy_from_slice(b".split\0\0");
+    output[pe + 6..pe + 8].copy_from_slice(&((count + 1) as u16).to_le_bytes());
+    let new_image_end = (new_va + data_len as u32 + section_alignment - 1)
+        & !(section_alignment - 1);
+    output[pe + 24 + 56..pe + 24 + 60].copy_from_slice(&new_image_end.to_le_bytes());
+    Ok(output)
+}
+
 /// Builds the optional Vietnamese variant and the selected portable executable.
-pub fn build_variants(original: &[u8], vietnamese: bool) -> Result<(Option<Vec<u8>>, Vec<u8>)> {    // Runtime compatibility is established from PE sections and verified code
+pub fn build_variants(original: &[u8], vietnamese: bool) -> Result<(Option<Vec<u8>>, Vec<u8>)> {
+    // Runtime compatibility is established from PE sections and verified code
     // patterns. A harmless timestamp, checksum, resource, or overlay change
     // must not make an otherwise supported executable unusable.
     font_layout(original)?;
@@ -2023,6 +2178,66 @@ mod tests {
         assert_eq!(
             &section[current_level..current_level + 4],
             &[0xff, 0xff, 0, 0]
+        );
+    }
+
+#[test]
+    fn resource_path_rewrite_relocates_and_repoints_references() {
+        let input = b"noise Version 2.07-beta\0tail";
+        // A clean no-op mapping must be returned unchanged.
+        let same = rewrite_resource_paths(input, &[("x".to_string(), "x".to_string())]).unwrap();
+        assert_eq!(same, input);
+        let _ = input;
+
+        let (Ok(_folder), Ok(canonical_path)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_CANONICAL_EXE"),
+        ) else {
+            return;
+        };
+        let original = std::fs::read(canonical_path).unwrap();
+        let rewritten = rewrite_resource_paths(
+            &original,
+            &[
+                ("sprite1.dat".to_string(), "sprite1-en.dat".to_string()),
+                ("sprite2.dat".to_string(), "sprite2-en.dat".to_string()),
+                ("Sprite2.Dat".to_string(), "sprite2-en.dat".to_string()),
+            ],
+        )
+        .unwrap();
+        assert!(rewritten.len() > original.len());
+        assert!(find_section(&rewritten, b".split").is_ok());
+        // The rewritten references must carry the full image VA (RVA + image
+        // base), never a bare RVA. A bare RVA points into invalid low memory.
+        let image_base = u32::from_le_bytes(rewritten[0x3c..0x40].try_into().unwrap()) as usize;
+        let image_base =
+            u32::from_le_bytes(rewritten[image_base + 24 + 28..image_base + 24 + 32].try_into().unwrap());
+        let split_va = find_section(&rewritten, b".split").unwrap() + 12;
+        let split_rva = u32::from_le_bytes(rewritten[split_va..split_va + 4].try_into().unwrap());
+        let mut saw_full_va = false;
+        for offset in 1..rewritten.len() - 4 {
+            let opcode = rewritten[offset];
+            if (opcode == 0x68 || (0xB8..=0xBF).contains(&opcode))
+                && u32::from_le_bytes(rewritten[offset + 1..offset + 5].try_into().unwrap())
+                    == split_rva + image_base
+            {
+                saw_full_va = true;
+                assert!(
+                    split_rva < image_base,
+                    "rewritten references must use the full VA, not a bare RVA"
+                );
+            }
+        }
+        assert!(saw_full_va, "no rewritten reference points at the new .split string");
+        // The new strings must now be present.
+        for needle in [b"sprite1-en.dat\0".as_ref(), b"sprite2-en.dat\0".as_ref()] {
+            assert!(find_bytes(&rewritten, needle).is_some());
+        }
+        // A genuine executable must reference every rewritten path; an invalid
+        // one (no embedded literal, no reference) must be refused.
+        assert!(
+            rewrite_resource_paths(&original, &[("nope.dat".to_string(), "nope-en.dat".to_string())])
+                .is_err()
         );
     }
 
@@ -2365,6 +2580,19 @@ mod tests {
         let english = patch_game_icon(&original, GAME_ICON_ENGLISH).unwrap();
         assert!(english.len() > original.len(), "icon data must be appended");
         assert!(find_section(&english, b".icondat").is_ok());
+
+        // The bundled icon must carry both an 8-bit image (so Win95 renders it)
+        // and a 32-bit image (so modern systems render it without a black box).
+        let english_icon = icon_images(GAME_ICON_ENGLISH).unwrap();
+        assert!(
+            english_icon.iter().any(|(_, _, _, bit_count, _)| *bit_count == 8),
+            "icon must include an 8-bit image for Win95"
+        );
+        assert!(
+            english_icon.iter().any(|(_, _, _, bit_count, _)| *bit_count == 32),
+            "icon must include a 32-bit image for modern systems"
+        );
+
         let english_again = patch_game_icon(&english, GAME_ICON_ENGLISH).unwrap();
         assert_eq!(english, english_again, "re-applying the same icon must not grow the file");
 
