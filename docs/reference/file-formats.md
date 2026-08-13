@@ -30,23 +30,23 @@ The current implementations are:
 
 ## Known-file index
 
-| File/family                        | Responsibility                        | Knowledge                      | Specification                                               |
-| ---------------------------------- | ------------------------------------- | ------------------------------ | ----------------------------------------------------------- |
-| GameOne container                  | Recursive owner of compressed records | Confirmed                      | [Open](#gameone-archive-container)                          |
-| `strings-CN.dat`, `strings-TW.dat` | Game text records                     | Confirmed                      | [Open](#strings-cndat-and-strings-twdat)                    |
-| `chifont.dat`                      | Indexed Chinese glyphs                | Confirmed                      | [Open](#chifontdat)                                         |
-| `sysfont.dat`                      | Proportional single-byte fonts        | Confirmed                      | [Open](#sysfontdat)                                         |
-| `Fonts.dat`                        | Secondary font records                | Outer confirmed; inner unknown | [Open](#fontsdat)                                           |
-| `bitmaps.dat`                      | Complete screens/background artwork   | Confirmed PCX subset           | [Open](#bitmapsdat-embedded-pcx-screens)                    |
-| `Sprite1.dat`                      | Hotspot-anchored transparent sprites  | Confirmed                      | [Open](#sprite1dat-and-sprite2dat-indexed-scanline-sprites) |
-| `sprite2.dat`                      | Top-left-anchored indexed UI sprites  | Confirmed                      | [Open](#sprite1dat-and-sprite2dat-indexed-scanline-sprites) |
-| `interface.dat`                    | Probable UI composition data          | Strong inference               | [Open](#interfacedat-and-composition)                       |
-| `voice-CN.dat`, `voice-TW.dat`     | Spoken dialogue archives              | Confirmed WAVE leaves          | [Open](#voice-cndat-and-voice-twdat)                        |
-| `Sfx.dat`                          | Sound effects                         | Unknown                        | [Open](#other-retained-resources)                           |
-| `map*.dat`, `mapElem*.dat`         | Board and board elements              | Purpose inferred               | [Open](#other-retained-resources)                           |
-| `MGame*.DAT`, `MiniGame.DAT`       | Minigame configuration                | Purpose inferred               | [Open](#other-retained-resources)                           |
-| Gameplay `.dat` files              | Animation, buildings, events, gadgets | Purpose inferred               | [Open](#other-retained-resources)                           |
-| `Databaseaeb8.dat`                 | Stateful game/save database           | Strong inference               | [Open](#other-retained-resources)                           |
+| File/family                        | Responsibility                        | Knowledge             | Specification                                               |
+| ---------------------------------- | ------------------------------------- | --------------------- | ----------------------------------------------------------- |
+| GameOne container                  | Recursive owner of compressed records | Confirmed             | [Open](#gameone-archive-container)                          |
+| `strings-CN.dat`, `strings-TW.dat` | Game text records                     | Confirmed             | [Open](#strings-cndat-and-strings-twdat)                    |
+| `chifont.dat`                      | Indexed Chinese glyphs                | Confirmed             | [Open](#chifontdat)                                         |
+| `sysfont.dat`                      | Proportional single-byte fonts        | Confirmed             | [Open](#sysfontdat)                                         |
+| `Fonts.dat`                        | Decorative scanline glyph leaves      | Confirmed             | [Open](#fontsdat)                                           |
+| `bitmaps.dat`                      | Complete screens/background artwork   | Confirmed PCX subset  | [Open](#bitmapsdat-embedded-pcx-screens)                    |
+| `Sprite1.dat`                      | Hotspot-anchored transparent sprites  | Confirmed             | [Open](#sprite1dat-and-sprite2dat-indexed-scanline-sprites) |
+| `sprite2.dat`                      | Top-left-anchored indexed UI sprites  | Confirmed             | [Open](#sprite1dat-and-sprite2dat-indexed-scanline-sprites) |
+| `interface.dat`                    | Probable UI composition data          | Strong inference      | [Open](#interfacedat-and-composition)                       |
+| `voice-CN.dat`, `voice-TW.dat`     | Spoken dialogue archives              | Confirmed WAVE leaves | [Open](#voice-cndat-and-voice-twdat)                        |
+| `Sfx.dat`                          | Sound effects                         | Unknown               | [Open](#other-retained-resources)                           |
+| `map*.dat`, `mapElem*.dat`         | Board and board elements              | Purpose inferred      | [Open](#other-retained-resources)                           |
+| `MGame*.DAT`, `MiniGame.DAT`       | Minigame configuration                | Purpose inferred      | [Open](#other-retained-resources)                           |
+| Gameplay `.dat` files              | Animation, buildings, events, gadgets | Purpose inferred      | [Open](#other-retained-resources)                           |
+| `Databaseaeb8.dat`                 | Stateful game/save database           | Strong inference      | [Open](#other-retained-resources)                           |
 
 ## GameOne archive container
 
@@ -181,7 +181,8 @@ row_bits     = big-endian 16-bit value at glyph_offset + row * 2
 Rendering the atlas made the first decisive text breakthrough: glyphs could be
 read visually, and sequences from `strings.dat` formed sensible Chinese
 sentences. Cross-checking repeated glyph IDs across many sentences produced the
-glyph-ID-to-character map.
+glyph-ID-to-character map. The Font Studio's `Chinese atlas` review tab renders
+every glyph beside its mapped character for inspection.
 
 ## `sysfont.dat`
 
@@ -217,25 +218,70 @@ There are only 128 slots per variant. `sysfont.dat` does not directly expose a
 executable can address extra slots; that would require patching/tracing the
 renderer.
 
+### Vietnamese extension
+
+The Vietnamese localization extends `sysfont.dat` from 640 to 1,920 glyphs and
+adds executable hooks that map the two-byte `0xCC`/`0xCD` prefixes onto it:
+
+```text
+0..639      original five 128-slot variants
+640..895    Vietnamese bank for active variant 0
+...         640 + activeVariant * 256 + VietnameseSlot
+```
+
+Vietnamese characters encode as `CC S` (slot `S < 128`) or `CD (S - 128)`, the
+same two-byte shape as the original Chinese glyph IDs. The full layout, slot
+order, and byte mapping live in
+`packages/dubbing-core/src/vietnamese-font.ts`; the executable dispatch is
+`crates/game-patch/src/pe.rs`.
+
+**The generated glyphs are bootstrap art only.** Variant-0 records are
+synthesized by copying a de-accented ASCII base glyph and stamping accent marks
+at fixed, guessed positions; most render incorrectly. They are a seed for
+hand-editing (Font Studio exports a variant as numbered transparent PNGs, which
+artists fix and re-import), never final artwork — correct them before a
+release.
+
 ## `Fonts.dat`
 
-`Fonts.dat` is not the same format as `sysfont.dat` and should not be renamed or
-substituted for it. It is a GameOne archive containing 2,560 leaves, all of
-which pass the 14-bit decompressor. The decoded leaves begin with repeated
-structured tables, but their inner record format has not been established.
+`Fonts.dat` is a GameOne archive containing 2,560 leaves, all of which pass the
+14-bit LZW decompressor. It is **not** the same format as `sysfont.dat` and, despite
+the name, it is not the Chinese glyph source either — that is `chifont.dat`. Every
+leaf is an indexed scanline record with magic `0x8002`, byte-for-byte the same
+layout as `sprite2.dat`, so the existing sprite decoder renders the leaves
+directly.
 
-| Layer/property | Current knowledge                                           |
-| -------------- | ----------------------------------------------------------- |
-| Outer format   | GameOne container                                           |
-| Leaves         | 2,560                                                       |
-| Compression    | All leaves pass the 14-bit decoder                          |
-| Inner format   | Repeated structured tables; unknown                         |
-| Likely role    | Additional font sizes/styles or rendering data; unconfirmed |
+| Leaf offset | Type             | Meaning                                                                                              |
+| ----------: | ---------------- | ---------------------------------------------------------------------------------------------------- |
+|      `0x00` | `u16`            | Flags/magic: `0x8002` (indexed RLE, no hotspot)                                                      |
+|      `0x02` | `u16`            | Glyph width                                                                                          |
+|      `0x04` | `u16`            | Glyph height                                                                                         |
+|      `0x06` | `u16[height]`    | Row offsets relative to `0x06`                                                                       |
+|     `row+0` | `u16`            | Row payload byte length                                                                              |
+|     `row+2` | signed `i16` RLE | Negative `-N`: skip `N` transparent pixels; positive `N`: copy the following `N` palette-index bytes |
 
-Confirmed facts stop there. It may provide additional sizes/styles or
-precomputed font-rendering data, but that is currently a hypothesis. The tools
-must not expose it as an editable font until the record semantics and runtime
-consumer are verified.
+The leaves are decorative, proportional font artwork, not the game's CJK
+alphabet. A visual survey found 236 of the 2,560 leaves with ink-black pixels
+(276 if any opaque copied byte counts), and the remaining leaves are transparent
+placeholders. The 2,560 records are **20 banks of 128 leaves**; bank _b_ is the
+leaf range `b×128 … b×128+127`, and the review tab numbers each slot within its
+bank. Banks repeat content rather than storing 20 independent alphabets:
+
+- banks `0`–`1` carry the same ornamental Latin capitals (`O`, `P`, `R`, `B`, `X`, …)
+  around `14×24`, with 112 of 128 leaves byte-identical between the two banks;
+- banks `2`–`3` hold the tall circular/bubble ornaments `44×62`–`89×86` and a
+  different letter set, also as a near-identical pair;
+- banks `4`–`19` repeat a common subset of the first ten capitals as speech-bubble
+  shapes around `18×32`, alongside the empty placeholders `2×24`, `5×58`, `5×62`,
+  `3×86`.
+
+Because the leaves store palette indices, the review tab recolours them with one
+of the three canonical `bitmaps.dat` palettes below (`#000`, `#001`, `#053`)
+instead of ink black.
+
+The Font Studio's `Fonts.dat glyphs` review tab renders every leaf for
+inspection, grouped by bank. Which executable routine consumes the file remains
+open.
 
 ## `bitmaps.dat`: embedded PCX screens
 
@@ -274,6 +320,20 @@ Observed examples:
 
 This is the main clue for menu localization: not every visible word comes from
 `strings.dat`. Some menu text is raster artwork inside a PCX screen or sprite.
+
+### Canonical review palettes
+
+Every bitmap leaf embeds its own 256-colour palette, so most are one-off artwork
+palettes. Three stand out as reusable, and the Graphics and Fonts studios offer
+exactly these three for previewing palette-indexed sprites and `Fonts.dat` glyphs:
+
+| Bitmap | Role of the bitmap                            | What its palette actually is                                                                                                                                                                 |
+| -----: | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `#000` | 640×480 plain backdrop (84% black, 16% white) | The full 256-colour VGA set — 241 distinct entries with the standard red/green/blue/grey ramps. The canonical palette every screen shares, so it renders any sprite in its intended colours. |
+| `#001` | 160×163 Doraemon character portrait           | A small tuned set (26 used colours) shared verbatim by bitmaps `#001…#006`: skin tones, Doraemon red/blue and white. Best for faces and character sprites.                                   |
+| `#053` | 640×480 title-screen illustration             | A warm red/orange gradient set (107 used colours) with the most continuous pastel coverage in the archive. Best for full-colour scene artwork.                                               |
+
+Sprite and `Fonts.dat` previews default to the `#001` portrait palette.
 
 Encoding modified PCX leaves is not implemented. A future writer must preserve
 the observed PCX mode, palette, scanline padding, RLE rules, and GameOne/LZW
@@ -416,8 +476,9 @@ The useful clues were cumulative:
 
 ## Known limitations and next reverse-engineering targets
 
-- Decode the inner `Fonts.dat` record format and identify its executable
-  consumer.
+- Resolve which executable routine consumes `Fonts.dat` and what its leaf index
+  ranges/banks mean; the leaf format itself is now confirmed (see the
+  [`Fonts.dat`](#fontsdat) section).
 - Determine the exact `interface.dat` schema and map screen IDs to bitmap and
   sprite IDs.
 - Inspect the minigame `.SPR` resources for the same or a related sprite format.

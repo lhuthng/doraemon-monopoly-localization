@@ -18,29 +18,43 @@ not distributed here. Use the tools only with game files you legally own.
 - Voice replacement support is available for the canonical dubbing sources.
 - Some UI text and baked-in artwork remain untranslated.
 - The patcher supports Cantonese v1.26 and v1.18 resource layouts.
-- Windows patchers support language patches, backups/restoration, local music,
-  legacy volume compatibility, an optional Windows 95/v86 8-bit DirectSound
-  mode, and an optional cnc-ddraw graphics wrapper.
+- Windows patchers install **English**, **Vietnamese**, and a pristine
+  **`<original>`** build side-by-side into the same game folder, with
+  backup/restoration, local-music BGM generation and quality reduction,
+  game-speed toggles, and optional compatibility extras (8-bit DirectSound,
+  volume control, cnc-ddraw graphics wrapper).
 
 ## For players
 
 Download a patcher from [GitHub Releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases).
-Copy `patcher.exe` beside your own `Doraemon.exe`, run it, choose **English** or
-**Vietnamese**, and press **Apply**. The patcher validates the installation,
-backs up files before changing them, and creates a restore tool.
+Copy `patcher.exe` beside your own `Doraemon.exe`, run it, tick the builds you
+want — **`<original>`**, **English**, and/or **Vietnamese** — pick any
+compatibility extras, and press **Apply patch**. The patcher validates the
+installation against the public fingerprints, backs up files before changing
+them, and creates a restore tool.
 
-Use **Restore backup** to return to the files saved before the last patch.
-**Skip disc check** and **Skip registry check** only bypass validation; they do
-not provide missing game or CD data. **Use local music** can replace CD/MCI
-music with a generated `BGM.dat`. **Add graphics wrapper** is an optional
-compatibility feature, separate from translation. **Use 8-bit DirectSound
-output** keeps 22,050 Hz stereo playback but selects the SB16 8-bit DMA path;
-it is off by default. When local music is also selected, its DirectSound
-stream follows the same 8-bit path. Hover a dashed option underline for a
-short explanation.
+Languages are installed **side-by-side**: applying English and Vietnamese writes
+`Doraemon-en.exe` and `Doraemon-vi.exe` (each with its own icon and localized
+resources like `sprite1-en.dat`), leaving your original `Doraemon.exe` untouched.
+Tick **`<original>`** to also rebuild a pristine, unpatched `Doraemon.exe` for
+anything that needs the exact stock game. Tick nothing and apply to return the
+game to its original files.
+
+**Restore backup** (or `backup/Restore.exe`) puts back the exact files saved
+before the last patch. **Skip disc check** and **Skip registry check** only
+bypass validation; they do not provide missing game or CD data. **Use local
+music** replaces CD/MCI music with a generated `BGM.dat`; the **Reduce BGM.dat
+/ Reduce Voice.dat** + **Quality** controls shrink it further. **Game speed**
+scales the normal in-game speed (the fast setting is unaffected). **Add
+graphics wrapper** is an optional compatibility feature, separate from
+translation. **Use 8-bit DirectSound output** keeps 22,050 Hz stereo playback
+but selects the SB16 8-bit DMA path; it is off by default, and a local-music
+stream follows the same path when both are on. **Play** launches the build you
+picked. Hover any dashed option underline for a short explanation.
 
 Keep an untouched copy of the game. The patcher works beside the executable and
-does not need a path to another installation.
+does not need a path to another installation, and each action appends to a
+`Doraemon-Patcher-diagnostic.log` in the game folder.
 
 ## Translator Workshop
 
