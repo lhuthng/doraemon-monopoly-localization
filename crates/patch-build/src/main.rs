@@ -752,6 +752,10 @@ fn build_fingerprints(base: &Path) -> Result<Vec<RequiredFile>, String> {
 fn vi_font(arguments: &[String]) -> Result<(), String> {
     let input = PathBuf::from(value(arguments, "--input").unwrap_or_else(|| usage()));
     let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    // NOTE: sysfont::extend produces BOOTSTRAP glyphs only. The generated
+    // variant-0 Vietnamese records stamp marks at guessed positions and most are
+    // incorrect; hand-correct them (Font Studio PNG export/import) before this
+    // file is used in a release.
     let extended = sysfont::extend(&fs::read(&input).map_err(|error| error.to_string())?)?;
     fs::write(&output, &extended).map_err(|error| error.to_string())?;
     println!(

@@ -57,6 +57,16 @@ function visiblePixel(value: number) {
   return value !== 0xff;
 }
 
+/**
+ * BOOTSTRAP ONLY — not final artwork.
+ *
+ * These glyphs are synthesized by copying the de-accented ASCII base glyph and
+ * stamping the accent/tone marks at fixed, guessed positions. In practice most
+ * of them render incorrectly (mark placement, size, and metrics), so they are a
+ * seed for hand-editing, not a finished font. Hand-correct every Vietnamese
+ * glyph (Font Studio: export numbered PNGs, fix them, re-import) before a
+ * release; never ship the generated glyphs as-is.
+ */
 function generatedVariantZeroGlyph(base: SysGlyph, character: string): SysGlyph {
   const pixels = new Uint8Array(base.pixels);
   const width = base.width;
@@ -132,6 +142,9 @@ export function extendSysFont(original: SysFont): SysFont {
       const base = original.glyphs[variant * 128 + baseAscii(character).charCodeAt(0)];
       glyphs.push(
         variant === 0 && slot < VIETNAMESE_CHARACTERS.length
+          // Bootstrap seed only: see generatedVariantZeroGlyph. Hand-corrected
+          // release glyphs replace these records (Font Studio PNG import), so
+          // the generated shapes must never be treated as final art.
           ? generatedVariantZeroGlyph(base, character)
           : placeholderGlyph(base)
       );

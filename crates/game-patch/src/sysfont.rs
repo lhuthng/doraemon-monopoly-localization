@@ -113,6 +113,14 @@ fn contains(set: &str, character: char) -> bool {
     set.chars().any(|candidate| candidate == character)
 }
 
+/// BOOTSTRAP ONLY — not final artwork.
+///
+/// Synthesizes a Vietnamese glyph by copying the de-accented ASCII base glyph
+/// and stamping the accent/tone marks at fixed, guessed positions. Most of the
+/// generated shapes render incorrectly (mark placement, size, and metrics), so
+/// this is a seed for hand-editing, not a finished font. Hand-correct every
+/// Vietnamese glyph (Font Studio: export numbered PNGs, fix them, re-import)
+/// before a release; never ship these generated glyphs as-is.
 fn generated_glyph(mut base: Glyph, character: char) -> Glyph {
     let width = base.width as i32;
     let height = base.height as i32;
@@ -174,6 +182,11 @@ fn generated_glyph(mut base: Glyph, character: char) -> Glyph {
 // Build a deterministic authored bank from the proportional ASCII glyphs.
 // Release payloads may replace individual Vietnamese records with hand-edited
 // artwork, but the standalone command never needs an original target archive.
+//
+// NOTE: the generated variant-0 glyphs are a BOOTSTRAP only — marks are stamped
+// at fixed, guessed positions and most are visibly incorrect. They are a seed
+// for hand-editing (Font Studio PNG export/import), never final art; correct
+// them before shipping a release.
 pub fn extend(data: &[u8]) -> Result<Vec<u8>> {
     let mut font = parse(data)?;
     if font.glyphs.len() == EXTENDED_GLYPHS {
