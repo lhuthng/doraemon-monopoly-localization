@@ -177,6 +177,11 @@
     color: #607387;
     font-size: 0.8rem;
   }
+  .palette-note {
+    margin: -6px 0 10px;
+    color: #7a8ba0;
+    font-size: 0.78rem;
+  }
   .map-studio {
     padding-top: 14px;
   }

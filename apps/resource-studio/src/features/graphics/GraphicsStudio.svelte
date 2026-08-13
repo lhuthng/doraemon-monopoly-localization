@@ -12,7 +12,11 @@
   } from '../../lib/asset-formats';
   import { binaryBlob, downloadBlob } from '../../lib/browser-download';
   import StudioHeader from '../../lib/components/StudioHeader.svelte';
-  import { extractGameOneArchive, rebuildGameOneArchive, type GameOneArchiveEntry } from '@doraemon-monopoly/dubbing-core';
+  import {
+    extractGameOneArchive,
+    rebuildGameOneArchive,
+    type GameOneArchiveEntry
+  } from '@doraemon-monopoly/dubbing-core';
   import {
     decodeIndexedPng,
     encodeIndexedPng,
@@ -20,6 +24,12 @@
     type IndexedPng
   } from '../../lib/indexed-png';
   import { storedZip } from '@doraemon-monopoly/dubbing-core';
+  import {
+    loadCanonicalPalettes,
+    CANONICAL_PALETTE_IDS,
+    PALETTE_GUIDES,
+    type FavoritePalette
+  } from './palette-favorites';
   import IndexedCanvas from './components/IndexedCanvas.svelte';
   import AssetTile from './components/AssetTile.svelte';
   import GraphicsEditorControls from './components/GraphicsEditorControls.svelte';
@@ -76,7 +86,7 @@
   let jumpPage = $state('');
   let exportSelection = $state('0-95');
   let query = $state('');
-  let paletteId = $state('1');
+  let paletteId = $state('001');
   let status = $state('Load bitmaps.dat, Sprite1.dat, or sprite2.dat from your game.');
   let error = $state('');
   let busy = $state(false);
@@ -129,11 +139,31 @@
       .map((entry) => activeLoaded.get(entry.id))
       .filter((image): image is IndexedImage => image !== undefined)
   );
-  let chosenBitmap = $derived(
-    bitmaps.find((image) => image.id === paletteId.padStart(3, '0') && image.palette)
+  let favoritePalettes = $state<FavoritePalette[]>([]);
+  let chosenBitmap = $derived(bitmaps.find((image) => image.id === paletteId && image.palette));
+  let chosenFavorite = $derived(favoritePalettes.find((favorite) => favorite.id === paletteId));
+  let paletteChoices = $derived<FavoritePalette[]>(
+    favoritePalettes.length
+      ? favoritePalettes
+      : bitmaps
+          .filter(
+            (image) =>
+              image.palette &&
+              CANONICAL_PALETTE_IDS.includes(image.id as (typeof CANONICAL_PALETTE_IDS)[number])
+          )
+          .map((image) => {
+            const id = image.id as FavoritePalette['id'];
+            const guide = PALETTE_GUIDES[id];
+            return {
+              id,
+              label: guide?.label ?? `Bitmap #${id}`,
+              meaning: guide?.meaning ?? '',
+              palette: image.palette!
+            };
+          })
   );
-  let paletteChoices = $derived(bitmaps.filter((image) => image.palette));
-  let chosenPalette: Palette = $derived(chosenBitmap?.palette ?? diagnosticPalette());
+  let usablePalette: Palette | undefined = $derived(chosenFavorite?.palette ?? chosenBitmap?.palette);
+  let chosenPalette: Palette = $derived(usablePalette ?? diagnosticPalette());
 
   function thumbnailScale(image: IndexedImage) {
     const largestSide = Math.max(image.width, image.height);
@@ -375,7 +405,10 @@
     }
   }
 
-  onMount(() => void loadPreparedCatalogue());
+  onMount(() => {
+    void loadCanonicalPalettes().then((palettes) => (favoritePalettes = palettes));
+    void loadPreparedCatalogue();
+  });
 
   $effect(() => {
     if (visibleEntries.length) void loadVisiblePreparedPage();
@@ -487,8 +520,8 @@
   async function exportIndexedRange() {
     error = '';
     try {
-      if (tab !== 'bitmap' && !chosenBitmap?.palette)
-        throw new Error('Load bitmaps.dat and select a valid bitmap palette before exporting sprites.');
+      if (tab !== 'bitmap' && !usablePalette)
+        throw new Error('Load the original bitmaps.dat to obtain a review palette before exporting sprites.');
       const ids = selectedIds();
       const selectedSprites = (
         await Promise.all(ids.map((id) => ensurePreparedAsset(tab, String(id).padStart(3, '0'))))
@@ -508,7 +541,7 @@
               height: image.height,
               pixels: image.pixels,
               alpha,
-              palette: image.kind === 'bitmap' ? image.palette! : chosenBitmap!.palette!
+              palette: image.kind === 'bitmap' ? image.palette! : usablePalette!
             },
             transparent
           )
@@ -520,7 +553,7 @@
       }
       downloadBlob(storedZip(entries), `${tab}-selected.zip`);
       const skipped = ids.length - selectedSprites.length;
-      status = `Exported ${entries.length} indexed PNGs${tab === 'bitmap' ? '' : ` using bitmap ${chosenBitmap!.id}`}${skipped ? `; skipped ${skipped} missing or unsupported records` : ''}.`;
+      status = `Exported ${entries.length} indexed PNGs${tab === 'bitmap' ? '' : ` using the palette from bitmap ${usablePalette ? paletteId : '…'}`}${skipped ? `; skipped ${skipped} missing or unsupported records` : ''}.`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
       status = 'Asset PNG export failed.';
@@ -746,29 +779,37 @@
           <label
             >Preview palette
             <select class="palette-id" bind:value={paletteId} disabled={!paletteChoices.length}>
-              {#if !paletteChoices.length}<option value="1">Load bitmaps.dat first</option>{/if}
-              {#each paletteChoices as bitmap (bitmap.id)}<option value={String(Number(bitmap.id))}
-                  >Bitmap #{bitmap.id} · {bitmap.width}×{bitmap.height}</option
-                >{/each}
+              {#if !paletteChoices.length}<option value="001">Load the original bitmaps.dat first</option
+                >{/if}
+              {#each paletteChoices as choice (choice.id)}
+                <option value={choice.id}>#{choice.id} · {choice.label}</option>
+              {/each}
             </select>
           </label>
           <span class="palette-state"
-            >{chosenBitmap
-              ? `Using the 256-color palette embedded in bitmap ${chosenBitmap.id}`
-              : 'Using diagnostic colors'}</span
+            >{chosenFavorite
+              ? `Using #${chosenFavorite.id} — ${chosenFavorite.label}`
+              : chosenBitmap
+                ? `Using #${chosenBitmap.id} ${chosenBitmap.width}×${chosenBitmap.height}`
+                : 'Using diagnostic colors'}</span
           >
         {/if}
         <label class="fit-previews"
           ><span>Fit artwork</span><input type="checkbox" bind:checked={fitPreviews} /></label
         >
       </section>
+      {#if tab !== 'bitmap' && (chosenFavorite || chosenBitmap)}
+        <p class="palette-note">
+          {chosenFavorite ? chosenFavorite.meaning : `The palette embedded in bitmap ${chosenBitmap!.id}.`}
+        </p>
+      {/if}
 
       {#if currentCatalogue.length}
         <GraphicsEditorControls
           bind:selection={exportSelection}
           bind:dragging
           {busy}
-          hasPalette={tab === 'bitmap' || !!chosenBitmap?.palette}
+          hasPalette={tab === 'bitmap' || !!usablePalette}
           modifiedCount={activeModified.size}
           archiveLabel={activeArchiveLabel}
           onExportPng={exportIndexedRange}
