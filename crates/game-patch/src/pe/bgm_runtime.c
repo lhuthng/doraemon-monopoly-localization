@@ -399,14 +399,14 @@ static void __stdcall BgmTimerCallback(UINT id, UINT message, DWORD user, DWORD 
 }
 
 static void stop_timer(void) {
-    if (state.timer) { timeKillEvent_(state.timer); state.timer=0; timeEndPeriod_(1); }
+    if (state.timer) { timeKillEvent_(state.timer); state.timer=0; timeEndPeriod_(10); }
 }
 
 static int start_timer(void) {
     if (state.timer) return 1;
-    timeBeginPeriod_(1);
+    timeBeginPeriod_(10);
     state.timer=timeSetEvent_(250,10,(void*)BgmTimerCallback,state.generation,1);
-    if (!state.timer) { timeEndPeriod_(1); return 0; }
+    if (!state.timer) { timeEndPeriod_(10); return 0; }
     return 1;
 }
 

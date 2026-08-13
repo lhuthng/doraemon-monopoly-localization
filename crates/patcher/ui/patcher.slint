@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, GroupBox, ListView } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, GroupBox, ListView, Palette } from "std-widgets.slint";
 
 export struct LogRow {
     text: string,
@@ -25,6 +25,10 @@ export component PatcherUI inherits Window {
     in-out property <bool> primary-8bit;
     in-out property <bool> reduce-bgm;
     in-out property <bool> optimize-voice;
+
+    in-out property <[string]> clock-items;
+    in-out property <int> clock-index;
+    in property <string> clock-hint;
 
     in property <string> music-hint;
     in property <string> subtitle;
@@ -152,11 +156,27 @@ export component PatcherUI inherits Window {
                         }
                     }
                     HorizontalLayout {
+                        spacing: 12px;
+                        Text { text: "Game speed:"; vertical-alignment: center; }
+                        clock := ComboBox {
+                            model: root.clock-items;
+                            current-index <=> root.clock-index;
+                            enabled: root.options-enabled;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    Text {
+                        text: root.clock-hint;
+                        wrap: word-wrap;
+                        color: Palette.foreground;
+                        font-size: 12px;
+                    }
+                    HorizontalLayout {
                         spacing: 8px;
                         Text {
                             text: root.music-hint;
                             wrap: word-wrap;
-                            color: #64748b;
+                            color: Palette.foreground;
                             font-size: 12px;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
@@ -204,7 +224,7 @@ export component PatcherUI inherits Window {
                     }
                     HorizontalLayout {
                         spacing: 12px;
-                        Text { text: "Quality"; color: #475569; vertical-alignment: center; }
+                        Text { text: "Quality"; color: Palette.foreground; vertical-alignment: center; }
                         quality := ComboBox {
                             model: root.quality-items;
                             current-index <=> root.quality-index;
@@ -223,7 +243,7 @@ export component PatcherUI inherits Window {
                 title: " Progress ";
                 Rectangle {
                     height: 20px;
-                    background: #e2e8f0;
+                    background: Palette.alternate-background;
                     border-radius: 4px;
                     clip: true;
                     Rectangle {
@@ -278,8 +298,10 @@ export component PatcherUI inherits Window {
                 Rectangle {
                     width: 480px;
                     height: 190px;
-                    background: white;
+                    background: Palette.alternate-background;
                     border-radius: 10px;
+                    border-width: 1px;
+                    border-color: Palette.border;
                     VerticalLayout {
                         padding: 22px;
                         spacing: 12px;
@@ -287,12 +309,12 @@ export component PatcherUI inherits Window {
                             text: root.dialog-title;
                             font-size: 18px;
                             font-weight: 700;
-                            color: #1e293b;
+                            color: Palette.foreground;
                         }
                         Text {
                             text: root.dialog-text;
                             wrap: word-wrap;
-                            color: #475569;
+                            color: Palette.foreground;
                         }
                         HorizontalLayout {
                             alignment: end;
@@ -318,8 +340,10 @@ export component PatcherUI inherits Window {
                 Rectangle {
                     width: 480px;
                     height: 190px;
-                    background: white;
+                    background: Palette.alternate-background;
                     border-radius: 10px;
+                    border-width: 1px;
+                    border-color: Palette.border;
                     VerticalLayout {
                         padding: 24px;
                         spacing: 14px;
@@ -327,11 +351,11 @@ export component PatcherUI inherits Window {
                             text: root.play-dialog-title;
                             font-size: 18px;
                             font-weight: 700;
-                            color: #1e293b;
+                            color: Palette.foreground;
                         }
                         Text {
                             text: "Choose which build to play:";
-                            color: #475569;
+                            color: Palette.foreground;
                         }
                         play := ComboBox {
                             model: root.play-build-items;

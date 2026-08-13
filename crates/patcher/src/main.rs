@@ -283,6 +283,26 @@ mod windows_app {
         restore_mode: bool, wrapper_available: bool, can_play: bool,
     }
 
+    /// Timer periods in milliseconds per tick, keyed by label. `None` keeps the
+    /// stock 33 ms tick. The game counts ticks instead of measuring time, so a
+    /// shorter tick scales everything up by the multiplier shown.
+    const CLOCK_PRESETS: &[(&str, Option<u8>)] = &[
+        ("Normal", None),
+        ("1.5x faster", Some(22)),
+        ("2x faster", Some(17)),
+        ("3x faster", Some(11)),
+        ("4x faster", Some(8)),
+    ];
+
+    const CLOCK_HINT: &str =
+        "Only changes the game's normal speed; the in-game fast setting is unaffected.";
+
+    fn clock_choice(ui: &PatcherUI) -> Option<u8> {
+        CLOCK_PRESETS
+            .get(ui.get_clock_index().max(0) as usize)
+            .and_then(|(_, period)| *period)
+    }
+
     pub fn run() -> Result<(), String> {
         let executable = std::env::current_exe().map_err(|e| e.to_string())?;
         let restore_mode = executable.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("Restore.exe"));
@@ -330,6 +350,10 @@ mod windows_app {
         ui.set_log_model(log_model.clone().into());
         let quality = ["Original", "High", "Balanced", "Compact"].into_iter().map(SharedString::from).collect::<Vec<_>>();
         ui.set_quality_items(slint::VecModel::from_slice(&quality));
+        let clocks = CLOCK_PRESETS.iter().map(|(label, _)| SharedString::from(*label)).collect::<Vec<_>>();
+        ui.set_clock_items(slint::VecModel::from_slice(&clocks));
+        ui.set_clock_index(0);
+        ui.set_clock_hint(SharedString::from(CLOCK_HINT));
         ui.set_language_original(true);
         ui.set_language_english(english_available);
         ui.set_language_vietnamese(vietnamese_available);
@@ -434,6 +458,7 @@ mod windows_app {
                 let options = ApplyOptions {
                     no_disc: ui.get_no_disc(), no_reg: ui.get_no_reg(), local_audio: ui.get_local_audio(),
                     modern_volume: ui.get_modern_volume(), primary_audio_8bit: ui.get_primary_8bit(),
+                    game_clock_ms: clock_choice(&ui),
                     cue: find_cue(&g), reduce_bgm: false, optimize_voice: false,
                     voice_compression: doraemon_game_patch::voice::Compression::Original, keep_compressed_audio: false,
                 };
@@ -487,6 +512,7 @@ mod windows_app {
                 write_diagnostic(&g, TaskState::Working, "Apply audio button pressed.");
                 let options = ApplyOptions {
                     no_disc: false, no_reg: false, local_audio: false, modern_volume: false, primary_audio_8bit: false,
+                    game_clock_ms: None,
                     cue: find_cue(&g), reduce_bgm: ui.get_reduce_bgm(), optimize_voice: ui.get_optimize_voice(),
                     voice_compression: match ui.get_quality_index() { 1 => doraemon_game_patch::voice::Compression::High, 2 => doraemon_game_patch::voice::Compression::Balanced, 3 => doraemon_game_patch::voice::Compression::Compact, _ => doraemon_game_patch::voice::Compression::Original },
                     keep_compressed_audio: false,
@@ -666,10 +692,12 @@ mod windows_app {
             pending.options.no_disc = false; pending.options.no_reg = false;
             pending.options.local_audio = false; pending.options.modern_volume = false;
             pending.options.primary_audio_8bit = false;
+            pending.options.game_clock_ms = None;
         }
         let PendingApply { game: g, payload, icon, options, executable } = pending;
         let wants = payload.language != payload::Language::Custom || options.no_disc || options.no_reg
             || options.local_audio || options.modern_volume || options.primary_audio_8bit
+            || options.game_clock_ms.is_some()
             || options.reduce_bgm || options.optimize_voice;
         let tx = tx.clone();
         let game = g.clone();
@@ -754,9 +782,14 @@ mod windows_app {
         thread::spawn(move || {
             let result = panic::catch_unwind(AssertUnwindSafe(|| {
                 let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: "Restoring the original files before installing the split build…".into(), progress: Some(3) }));
+                // The backup is the source of truth for a reapply: the install
+                // reads every original out of backup/original/. All we do here
+                // is clear away what the previous install created, so changing
+                // the language selection cannot leave stale builds behind.
+                // Either manifest may be absent, so neither is required.
                 if let Ok(_) = install::restore_split(&game) {}
                 let backup = game.join("backup");
-                if backup.is_dir() { let _ = install::restore(&backup)?; }
+                if backup.join("manifest.json").is_file() { let _ = install::restore(&backup)?; }
                 let mut report = install::apply_split_with_progress(&game, &selection, &options, &executable, &mut |u| { let _ = tx.send(UiEvent::Progress(u)); })?;
                 for lang in &selection.languages {
                     let exe_name = format!("Doraemon-{}.exe", lang.language.suffix());

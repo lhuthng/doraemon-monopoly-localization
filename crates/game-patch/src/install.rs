@@ -18,6 +18,10 @@ pub struct ApplyOptions {
     pub local_audio: bool,
     pub modern_volume: bool,
     pub primary_audio_8bit: bool,
+    /// Multimedia-timer period in milliseconds. `None` keeps the stock ~30 Hz
+    /// clock; a shorter period speeds up everything the game paces by counting
+    /// timer ticks, which is the normal in-game speed setting.
+    pub game_clock_ms: Option<u8>,
     pub cue: Option<PathBuf>,
     pub reduce_bgm: bool,
     pub optimize_voice: bool,
@@ -481,6 +485,15 @@ fn apply_compatibility(
             result
                 .actions
                 .push("set primary DirectSound output to 22,050 Hz stereo 8-bit".into());
+        }
+        result.bytes = bytes;
+    }
+    if let Some(period) = options.game_clock_ms {
+        let bytes = pe::patch_game_clock(&result.bytes, period)?;
+        if bytes != result.bytes {
+            result
+                .actions
+                .push(format!("set the game clock to a {period} ms tick"));
         }
         result.bytes = bytes;
     }
@@ -1130,6 +1143,15 @@ pub fn apply_with_progress(
         }
         exe_patch.bytes = bytes;
     }
+    if let Some(period) = options.game_clock_ms {
+        let bytes = pe::patch_game_clock(&exe_patch.bytes, period)?;
+        if bytes != exe_patch.bytes {
+            exe_patch
+                .actions
+                .push(format!("set the game clock to a {period} ms tick"));
+        }
+        exe_patch.bytes = bytes;
+    }
     if local_audio.enabled && !exe_patch.local_audio_supported {
         return Err(
             "this executable layout cannot safely use the local DirectSound music backend".into(),
@@ -1582,6 +1604,9 @@ fn plan_split(
         if options.primary_audio_8bit {
             bytes = pe::patch_primary_directsound_8bit(&bytes)?;
         }
+        if let Some(period) = options.game_clock_ms {
+            bytes = pe::patch_game_clock(&bytes, period)?;
+        }
         if !exe_mapping[i].is_empty() {
             bytes = pe::rewrite_resource_paths(&bytes, &exe_mapping[i])?;
         }
@@ -1607,6 +1632,9 @@ fn plan_split(
         .bytes;
         if options.primary_audio_8bit {
             bytes = pe::patch_primary_directsound_8bit(&bytes)?;
+        }
+        if let Some(period) = options.game_clock_ms {
+            bytes = pe::patch_game_clock(&bytes, period)?;
         }
         created.push(("Doraemon.exe".to_string(), bytes));
         removed_originals.push("Doraemon.exe".to_string());
@@ -1712,9 +1740,13 @@ pub fn apply_split_with_progress(
     let backup = folder.join("backup");
     let backup_original = backup.join("original");
     fs::create_dir_all(&backup_original).map_err(|e| e.to_string())?;
-    let exe_path = find_file(folder, "Doraemon.exe")?;
     let backup_exe = backup_original.join("Doraemon.exe");
     if !backup_exe.exists() {
+        // Only consult the live root while seeding the backup. Afterwards the
+        // backup copy is authoritative: an install that excludes the
+        // `<original>` build deletes the root Doraemon.exe, and a reapply must
+        // still work from the backup alone.
+        let exe_path = find_file(folder, "Doraemon.exe")?;
         fs::copy(&exe_path, &backup_exe).map_err(|e| format!("backup Doraemon.exe: {e}"))?;
     }
     let mut base_resources: HashMap<String, Vec<u8>> = HashMap::new();
@@ -2063,6 +2095,95 @@ mod tests {
         fs::remove_dir_all(folder).unwrap();
     }
 
+    /// Reapplying must work off `backup/original/`, never the live root. The
+    /// root is not a reliable source after the first install: a selection
+    /// without `<original>` deletes the root `Doraemon.exe` outright, and every
+    /// remaining root file is already patched.
+    #[test]
+    fn split_apply_reapplies_from_the_backup_when_fixtures_are_available() {
+        let (Ok(data_dir), Ok(parts_dir)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PARTS_ENGLISH"),
+        ) else {
+            return;
+        };
+        let mut parts = Vec::new();
+        for name in ["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"] {
+            let bytes = std::fs::read(Path::new(&parts_dir).join(name)).unwrap();
+            parts.push(crate::payload::decode_part(&bytes).unwrap());
+        }
+        let payload = crate::merge_parts(&parts).unwrap();
+
+        let folder = std::env::temp_dir().join(format!(
+            "doraemon-split-reapply-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir(&folder).unwrap();
+        fs::copy(Path::new(&data_dir).join("Doraemon.exe"), folder.join("Doraemon.exe")).unwrap();
+        for name in ["strings.dat", "voice.dat", "sysfont.dat", "Sprite1.dat", "sprite2.dat", "bitmaps.dat"] {
+            fs::copy(Path::new(&data_dir).join(name), folder.join(name)).unwrap();
+        }
+
+        // No `<original>` build, so the root Doraemon.exe is removed.
+        let selection = SplitSelection {
+            include_original: false,
+            languages: vec![SplitLanguage {
+                language: Language::English,
+                payload: payload.clone(),
+                icon: None,
+            }],
+        };
+        let options = ApplyOptions {
+            no_disc: true,
+            no_reg: true,
+            game_clock_ms: Some(17),
+            ..ApplyOptions::default()
+        };
+        let run = |options: &ApplyOptions| {
+            apply_split_with_progress(
+                &folder,
+                &selection,
+                options,
+                &std::env::current_exe().unwrap(),
+                &mut |_| {},
+            )
+        };
+        run(&options).unwrap();
+        assert!(
+            !folder.join("Doraemon.exe").exists(),
+            "a selection without <original> must remove the root executable"
+        );
+        let first = fs::read(folder.join("Doraemon-en.exe")).unwrap();
+
+        // A split install leaves no manifest.json, so anything on the reapply
+        // path that demands one is a bug.
+        assert!(!folder.join("backup/manifest.json").exists());
+
+        // Reapply with the root executable gone: the backup must carry it.
+        run(&options).unwrap();
+        assert_eq!(
+            fs::read(folder.join("Doraemon-en.exe")).unwrap(),
+            first,
+            "reapplying the same options must be byte-identical"
+        );
+
+        // Changing an option must take effect on the reapply rather than
+        // stacking on top of the previously patched bytes.
+        let stock = ApplyOptions { game_clock_ms: None, ..options.clone() };
+        run(&stock).unwrap();
+        let reverted = fs::read(folder.join("Doraemon-en.exe")).unwrap();
+        assert_ne!(reverted, first, "clearing the game clock must change the build");
+        run(&options).unwrap();
+        assert_eq!(
+            fs::read(folder.join("Doraemon-en.exe")).unwrap(),
+            first,
+            "re-selecting the game clock must reproduce the earlier build exactly"
+        );
+
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
     #[test]
     fn local_music_files_are_never_staged_when_option_is_off() {
         let folder = std::env::temp_dir().join(format!(
@@ -2251,6 +2372,7 @@ mod tests {
                 local_audio: true,
                 modern_volume: true,
                 primary_audio_8bit: true,
+                game_clock_ms: None,
                 cue: Some(PathBuf::from(cue_path)),
                 ..ApplyOptions::default()
             },

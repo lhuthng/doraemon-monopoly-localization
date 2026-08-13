@@ -959,6 +959,96 @@ pub fn patch_primary_directsound_8bit(input: &[u8]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// The game keeps time by counting ticks of a single periodic multimedia
+/// timer, installed at virtual address `0x0048D6C0`:
+///
+/// ```text
+/// 0048D740  push 0x48D7FC          ; tick callback; increments [0x004CDBE4]
+/// 0048D745  mov  eax, [ebp-4]      ; resolution, already clamped to timeGetDevCaps
+/// 0048D748  push eax
+/// 0048D749  push 0x21              ; period in milliseconds  <- the byte we patch
+/// 0048D74B  call [timeSetEvent]
+/// ```
+///
+/// Every wait in the game is written as `deadline = [0x004CDBE4] + [0x004C85FC]`,
+/// so this period is the unit of every animation, message delay and movement
+/// step while the in-game speed setting is on "normal". Shortening it makes the
+/// normal setting run proportionally faster, which is what emulated hosts need
+/// when the guest cannot service 30 timer callbacks per real second. The
+/// in-game "fast" setting stores 0 in `[0x004C85FC]` and stops consulting the
+/// clock at all, so it is unaffected either way.
+const GAME_CLOCK_GUARD_PREFIX: &[u8] = &[
+    0x68, 0xfc, 0xd7, 0x48, 0x00, // push offset tick_callback
+    0x8b, 0x45, 0xfc, // mov eax, dword ptr [ebp - 4]
+    0x50, // push eax
+    0x6a, // push imm8 — the period byte follows
+];
+const GAME_CLOCK_GUARD_SUFFIX: &[u8] = &[
+    0xff, 0x15, 0x98, 0x92, 0x4b, 0x00, // call dword ptr [WINMM.timeSetEvent]
+];
+
+/// The stock timer period in milliseconds, giving the original ~30 Hz clock.
+pub const GAME_CLOCK_ORIGINAL_MS: u8 = 0x21;
+
+/// The largest period the instruction can carry. The period travels in a
+/// `push imm8`, which sign-extends, while `timeSetEvent` reads it as an
+/// unsigned `UINT` — so anything above `0x7f` would arrive as a nonsensically
+/// long delay rather than a short one.
+pub const GAME_CLOCK_MAX_MS: u8 = 0x7f;
+
+/// Locates the period byte of the guarded `timeSetEvent` call. The period
+/// itself is excluded from the guard so that an already-retimed executable is
+/// still recognised and can be retimed again or put back to stock.
+fn game_clock_offset(input: &[u8]) -> Result<usize> {
+    let mut matches = input
+        .windows(GAME_CLOCK_GUARD_PREFIX.len())
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == GAME_CLOCK_GUARD_PREFIX)
+        .map(|(offset, _)| offset)
+        .filter(|offset| {
+            let suffix = offset + GAME_CLOCK_GUARD_PREFIX.len() + 1;
+            input
+                .get(suffix..suffix + GAME_CLOCK_GUARD_SUFFIX.len())
+                .is_some_and(|bytes| bytes == GAME_CLOCK_GUARD_SUFFIX)
+        });
+    let first = matches
+        .next()
+        .ok_or("could not locate the verified game-clock timeSetEvent call")?;
+    if matches.next().is_some() {
+        return Err("the game-clock timeSetEvent guard matched more than once".into());
+    }
+    Ok(first + GAME_CLOCK_GUARD_PREFIX.len())
+}
+
+/// Rewrites the multimedia-timer period the game asks for, leaving every other
+/// byte of the executable untouched. `period_ms` is the new tick length in
+/// milliseconds; [`GAME_CLOCK_ORIGINAL_MS`] puts the stock 33 ms tick back.
+pub fn patch_game_clock(input: &[u8], period_ms: u8) -> Result<Vec<u8>> {
+    if period_ms == 0 || period_ms > GAME_CLOCK_MAX_MS {
+        return Err(format!(
+            "the game clock period must be between 1 and {GAME_CLOCK_MAX_MS} milliseconds"
+        ));
+    }
+    let offset = game_clock_offset(input)?;
+    if input[offset] == period_ms {
+        return Ok(input.to_vec());
+    }
+    let mut output = input.to_vec();
+    output[offset] = period_ms;
+    if input
+        .iter()
+        .zip(&output)
+        .enumerate()
+        .any(|(index, (before, after))| before != after && index != offset)
+    {
+        return Err("game-clock verification found an unrelated byte change".into());
+    }
+    if game_clock_offset(&output)? != offset || output[offset] != period_ms {
+        return Err("game-clock verification failed".into());
+    }
+    Ok(output)
+}
+
 /// Convenience wrapper for the default no-disc portable configuration.
 pub fn patch_portable(verified: &[u8]) -> Result<Vec<u8>> {
     patch_portable_options(verified, true, true, true, false)
@@ -2301,6 +2391,88 @@ mod tests {
         assert!(patch_primary_directsound_8bit(&duplicate).is_err());
     }
 
+    /// Builds the smallest byte string that satisfies the game-clock guard.
+    fn game_clock_fixture(period: u8) -> Vec<u8> {
+        let mut bytes = vec![0u8; 8];
+        bytes.extend_from_slice(GAME_CLOCK_GUARD_PREFIX);
+        bytes.push(period);
+        bytes.extend_from_slice(GAME_CLOCK_GUARD_SUFFIX);
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes
+    }
+
+    #[test]
+    fn game_clock_rewrites_only_the_period_byte() {
+        let original = game_clock_fixture(GAME_CLOCK_ORIGINAL_MS);
+        let faster = patch_game_clock(&original, 17).unwrap();
+        assert_eq!(faster.len(), original.len());
+        let changed: Vec<_> = original
+            .iter()
+            .zip(&faster)
+            .enumerate()
+            .filter(|(_, (before, after))| before != after)
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(changed.len(), 1, "exactly one byte may change");
+        assert_eq!(faster[changed[0]], 17);
+    }
+
+    #[test]
+    fn game_clock_is_idempotent_and_reversible() {
+        let original = game_clock_fixture(GAME_CLOCK_ORIGINAL_MS);
+        let faster = patch_game_clock(&original, 11).unwrap();
+        assert_eq!(patch_game_clock(&faster, 11).unwrap(), faster);
+        // An already-retimed executable stays recognisable, so the stock clock
+        // can be restored without going through a backup.
+        assert_eq!(
+            patch_game_clock(&faster, GAME_CLOCK_ORIGINAL_MS).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn game_clock_rejects_bad_periods_and_ambiguous_input() {
+        let original = game_clock_fixture(GAME_CLOCK_ORIGINAL_MS);
+        assert!(patch_game_clock(&original, 0).is_err());
+        // Above 0x7f the `push imm8` sign-extends into a huge unsigned delay.
+        assert!(patch_game_clock(&original, 0x80).is_err());
+        assert!(patch_game_clock(&original, GAME_CLOCK_MAX_MS).is_ok());
+        assert!(patch_game_clock(&[0; 128], 17).is_err());
+        let mut duplicate = game_clock_fixture(GAME_CLOCK_ORIGINAL_MS);
+        duplicate.extend_from_slice(&game_clock_fixture(GAME_CLOCK_ORIGINAL_MS));
+        assert!(patch_game_clock(&duplicate, 17).is_err());
+    }
+
+    #[test]
+    fn game_clock_matches_the_real_executable_when_fixture_is_available() {
+        let Ok(folder) = std::env::var("DORAEMON_TEST_DATA_DIR") else {
+            return;
+        };
+        let original = std::fs::read(std::path::Path::new(&folder).join("Doraemon.exe")).unwrap();
+        // 0x0048D749 is `push 0x21`; .text has equal RVA and raw offsets here.
+        const PERIOD_FILE_OFFSET: usize = 0x8d74a;
+        assert_eq!(original[PERIOD_FILE_OFFSET], GAME_CLOCK_ORIGINAL_MS);
+        assert_eq!(game_clock_offset(&original).unwrap(), PERIOD_FILE_OFFSET);
+
+        let faster = patch_game_clock(&original, 17).unwrap();
+        assert_eq!(faster.len(), original.len());
+        assert_eq!(faster[PERIOD_FILE_OFFSET], 17);
+        assert_eq!(
+            patch_game_clock(&faster, GAME_CLOCK_ORIGINAL_MS).unwrap(),
+            original
+        );
+
+        // The clock lives far from every other edit, so it must compose with
+        // the compatibility patches in either order.
+        let compatible = patch_compatible(&original, true, false, true, true).unwrap().bytes;
+        let both = patch_game_clock(&compatible, 17).unwrap();
+        assert_eq!(both[PERIOD_FILE_OFFSET], 17);
+        assert_eq!(
+            patch_compatible(&faster, true, false, true, true).unwrap().bytes,
+            both
+        );
+    }
+
     #[test]
     fn old_local_music_runtime_upgrades_when_fixture_is_available() {
         let Ok(path) = std::env::var("DORAEMON_TEST_PORTABLE_EXE") else {
@@ -2686,3 +2858,5 @@ mod tests {
         assert!(!december.local_audio_supported);
     }
 }
+
+
