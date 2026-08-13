@@ -63,6 +63,10 @@ await copyFile(resolve(originSource, 'strings.dat'), resolve(destination, 'strin
 await copyFile(resolve(originSource, 'voice.dat'), resolve(destination, 'voice-origin.dat'));
 for (const file of [...files, ...mapFiles])
   await copyFile(resolve(languageSource, file), resolve(destination, file));
+// Font review-only originals are optional in the language workspace; stage them
+// when a version is present so the Font Studio can inspect their glyph leaves.
+for (const file of ['Fonts.dat', 'chifont.dat'])
+  if (languageAvailable.has(file)) await copyFile(resolve(languageSource, file), resolve(destination, file));
 await writeFile(resolve(destination, '.dubbing-language.json'), `${JSON.stringify({ language })}\n`);
 
 const prepare = Bun.spawn(['bun', 'scripts/prepare-graphics.ts'], {

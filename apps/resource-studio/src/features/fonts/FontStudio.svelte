@@ -13,7 +13,11 @@
   } from '@doraemon-monopoly/dubbing-core';
   import { storedZip } from '@doraemon-monopoly/dubbing-core';
   import FontGlyph from './components/FontGlyph.svelte';
+  import FontsDatReview from './components/FontsDatReview.svelte';
+  import ChiFontReview from './components/ChiFontReview.svelte';
 
+  type FontMode = 'sysfont' | 'fonts-dat' | 'chifont';
+  let mode = $state<FontMode>('sysfont');
   let font: SysFont | undefined = $state();
   let family = $state<'original' | 'vietnamese'>('original');
   let variant = $state(0);
@@ -166,6 +170,7 @@
 
   function drop(event: DragEvent) {
     event.preventDefault();
+    if (mode !== 'sysfont') return;
     dragging = false;
     if (!event.dataTransfer?.files.length) return;
     const files = Array.from(event.dataTransfer.files);
@@ -189,96 +194,115 @@
 <main class="font-page">
   <StudioHeader
     title="Font studio"
-    description={`Edit sysfont.dat.${hasVietnamese ? ' Five proportional Vietnamese CC/CD banks are available.' : ''}`}
+    description={`Inspect the game's font resources.${hasVietnamese ? ' Five proportional Vietnamese CC/CD banks are available.' : ''}`}
     active="fonts"
   />
-  <section class="resource-actions font-resource-actions" aria-label="Font file">
-    <label class="load-button"
-      >Load sysfont.dat<input
-        type="file"
-        accept=".dat,application/octet-stream"
-        onchange={fontInput}
-      /></label
+  <nav class="font-tabs" aria-label="Font resource">
+    <button class:active={mode === 'sysfont'} onclick={() => (mode = 'sysfont')}
+      >Sysfont editor <small>edit sysfont.dat</small></button
     >
-  </section>
-  <p class="status">{status}</p>
-  {#if error}<p class="error">{error}</p>{/if}
-  {#if !font}
-    <section
-      class="drop-zone"
-      role="group"
-      aria-label="Load sysfont"
-      ondragover={(event) => event.preventDefault()}
-      ondrop={drop}
+    <button class:active={mode === 'fonts-dat'} onclick={() => (mode = 'fonts-dat')}
+      >Fonts.dat glyphs <small>review 0x8002 leaves</small></button
     >
-      <strong>Load your own sysfont.dat</strong><span
-        >Drop the file here or use the button above. No game font is bundled with the Studio.</span
+    <button class:active={mode === 'chifont'} onclick={() => (mode = 'chifont')}
+      >Chinese atlas <small>review chifont.dat</small></button
+    >
+  </nav>
+  {#if mode === 'fonts-dat'}
+    <FontsDatReview />
+  {:else if mode === 'chifont'}
+    <ChiFontReview />
+  {:else}
+    <section class="resource-actions font-resource-actions" aria-label="Font file">
+      <label class="load-button"
+        >Load sysfont.dat<input
+          type="file"
+          accept=".dat,application/octet-stream"
+          onchange={fontInput}
+        /></label
       >
     </section>
-  {/if}
-  {#if font}
-    <nav class="font-tabs" aria-label="Font family">
-      <button class:active={family === 'original'} onclick={() => (family = 'original')}
-        >Original sysfont</button
+    <p class="status">{status}</p>
+    {#if error}<p class="error">{error}</p>{/if}
+    {#if !font}
+      <section
+        class="drop-zone"
+        role="group"
+        aria-label="Load sysfont"
+        ondragover={(event) => event.preventDefault()}
+        ondrop={drop}
       >
-      {#if hasVietnamese}
-        <button class:active={family === 'vietnamese'} onclick={() => (family = 'vietnamese')}
-          >Vietnamese CC/CD</button
+        <strong>Load your own sysfont.dat</strong><span
+          >Drop the file here or use the button above. No game font is bundled with the Studio.</span
         >
-      {/if}
-    </nav>
-    <nav class="font-tabs" aria-label="Font variant">
-      {#each Array.from({ length: 5 }, (_, index) => index) as index (index)}<button
-          class:active={variant === index}
-          onclick={() => (variant = index)}
-          >Variant {index}
-          <small
-            >{family === 'original'
-              ? `${index * 128}–${index * 128 + 127}`
-              : `${vietnameseGlyphIndex(index, 0)}–${vietnameseGlyphIndex(index, 255)}`}</small
-          ></button
-        >{/each}
-    </nav>
-    <section
-      class:dragging
-      class="font-import"
-      role="group"
-      aria-label="Sysfont PNG import"
-      ondragover={(event) => {
-        event.preventDefault();
-        dragging = true;
-      }}
-      ondragleave={() => (dragging = false)}
-      ondrop={drop}
-    >
-      <strong>Drop replacement PNGs here</strong><span
-        >Name each image by its absolute glyph index: <code>0.png</code> through <code>1919.png</code>.
-        Transparent pixels become background; every non-transparent pixel becomes a drawn black font pixel.</span
-      >
-    </section>
-    <div class="font-actions">
-      <button type="button" onclick={exportVariant}>Export variant {variant} PNGs</button><button
-        type="button"
-        class="primary"
-        disabled={!modified.size}
-        onclick={exportFont}>Export modified sysfont.dat</button
-      ><span>{modified.size} modified glyphs</span>
-    </div>
-    <p class="subtle font-note">
-      Vietnamese slots use <code>640 + variant × 256 + slot</code>. Variant 0 is generated initially; variants
-      1–4 are valid transparent placeholders ready for PNG replacement.
-    </p>
-    <section class="font-grid">
-      {#each font.glyphs.slice(visibleStart(), visibleStart() + visibleCount()) as glyph, index (visibleStart() + index)}<article
-          class:modified={modified.has(visibleStart() + index)}
+      </section>
+    {/if}
+    {#if font}
+      <nav class="font-tabs" aria-label="Font family">
+        <button class:active={family === 'original'} onclick={() => (family = 'original')}
+          >Original sysfont</button
         >
-          <div class="glyph-preview"><FontGlyph {glyph} /></div>
-          <code>#{(visibleStart() + index).toString().padStart(4, '0')}</code><strong
-            >{family === 'original' ? label(index) : VIETNAMESE_CHARACTERS[index] || 'reserved'}</strong
-          >{#if family === 'vietnamese'}<small>{vietnameseCodeLabel(index)}</small>{/if}<small
-            >{glyph.width} × {glyph.height}px</small
+        {#if hasVietnamese}
+          <button class:active={family === 'vietnamese'} onclick={() => (family = 'vietnamese')}
+            >Vietnamese CC/CD</button
           >
-        </article>{/each}
-    </section>
+        {/if}
+      </nav>
+      <nav class="font-tabs" aria-label="Font variant">
+        {#each Array.from({ length: 5 }, (_, index) => index) as index (index)}<button
+            class:active={variant === index}
+            onclick={() => (variant = index)}
+            >Variant {index}
+            <small
+              >{family === 'original'
+                ? `${index * 128}–${index * 128 + 127}`
+                : `${vietnameseGlyphIndex(index, 0)}–${vietnameseGlyphIndex(index, 255)}`}</small
+            ></button
+          >{/each}
+      </nav>
+      <section
+        class:dragging
+        class="font-import"
+        role="group"
+        aria-label="Sysfont PNG import"
+        ondragover={(event) => {
+          event.preventDefault();
+          dragging = true;
+        }}
+        ondragleave={() => (dragging = false)}
+        ondrop={drop}
+      >
+        <strong>Drop replacement PNGs here</strong><span
+          >Name each image by its absolute glyph index: <code>0.png</code> through <code>1919.png</code>.
+          Transparent pixels become background; every non-transparent pixel becomes a drawn black font pixel.</span
+        >
+      </section>
+      <div class="font-actions">
+        <button type="button" onclick={exportVariant}>Export variant {variant} PNGs</button><button
+          type="button"
+          class="primary"
+          disabled={!modified.size}
+          onclick={exportFont}>Export modified sysfont.dat</button
+        ><span>{modified.size} modified glyphs</span>
+      </div>
+      <p class="subtle font-note">
+        Vietnamese slots use <code>640 + variant × 256 + slot</code>. Variant 0 is
+        <strong>bootstrap art only</strong> — its glyphs are auto-generated by stamping marks at guessed positions
+        and most are incorrect; variants 1–4 are valid transparent placeholders. Fix every Vietnamese glyph via
+        PNG replacement (export, edit, re-import) before release; never ship the generated glyphs as-is.
+      </p>
+      <section class="font-grid">
+        {#each font.glyphs.slice(visibleStart(), visibleStart() + visibleCount()) as glyph, index (visibleStart() + index)}<article
+            class:modified={modified.has(visibleStart() + index)}
+          >
+            <div class="glyph-preview"><FontGlyph {glyph} /></div>
+            <code>#{(visibleStart() + index).toString().padStart(4, '0')}</code><strong
+              >{family === 'original' ? label(index) : VIETNAMESE_CHARACTERS[index] || 'reserved'}</strong
+            >{#if family === 'vietnamese'}<small>{vietnameseCodeLabel(index)}</small>{/if}<small
+              >{glyph.width} × {glyph.height}px</small
+            >
+          </article>{/each}
+      </section>
+    {/if}
   {/if}
 </main>

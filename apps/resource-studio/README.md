@@ -38,7 +38,7 @@ bun run build
 | --- | --- | --- |
 | `/` | Translation Studio | `strings.dat`, `voice.dat`, optional `sysfont.dat` |
 | `/assets` | Graphics Studio | `bitmaps.dat`, `Sprite1.dat`, `sprite2.dat` |
-| `/fonts` | Font Studio | `sysfont.dat`, optional numbered PNG replacements |
+| `/fonts` | Font Studio | `sysfont.dat` (edit), optional `Fonts.dat`/`chifont.dat` glyph reviews |
 
 Optional ignored copies may be placed under `public/game/` using the canonical
 filenames. Missing optional files show an empty state instead of failing the
@@ -81,6 +81,10 @@ should only be used intentionally.
 - Sprite1 preserves its hotspot when resized; Sprite2 has no hotspot fields.
 - Untouched archive records remain byte-for-byte unchanged.
 - Font Studio can extend a 640-record sysfont to five Vietnamese CC/CD banks.
+  The generated variant-0 glyphs are **bootstrap art only** — accent marks are
+  stamped at guessed positions and most are incorrect. Hand-correct them via the
+  PNG export/import loop (export a variant, fix the numbered PNGs, re-import)
+  before they are used in a release; never ship the generated glyphs as-is.
 
 The Rust workspace handles executable patching, font release generation,
 backup/restore, and disc-audio extraction. Resource Studio handles browser-side

@@ -546,6 +546,29 @@ export function validateChiFont(data: Uint8Array) {
   return data.length / 32;
 }
 
+export type ChiGlyph = {
+  index: number;
+  /** 16×16 one-bit bitmap, row-major; `true` is a drawn (ink) pixel. */
+  pixels: boolean[];
+};
+
+/** Decodes `chifont.dat`, the headerless 16×16 Chinese glyph atlas. Each of the
+ * `count` glyphs is 32 bytes: 16 rows of `u16`, most-significant bit first. */
+export function parseChiFont(data: Uint8Array): ChiGlyph[] {
+  const count = validateChiFont(data);
+  const glyphs: ChiGlyph[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const record = data.subarray(index * 32, index * 32 + 32);
+    const pixels: boolean[] = [];
+    for (let row = 0; row < 16; row += 1) {
+      const bits = (record[row * 2] << 8) | record[row * 2 + 1];
+      for (let column = 0; column < 16; column += 1) pixels.push((bits & (0x8000 >> column)) !== 0);
+    }
+    glyphs.push({ index, pixels });
+  }
+  return glyphs;
+}
+
 export function tokenLabel(token: GlyphToken) {
   if (token.type === 'glyph') return `g${token.id}`;
   if (token.type === 'vietnamese') return `vi${token.slot}:${token.text}`;

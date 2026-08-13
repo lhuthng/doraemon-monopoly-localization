@@ -143,6 +143,13 @@ prepare: dependencies check-mingw check-resources check-payloads
 	@cp $(BASE_DIR)/voice.dat apps/resource-studio/local-game/origin/voice.dat
 	@cargo run -p patch-build -- materialize-parts --parts-dir content/patches/english --base-dir $(BASE_DIR) --output-dir apps/resource-studio/local-game/english
 	@cargo run -p patch-build -- materialize-parts --parts-dir content/patches/vietnamese --base-dir $(BASE_DIR) --output-dir apps/resource-studio/local-game/vietnamese
+	@for file in Fonts.dat chifont.dat; do \
+	  if [ -f "$(BASE_DIR)/$$file" ]; then \
+	    cp "$(BASE_DIR)/$$file" apps/resource-studio/local-game/origin/$$file; \
+	    cp "$(BASE_DIR)/$$file" apps/resource-studio/local-game/english/$$file; \
+	    cp "$(BASE_DIR)/$$file" apps/resource-studio/local-game/vietnamese/$$file; \
+	  fi; \
+	done
 	@printf '%s\n' 'Prepared Studio workspaces from workspace/base and content/patches. Run make apply-dubbing LANGUAGE=<language> before editing dialogue or voices.'
 
 fetch-base:

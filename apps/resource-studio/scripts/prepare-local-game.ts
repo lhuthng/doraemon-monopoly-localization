@@ -146,6 +146,12 @@ if ((await child.exited) !== 0) {
 // payloads, so materialization does not create them in the language workspace.
 await Promise.all(mapFiles.map((file) => copyFile(resolve(source, file), resolve(target, file))));
 
+// Font review-only originals are not part of any translation payload either.
+// Copy them when the selected game folder provides them so the Font Studio can
+// render Fonts.dat glyph leaves and the chifont.dat atlas for inspection.
+for (const file of ['Fonts.dat', 'chifont.dat'])
+  if (await exists(resolve(source, file))) await copyFile(resolve(source, file), resolve(target, file));
+
 // Dialogue and voices always come from the canonical dubbing tree, never the
 // release payload used above to restore graphics/font state.
 await Promise.all([
