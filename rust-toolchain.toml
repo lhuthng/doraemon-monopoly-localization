@@ -2,4 +2,4 @@
 channel = "1.90.0"
 profile = "minimal"
 targets = ["x86_64-pc-windows-gnu"]
-
+components = ["rust-analyzer"]
