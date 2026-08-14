@@ -769,7 +769,7 @@
           <h2 class="mt-2 text-2xl font-black text-ink sm:text-3xl">Bring your own original game files</h2>
           <p class="mt-2 max-w-2xl text-sm leading-6 text-ink/75">
             The translator reads the text directly in your browser. Drop <code>strings.dat</code>,
-            <code>voice.dat</code>, and optionally <code>sysfont.dat</code> anywhere here—or use the buttons. Files
+            <code>voice.dat</code>, and optionally <code>sysfont.dat</code> anywhere here-or use the buttons. Files
             you load yourself never enter a ZIP or leave this device.
           </p>
         </div>

@@ -28,7 +28,7 @@ not distributed here. Use the tools only with game files you legally own.
 
 Download a patcher from [GitHub Releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases).
 Copy `patcher.exe` beside your own `Doraemon.exe`, run it, tick the builds you
-want — **`<original>`**, **English**, and/or **Vietnamese** — pick any
+want - **`<original>`**, **English**, and/or **Vietnamese** - pick any
 compatibility extras, and press **Apply patch**. The patcher validates the
 installation against the public fingerprints, backs up files before changing
 them, and creates a restore tool.
@@ -142,7 +142,7 @@ The data flow:
 Everything starts from `workspace/base/` (private originals) via `make prepare`,
 which materializes the `local-game/` Studio workspaces. `content/dubbing/` is the
 canonical, reviewable source; the Translator Workshop catalogue is generated from
-it automatically by the commands above. Do not edit `.dmpatch` files directly —
+it automatically by the commands above. Do not edit `.dmpatch` files directly -
 rebuild them from their source files.
 
 ## Maintainer workflow
@@ -151,7 +151,7 @@ rebuild them from their source files.
 
 Install **rustup** (recommended; the repo's `rust-toolchain.toml` pins Rust 1.77.2
 and the `x86_64-pc-windows-gnu` target, which rustup installs automatically on
-first build — the distro-packaged `cargo`/`rustc` ignores that file and only ships
+first build - the distro-packaged `cargo`/`rustc` ignores that file and only ships
 the Linux host target):
 
 ```sh
@@ -179,7 +179,7 @@ Doraemon.exe strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.d
 ```
 
 Authorized maintainers can skip the manual copy and fetch the same files through
-the project gatekeeper (a second, optional way — manual setup stays primary):
+the project gatekeeper (a second, optional way - manual setup stays primary):
 
 ```sh
 make fetch-base       # reads CLOUDFLARE_GATEKEEPER_URL / CLOUDFLARE_GATEKEEPER_SECRET
@@ -201,9 +201,9 @@ Terraform (bucket + KV + worker) -> wrangler secrets -> R2 upload -> coupons -> 
 - **Infra**: `cd apps/gatekeeper && bun run build`, then `terraform apply`
   (create the R2 bucket, KV namespace, and worker script + bindings).
 - **Secrets** (`wrangler secret put`, never in files or git):
-  - `MAINTAINER_SECRET` — used by `make fetch-base` (mirrored in
+  - `MAINTAINER_SECRET` - used by `make fetch-base` (mirrored in
     `apps/resource-studio/.env` and `apps/gatekeeper/.dev.vars`).
-  - `COUPON_HASHES` — JSON array of coupon SHA-256 digests for the Workshop.
+  - `COUPON_HASHES` - JSON array of coupon SHA-256 digests for the Workshop.
     Managed by the coupon commands below (they push it automatically); no manual
     `wrangler secret put` needed.
 - **Upload**: `make upload-base` pushes the 7 base files into R2 with sha256
@@ -211,7 +211,7 @@ Terraform (bucket + KV + worker) -> wrangler secrets -> R2 upload -> coupons -> 
 - **Coupons**: the local `apps/gatekeeper/coupons.registry.json` (gitignored)
   is the single source of truth. `make gatekeeper-add-coupon COUPON="Phrase"`
   (or without `COUPON=` for a random one) mints a coupon and pushes the worker
-  secret immediately — every command needs `CLOUDFLARE_API_TOKEN` (and
+  secret immediately - every command needs `CLOUDFLARE_API_TOKEN` (and
   `CLOUDFLARE_ACCOUNT_ID`) in `apps/gatekeeper/.env`, so minting is always
   live, never a manual step. `make gatekeeper-list-coupons` shows active vs
   revoked; `make gatekeeper-delete-coupon COUPON=...` (or `HASH=...`) revokes
@@ -236,7 +236,7 @@ make prepare
 apply or overwrite canonical dubbing. From here, two main flows keep every output
 (Studio, Translator site, and release patches) in sync:
 
-### 2. Flow A — Import a contribution ZIP into everything
+### 2. Flow A - Import a contribution ZIP into everything
 
 Run these in order. Each command regenerates the Translator Workshop catalogue, so
 the translator always reflects the newest translation:
@@ -270,7 +270,7 @@ What each step updates:
 | 4. `build-patch` | Tracked release components `content/patches/vietnamese/` |
 | 5. commit + push | Live Translator Workshop site |
 
-### 3. Flow B — Edit in Studio, then update everything else
+### 3. Flow B - Edit in Studio, then update everything else
 
 Studio edits live in the generated workspace until you export them. New files you
 add under `local-game/<language>/` (sprites, fonts, etc.) are picked up by the
@@ -380,11 +380,11 @@ bun run build
 
 See each domain README for specifics:
 
-- [`apps/resource-studio/README.md`](apps/resource-studio/README.md) — editor routes and guarantees.
-- [`apps/translator-workshop/README.md`](apps/translator-workshop/README.md) — contributor workflow.
-- [`packages/dubbing-core/README.md`](packages/dubbing-core/README.md) — shared package contract.
-- [`content/dubbing/README.md`](content/dubbing/README.md) — canonical source rules.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution policy.
+- [`apps/resource-studio/README.md`](apps/resource-studio/README.md) - editor routes and guarantees.
+- [`apps/translator-workshop/README.md`](apps/translator-workshop/README.md) - contributor workflow.
+- [`packages/dubbing-core/README.md`](packages/dubbing-core/README.md) - shared package contract.
+- [`content/dubbing/README.md`](content/dubbing/README.md) - canonical source rules.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - contribution policy.
 
 ## Legal
 

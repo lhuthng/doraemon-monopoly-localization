@@ -6,7 +6,7 @@ async function main() {
   const provided = process.argv.slice(2).filter(Boolean).join(' ');
   const coupon = provided || randomBytes(24).toString('base64url');
   if (coupon !== provided) {
-    console.log('No coupon provided — generated a random one.');
+    console.log('No coupon provided - generated a random one.');
   } else if (coupon.length < 8) {
     console.log('Warning: that coupon is very short and easy to guess.');
   }
@@ -25,7 +25,7 @@ async function main() {
   console.log('');
 
   await pushWorkerSecret('COUPON_HASHES', next);
-  console.log('Pushed COUPON_HASHES to Cloudflare — the coupon is live.');
+  console.log('Pushed COUPON_HASHES to Cloudflare - the coupon is live.');
   console.log('The plaintext coupon is never sent; only its SHA-256 digest is stored server-side.');
 }
 

@@ -113,7 +113,7 @@ fn contains(set: &str, character: char) -> bool {
     set.chars().any(|candidate| candidate == character)
 }
 
-/// BOOTSTRAP ONLY — not final artwork.
+/// BOOTSTRAP ONLY - not final artwork.
 ///
 /// Synthesizes a Vietnamese glyph by copying the de-accented ASCII base glyph
 /// and stamping the accent/tone marks at fixed, guessed positions. Most of the
@@ -183,7 +183,7 @@ fn generated_glyph(mut base: Glyph, character: char) -> Glyph {
 // Release payloads may replace individual Vietnamese records with hand-edited
 // artwork, but the standalone command never needs an original target archive.
 //
-// NOTE: the generated variant-0 glyphs are a BOOTSTRAP only — marks are stamped
+// NOTE: the generated variant-0 glyphs are a BOOTSTRAP only - marks are stamped
 // at fixed, guessed positions and most are visibly incorrect. They are a seed
 // for hand-editing (Font Studio PNG export/import), never final art; correct
 // them before shipping a release.

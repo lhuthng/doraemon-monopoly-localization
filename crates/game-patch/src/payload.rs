@@ -187,7 +187,7 @@ pub fn string_record_group(id: &str) -> &str {
 }
 
 /// Returns true when `id` is a voice record that belongs to `character_index`.
-/// Voice paths are `character/bank/slot` — the first component is the character.
+/// Voice paths are `character/bank/slot` - the first component is the character.
 pub fn voice_record_character(id: &str) -> Option<u16> {
     id.split('/').next().and_then(|part| part.parse::<u16>().ok())
 }

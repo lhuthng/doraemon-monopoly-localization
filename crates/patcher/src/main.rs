@@ -68,7 +68,7 @@ fn load_language(
     if parts_blob.len() < 5 {
         eprintln!("DIAG {lang_name}: parts_blob too small ({})", parts_blob.len());
     } else if &parts_blob[..5] != b"DPART" {
-        eprintln!("DIAG {lang_name}: parts_blob has wrong magic ({:?}) — expecting DPART", &parts_blob[..5]);
+        eprintln!("DIAG {lang_name}: parts_blob has wrong magic ({:?}) - expecting DPART", &parts_blob[..5]);
     } else if let Some(part_bytes) = decode_parts_blob(&parts_blob) {
         let mut parts = Vec::new();
         let mut decoded = 0u32;
@@ -82,7 +82,7 @@ fn load_language(
             }
         }
         if decoded > 0 {
-            eprintln!("DIAG {lang_name}: multipart OK — {decoded} parts decoded, {errors} skipped");
+            eprintln!("DIAG {lang_name}: multipart OK - {decoded} parts decoded, {errors} skipped");
             match doraemon_game_patch::merge_parts(&parts) {
                 Ok(payload) => return Some(payload),
                 Err(error) => eprintln!("DIAG {lang_name}: multipart merge failed ({error})"),
@@ -261,7 +261,7 @@ mod windows_app {
 
     fn append_log(model: &VecModel<LogRow>, state: TaskState, message: &str) {
         let (marker, color) = log_color(state);
-        let clean = message.replace('…', "...").replace(['—', '–'], "-");
+        let clean = message.replace('…', "...").replace(['-', '–'], "-");
         model.push(LogRow { text: SharedString::from(format!("{marker} {clean}")), color });
     }
 

@@ -35,7 +35,7 @@ export function assertCredentials(): { token: string; accountId: string } {
   if (!token || !accountId) {
     throw new Error(
       'Cloudflare credentials not found. Put them in apps/gatekeeper/.env ' +
-        '(copy apps/gatekeeper/.env.example — it is never committed):\n' +
+        '(copy apps/gatekeeper/.env.example - it is never committed):\n' +
         '  CLOUDFLARE_API_TOKEN=...\n  CLOUDFLARE_ACCOUNT_ID=...\n' +
         'or export CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID in your shell.'
     );

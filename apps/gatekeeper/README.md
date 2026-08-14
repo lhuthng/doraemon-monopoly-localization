@@ -2,7 +2,7 @@
 
 A Cloudflare Worker + R2 gatekeeper that serves the private original game files
 (`workspace/base/`) to authorized callers. It is an **optional second way** to
-obtain game files — the manual flow (drop your own files into `workspace/base/`)
+obtain game files - the manual flow (drop your own files into `workspace/base/`)
 remains the primary one.
 
 Three access modes:
@@ -22,7 +22,7 @@ Three access modes:
 | `/api/files?name=<file>` | GET | coupon or maintainer secret | Serve the 7 allowlisted game files |
 | `/api/work` | GET, HEAD, PUT | coupon or maintainer secret | Store / retrieve a caller's saved-work blob |
 
-The worker treats `/api/work` payloads as **opaque bytes** — it never parses the
+The worker treats `/api/work` payloads as **opaque bytes** - it never parses the
 ZIP or inspects its contents. Clients zstd-compress their work ZIP before
 sending and decompress after fetching. Storage is scoped per identity:
 
@@ -99,9 +99,9 @@ cp .dev.vars.example .dev.vars                  # MAINTAINER_SECRET for `wrangle
 
 ## Minting coupons
 
-Credentials first — every coupon command pushes to Cloudflare, so it needs an
+Credentials first - every coupon command pushes to Cloudflare, so it needs an
 API token. Put it once in `apps/gatekeeper/.env` (copy `.env.example`, never
-commit — Bun auto-loads it):
+commit - Bun auto-loads it):
 
 ```sh
 # apps/gatekeeper/.env
@@ -116,10 +116,10 @@ make gatekeeper-add-coupon                 # random coupon, minted + live now
 make gatekeeper-add-coupon COUPON="Phrase" # human-readable coupon, minted + live now
 ```
 
-`apps/gatekeeper/coupons.registry.json` (gitignored — it holds plaintext
+`apps/gatekeeper/coupons.registry.json` (gitignored - it holds plaintext
 coupons) is the single source of truth. Every mint/revoke derives the active
 `COUPON_HASHES` array from it, rewrites `.dev.vars` as a mirror, and pushes the
-worker secret over the Cloudflare API — so it never drifts from what's live. If
+worker secret over the Cloudflare API - so it never drifts from what's live. If
 the token is missing, the command fails with a clear message instead of
 printing a manual step.
 
@@ -178,7 +178,7 @@ never print it.
 
 ## Legal
 
-Serving the original game files from R2 — even gated behind coupons and hashes —
+Serving the original game files from R2 - even gated behind coupons and hashes -
 is still distributing copyrighted material. Only enable this for people you
 authorize to have the files, and keep the manual "bring your own game" flow as
 the default. This tooling does not change the project's copyright posture.

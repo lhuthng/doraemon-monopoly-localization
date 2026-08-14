@@ -58,7 +58,7 @@ function visiblePixel(value: number) {
 }
 
 /**
- * BOOTSTRAP ONLY — not final artwork.
+ * BOOTSTRAP ONLY - not final artwork.
  *
  * These glyphs are synthesized by copying the de-accented ASCII base glyph and
  * stamping the accent/tone marks at fixed, guessed positions. In practice most

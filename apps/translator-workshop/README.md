@@ -10,10 +10,10 @@ recordings to the Doraemon Monopoly localization project.
    game. Files are processed entirely in the browser.
 3. Translate dialogue records and record or upload replacement voice WAVs.
 4. Use **Save work** to back up your session. The modal offers:
-   - **This browser** — stored locally in the browser's IndexedDB.
-   - **Cloud** — zstd-compressed and stored on the project gatekeeper (needs a
+   - **This browser** - stored locally in the browser's IndexedDB.
+   - **Cloud** - zstd-compressed and stored on the project gatekeeper (needs a
      coupon; the coupon is remembered in the browser).
-   - **Download ZIP** — a `doraemon-monopoly-<language>-dubbing.zip` to attach
+   - **Download ZIP** - a `doraemon-monopoly-<language>-dubbing.zip` to attach
      to a GitHub Issue. Both Local and Cloud options show when each was last
      saved and mark which one is newer.
 5. Use **Load work** to restore from a ZIP file, from this browser, or from the
@@ -40,9 +40,9 @@ The unified work file is the contribution ZIP
 (`doraemon-monopoly-<language>-dubbing.zip`), so a saved session doubles as a
 submission:
 
-- `manifest.json` — format version, language, and source fingerprints.
-- `dialogue/` — per-owner JSON files with translated records.
-- `voices/` — per-owner WAV directories with replacement audio.
+- `manifest.json` - format version, language, and source fingerprints.
+- `dialogue/` - per-owner JSON files with translated records.
+- `voices/` - per-owner WAV directories with replacement audio.
 
 The Workshop restores its session (translations + voices) from this same ZIP,
 and `make import-contribution CONTRIBUTION=...` accepts it directly. Cloud

@@ -48,7 +48,7 @@ for migration.
 | `release` | `--language` `--base-dir` `--target-dir` `--output-dir` `[--payload-only]` | Legacy single-language release as `Doraemon-<Language>-Patcher.exe`; `--payload-only` writes the `.dmpatch` without building the EXE. |
 | `portable` | `--output-dir` | Build `Doraemon-Portable-Patcher.exe`: compatibility-only (Custom language, no localizable resources) with the cnc-ddraw wrapper built in through the runtime component. |
 | `directsound-8bit` | `--input` `--output` | Write a guarded 8-bit DirectSound executable to `--output` without touching `--input`; refuses equal paths. |
-| `vi-font` | `--input` `--output` | Extend a 640-glyph sysfont to the 1,920-glyph Vietnamese layout, writing a separate output file. **Bootstrap only**: the generated variant-0 glyphs stamp marks at guessed positions and most are incorrect — hand-correct them (Font Studio PNG export/import) before release. |
+| `vi-font` | `--input` `--output` | Extend a 640-glyph sysfont to the 1,920-glyph Vietnamese layout, writing a separate output file. **Bootstrap only**: the generated variant-0 glyphs stamp marks at guessed positions and most are incorrect - hand-correct them (Font Studio PNG export/import) before release. |
 | `extract-audio` | `--cue` `--output` | Extract a verified CUE/BIN disc image into a local-music source archive. |
 
 Cargo flags forwarded to the Windows build (`--target`, `--release`) are also

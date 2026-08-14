@@ -81,7 +81,7 @@ should only be used intentionally.
 - Sprite1 preserves its hotspot when resized; Sprite2 has no hotspot fields.
 - Untouched archive records remain byte-for-byte unchanged.
 - Font Studio can extend a 640-record sysfont to five Vietnamese CC/CD banks.
-  The generated variant-0 glyphs are **bootstrap art only** — accent marks are
+  The generated variant-0 glyphs are **bootstrap art only** - accent marks are
   stamped at guessed positions and most are incorrect. Hand-correct them via the
   PNG export/import loop (export a variant, fix the numbered PNGs, re-import)
   before they are used in a release; never ship the generated glyphs as-is.

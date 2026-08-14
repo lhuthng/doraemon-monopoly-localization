@@ -69,7 +69,7 @@
       <p class="mt-2 text-sm text-ink/80"><span class="font-bold">Original:</span> {sourceLine}</p>
       <p class="mt-1 text-sm text-ink/80">
         <span class="font-bold">Translation:</span>
-        {translationLine || '—'}
+        {translationLine || '-'}
       </p>
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <button

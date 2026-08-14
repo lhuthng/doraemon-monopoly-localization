@@ -36,14 +36,14 @@ async function main() {
   if (revoked) {
     console.log(`Revoked ${label}.`);
   } else {
-    console.log(`${label} was not active — nothing changed in the active set.`);
+    console.log(`${label} was not active - nothing changed in the active set.`);
   }
   console.log(`Active coupons now (${active.length}):`);
   console.log(next);
   console.log('');
 
   await pushWorkerSecret('COUPON_HASHES', next);
-  console.log('Pushed the updated COUPON_HASHES to Cloudflare — the coupon no longer works.');
+  console.log('Pushed the updated COUPON_HASHES to Cloudflare - the coupon no longer works.');
 }
 
 main().catch((cause) => {

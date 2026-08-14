@@ -7,7 +7,7 @@ fingerprints, backs up every original it would change, and can restore the exact
 originals afterwards.
 
 The GUI is Windows-only. Build the same patcher from Linux or macOS with
-[`patch-build universal`](../patch-build/README.md) — it only produces the EXE.
+[`patch-build universal`](../patch-build/README.md) - it only produces the EXE.
 
 ## What Apply does
 
@@ -19,12 +19,12 @@ The GUI is Windows-only. Build the same patcher from Linux or macOS with
 - **Split, side-by-side installs.** Tick **English** and/or **Vietnamese** and the
   patcher writes suffixed builds: `Doraemon-en.exe` / `Doraemon-vi.exe`, each with
   its own icon, plus a suffixed copy of every file that language changes
-  (`sprite1-en.dat`, `strings-en.dat`, `bitmaps-vi.dat` … — lower-cased, suffix
+  (`sprite1-en.dat`, `strings-en.dat`, `bitmaps-vi.dat` … - lower-cased, suffix
   before the extension). Files neither language touches remain shared. Each
   executable's resource references are rewritten to its suffixed names.
 - **`<original>` build.** Tick **`<original>`** to keep an unpatched, in-place
-  `Doraemon.exe` rebuilt from the pristine backups — stock speed, CD music, no
-  hooks — for anything that needs the untouched executable.
+  `Doraemon.exe` rebuilt from the pristine backups - stock speed, CD music, no
+  hooks - for anything that needs the untouched executable.
 - **Nothing ticked** returns the game to its pristine original files.
 
 ## Options
@@ -35,7 +35,7 @@ The GUI is Windows-only. Build the same patcher from Linux or macOS with
 | **Skip disc check** / **Skip registry check** | Bypass CD/registry validation only; they never supply missing game or CD data. |
 | **Use local music** | Generates `BGM.dat` from an existing valid `BGM.dat`, a verified `DoraemonMusic.wav`, or a valid CUE/BIN disc image, and installs the local-music runtime. No usable source present → the option is skipped and original CD/MCI playback is untouched. |
 | **Fix volume control (Windows 7+ / CrossOver)** | Adds a working in-game volume slider on modern Windows / CrossOver. |
-| **Use 8-bit DirectSound output (Windows 95 / v86)** | Pins 22,050 Hz stereo, 44,100 bytes/sec, 2-byte blocks, 8-bit samples — the SB16 8-bit DMA path. Local-music streams follow the same path. Off by default. |
+| **Use 8-bit DirectSound output (Windows 95 / v86)** | Pins 22,050 Hz stereo, 44,100 bytes/sec, 2-byte blocks, 8-bit samples - the SB16 8-bit DMA path. Local-music streams follow the same path. Off by default. |
 | **Game speed** | **Normal** (stock 33 ms tick), **1.5×** (22 ms), **2×** (17 ms), **3×** (11 ms), **4×** (8 ms). The game counts multimedia-timer ticks instead of measuring time, so this scales the *normal* speed only; the in-game fast setting is unaffected. |
 | **Reduce BGM.dat** | Re-cooks `BGM.dat` at the selected quality from the verified `DoraemonMusic.wav` or CUE/BIN source. **Balanced**/**Compact** BGM needs the newer local-music runtime, so a disc-loader `BGMRT3` executable must be updated with one local-music apply first. |
 | **Reduce Voice.dat** | Re-transcodes the WAV leaves inside `voice.dat` at the selected quality. Only standard PCM leaves are rebuilt; unsupported WAV layouts are kept unchanged. |
@@ -57,7 +57,7 @@ folder for a valid local-music source.
 - `backup/Restore.exe` is a copy of the patcher that runs in restore mode
   because its own filename is `Restore.exe`: it restores the folder holding it.
   Rename it and it works as a normal patcher again.
-- A restore reinstates the originals and deletes the files the patch created — a
+- A restore reinstates the originals and deletes the files the patch created - a
   full round trip. It handles a split backup, a single-language backup, or both
   at once (whichever `backup/` holds) and removes each marker it used.
 
@@ -103,11 +103,11 @@ Use a throwaway copy of a real game on Windows 11. `patcher.exe` must sit beside
 4. **Original-only.** Untick everything, apply. Files return to pristine and the
    final log entry is done.
 5. **Restore round trip.** Run `backup/Restore.exe`. Verify every suffixed copy
-   and language executable is gone and the originals are back; then apply again —
+   and language executable is gone and the originals are back; then apply again -
    restore + reapply must round-trip cleanly.
 6. **Compressed audio.** Tick **Reduce Voice.dat**, pick **Compact**, press
    **Compress**, and confirm `voice.dat` shrinks and still replays. Then tick a
-   language and apply — because apply restores originals first, verify the voice
+   language and apply - because apply restores originals first, verify the voice
    is back to stock afterwards, and run **Compress** once more to re-reduce it.
 7. **Local music.** Put a valid `DoraemonMusic.wav` beside the game, tick **Use
    local music**, apply, and confirm `BGM.dat` plays. Then tick **Reduce

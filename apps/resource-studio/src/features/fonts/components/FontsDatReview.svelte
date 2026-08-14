@@ -58,7 +58,7 @@
       page = 0;
       query = '';
       bank = 'all';
-      status = `Decoded ${result.images.length.toLocaleString()} glyph leaves from ${name} — ${bankCount} banks of ${bankSize} (${visibleGlyphs.toLocaleString()} with visible pixels).`;
+      status = `Decoded ${result.images.length.toLocaleString()} glyph leaves from ${name} - ${bankCount} banks of ${bankSize} (${visibleGlyphs.toLocaleString()} with visible pixels).`;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
       status = 'Loading failed.';
@@ -108,7 +108,7 @@
 
   function paletteMeaning() {
     return chosenPalette
-      ? `#${chosenPalette.id} ${chosenPalette.label} — ${chosenPalette.meaning}`
+      ? `#${chosenPalette.id} ${chosenPalette.label} - ${chosenPalette.meaning}`
       : favoritePalettes.length
         ? ''
         : 'Load the original bitmaps.dat to obtain the three canonical review palettes.';
@@ -139,8 +139,8 @@
     </section>
   {:else}
     <p class="subtle">
-      The leaves are styled proportional glyphs — ornamental Latin capitals, circular monograms and
-      speech-bubble shapes — not the Chinese glyph set. Chinese characters come from
+      The leaves are styled proportional glyphs - ornamental Latin capitals, circular monograms and
+      speech-bubble shapes - not the Chinese glyph set. Chinese characters come from
       <code>chifont.dat</code>, reviewed in the neighbouring tab. The records repeat in groups of 128; the
       <em>bank</em> chips below jump between those groups.
     </p>

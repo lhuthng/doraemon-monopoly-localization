@@ -13,9 +13,9 @@ localization project.
 
 ## Consumers
 
-- **Resource Studio** — browser-based editors.
-- **Translator Workshop** — public contribution tool.
-- **CLI tooling** — dubbing import, check, and sync scripts.
+- **Resource Studio** - browser-based editors.
+- **Translator Workshop** - public contribution tool.
+- **CLI tooling** - dubbing import, check, and sync scripts.
 
 ## Rule
 

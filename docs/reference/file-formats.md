@@ -1,4 +1,4 @@
-# Doraemon Monopoly (Windows 95/98) — reverse-engineering notes
+# Doraemon Monopoly (Windows 95/98) - reverse-engineering notes
 
 This repository investigates the resource architecture used by the Cantonese
 and Taiwanese releases of GameOne's 1998 _Doraemon Monopoly_. It distributes no
@@ -23,9 +23,9 @@ glyph-patching tests, and reimplementing the game's decompressor.
 
 The current implementations are:
 
-- `packages/dubbing-core/src/formats.ts` — GameOne archive, LZW codec, string
+- `packages/dubbing-core/src/formats.ts` - GameOne archive, LZW codec, string
   records, `sysfont.dat`, and archive reconstruction
-- `apps/resource-studio/src/lib/asset-formats.ts` — PCX bitmap and transparent sprite
+- `apps/resource-studio/src/lib/asset-formats.ts` - PCX bitmap and transparent sprite
   decoding
 
 ## Known-file index
@@ -239,14 +239,14 @@ order, and byte mapping live in
 synthesized by copying a de-accented ASCII base glyph and stamping accent marks
 at fixed, guessed positions; most render incorrectly. They are a seed for
 hand-editing (Font Studio exports a variant as numbered transparent PNGs, which
-artists fix and re-import), never final artwork — correct them before a
+artists fix and re-import), never final artwork - correct them before a
 release.
 
 ## `Fonts.dat`
 
 `Fonts.dat` is a GameOne archive containing 2,560 leaves, all of which pass the
 14-bit LZW decompressor. It is **not** the same format as `sysfont.dat` and, despite
-the name, it is not the Chinese glyph source either — that is `chifont.dat`. Every
+the name, it is not the Chinese glyph source either - that is `chifont.dat`. Every
 leaf is an indexed scanline record with magic `0x8002`, byte-for-byte the same
 layout as `sprite2.dat`, so the existing sprite decoder renders the leaves
 directly.
@@ -329,7 +329,7 @@ exactly these three for previewing palette-indexed sprites and `Fonts.dat` glyph
 
 | Bitmap | Role of the bitmap                            | What its palette actually is                                                                                                                                                                 |
 | -----: | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `#000` | 640×480 plain backdrop (84% black, 16% white) | The full 256-colour VGA set — 241 distinct entries with the standard red/green/blue/grey ramps. The canonical palette every screen shares, so it renders any sprite in its intended colours. |
+| `#000` | 640×480 plain backdrop (84% black, 16% white) | The full 256-colour VGA set - 241 distinct entries with the standard red/green/blue/grey ramps. The canonical palette every screen shares, so it renders any sprite in its intended colours. |
 | `#001` | 160×163 Doraemon character portrait           | A small tuned set (26 used colours) shared verbatim by bitmaps `#001…#006`: skin tones, Doraemon red/blue and white. Best for faces and character sprites.                                   |
 | `#053` | 640×480 title-screen illustration             | A warm red/orange gradient set (107 used colours) with the most continuous pastel coverage in the archive. Best for full-colour scene artwork.                                               |
 
@@ -400,7 +400,7 @@ before download. Untouched archive records are preserved byte-for-byte.
 
 `interface.dat` contains 68 compressed numeric records rather than directly
 renderable images or strings. Combined with the separation observed on the
-title screen—background in bitmap `#053`, foreground graphics elsewhere—the
+title screen-background in bitmap `#053`, foreground graphics elsewhere-the
 best current explanation is that `interface.dat` links bitmaps, sprites,
 positions, states, or animation sequences.
 
@@ -471,7 +471,7 @@ The useful clues were cumulative:
 9. **Scanline invariants.** Sprite row commands repeatedly expanded to the
    header width, supporting the signed skip/literal interpretation.
 10. **Controlled runtime tests.** Removing and patching files distinguished
-    resources actually loaded by the game—after correcting the wrong-version
+    resources actually loaded by the game-after correcting the wrong-version
     test.
 
 ## Known limitations and next reverse-engineering targets

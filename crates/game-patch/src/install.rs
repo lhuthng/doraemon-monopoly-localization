@@ -727,7 +727,7 @@ fn apply_audio(
     let backup = folder.join("backup");
     // Only reuse the single-language backup when its manifest exists. A split
     // install leaves `backup/split-manifest.json` instead, so there is nothing
-    // to merge here — start the audio backup fresh (the shared `original/`
+    // to merge here - start the audio backup fresh (the shared `original/`
     // folder still holds the pristine files for both backups to use).
     let reuse = backup.join("manifest.json").is_file()
         && backup.exists()

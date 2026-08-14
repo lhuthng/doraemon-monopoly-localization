@@ -48,7 +48,7 @@ fn build_parts_blob(dir: &PathBuf, label: &str) -> Vec<u8> {
             parts.push(bytes);
         } else {
             println!(
-                "cargo:warning={label}: MISSING {target} — inserting empty placeholder"
+                "cargo:warning={label}: MISSING {target} - inserting empty placeholder"
             );
             parts.push(Vec::new());
         }

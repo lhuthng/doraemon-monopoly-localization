@@ -981,7 +981,7 @@ const GAME_CLOCK_GUARD_PREFIX: &[u8] = &[
     0x68, 0xfc, 0xd7, 0x48, 0x00, // push offset tick_callback
     0x8b, 0x45, 0xfc, // mov eax, dword ptr [ebp - 4]
     0x50, // push eax
-    0x6a, // push imm8 — the period byte follows
+    0x6a, // push imm8 - the period byte follows
 ];
 const GAME_CLOCK_GUARD_SUFFIX: &[u8] = &[
     0xff, 0x15, 0x98, 0x92, 0x4b, 0x00, // call dword ptr [WINMM.timeSetEvent]
@@ -992,7 +992,7 @@ pub const GAME_CLOCK_ORIGINAL_MS: u8 = 0x21;
 
 /// The largest period the instruction can carry. The period travels in a
 /// `push imm8`, which sign-extends, while `timeSetEvent` reads it as an
-/// unsigned `UINT` — so anything above `0x7f` would arrive as a nonsensically
+/// unsigned `UINT` - so anything above `0x7f` would arrive as a nonsensically
 /// long delay rather than a short one.
 pub const GAME_CLOCK_MAX_MS: u8 = 0x7f;
 

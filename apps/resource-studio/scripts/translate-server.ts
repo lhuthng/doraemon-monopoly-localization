@@ -62,7 +62,7 @@ function cleanAsciiPunctuation(text: string) {
   return text
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
-    .replace(/[–—]/g, '-')
+    .replace(/[–-]/g, '-')
     .replaceAll('…', '...')
     .replace(/Low Bunny Rich|Ding Dong Monopoly|Dingdang Monopoly/gi, 'Doraemon Monopoly')
     .replace(/Wickrona/gi, 'Soft-World')

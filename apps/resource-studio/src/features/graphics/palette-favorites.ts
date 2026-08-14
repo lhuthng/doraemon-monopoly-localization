@@ -18,7 +18,7 @@ export const PALETTE_GUIDES: Record<CanonicalPaletteId, { label: string; meaning
   '000': {
     label: 'Master palette',
     meaning:
-      'Bitmap #000 is the plain 640×480 main backdrop (black with white sections), yet it embeds the full 256-colour VGA set — the canonical palette every screen shares.'
+      'Bitmap #000 is the plain 640×480 main backdrop (black with white sections), yet it embeds the full 256-colour VGA set - the canonical palette every screen shares.'
   },
   '001': {
     label: 'Portrait palette',
