@@ -1189,30 +1189,43 @@ button:focus-visible,
 }
 .font-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(calc(104px * var(--font-scale, 1)), 1fr));
+  gap: calc(8px * var(--font-scale, 1));
 }
 .font-grid article {
   display: grid;
   justify-items: center;
-  gap: 4px;
-  min-height: 126px;
-  padding: 8px 5px;
+  gap: calc(4px * var(--font-scale, 1));
+  min-height: calc(126px * var(--font-scale, 1));
+  padding: calc(8px * var(--font-scale, 1)) calc(5px * var(--font-scale, 1));
   border: 1px solid #d6dee7;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--font-scale, 1));
   background: #fff;
 }
 .font-grid article strong {
   max-width: 100%;
   overflow: hidden;
   color: #17212b;
-  font-size: 0.76rem;
+  font-size: calc(0.76rem * var(--font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .font-grid article small {
   color: #667789;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem * var(--font-scale, 1));
+}
+.font-grid article code {
+  font-size: calc(1rem * var(--font-scale, 1));
+}
+.font-grid article .glyph-preview {
+  width: calc(82px * var(--font-scale, 1));
+  height: calc(66px * var(--font-scale, 1));
+  background-size: calc(12px * var(--font-scale, 1)) calc(12px * var(--font-scale, 1));
+  background-position:
+    0 0,
+    0 calc(6px * var(--font-scale, 1)),
+    calc(6px * var(--font-scale, 1)) calc(-6px * var(--font-scale, 1)),
+    calc(-6px * var(--font-scale, 1)) 0;
 }
 .glyph-preview {
   display: grid;

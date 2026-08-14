@@ -94,6 +94,7 @@
   let selected: IndexedImage | undefined = $state();
   let mapActive = $state(false);
   let fitPreviews = $state(true);
+  let assetZoom = $state(3);
 
   let current = $derived(tab === 'bitmap' ? bitmaps : tab === 'sprite1' ? sprites : sprites2);
   let currentCatalogue = $derived(
@@ -788,7 +789,7 @@
           </label>
           <span class="palette-state"
             >{chosenFavorite
-              ? `Using #${chosenFavorite.id} — ${chosenFavorite.label}`
+              ? `Using #${chosenFavorite.id} - ${chosenFavorite.label}`
               : chosenBitmap
                 ? `Using #${chosenBitmap.id} ${chosenBitmap.width}×${chosenBitmap.height}`
                 : 'Using diagnostic colors'}</span
@@ -796,6 +797,15 @@
         {/if}
         <label class="fit-previews"
           ><span>Fit artwork</span><input type="checkbox" bind:checked={fitPreviews} /></label
+        >
+        <label class="zoom-previews"
+          ><span>Zoom</span>
+          <select bind:value={assetZoom}>
+            <option value={1}>1×</option>
+            <option value={2}>2×</option>
+            <option value={3}>3×</option>
+            <option value={4}>4×</option>
+          </select></label
         >
       </section>
       {#if tab !== 'bitmap' && (chosenFavorite || chosenBitmap)}
@@ -829,7 +839,7 @@
             ? 'bitmaps'
             : 'sprites'} · {tab === 'bitmap' ? bitmapName : activeName}
         </p>
-        <section class="grid">
+        <section class="grid" style={`--asset-scale: ${assetZoom / 3}`}>
           {#each visible as image (image.id)}
             <AssetTile
               {image}
@@ -837,6 +847,7 @@
               fitVisible={fitPreviews}
               scale={thumbnailScale(image)}
               modified={activeModified.has(image.id)}
+              minimal={assetZoom === 1}
               onopen={() => (selected = image)}
             />
           {/each}

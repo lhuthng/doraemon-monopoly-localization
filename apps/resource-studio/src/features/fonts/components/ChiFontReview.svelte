@@ -9,6 +9,7 @@
   let page = $state(0);
   let status = $state('Load chifont.dat to inspect its 16×16 Chinese glyph atlas.');
   let error = $state('');
+  let glyphScale = $state(3);
 
   function character(index: number) {
     return CHIFONT_MAP[index];
@@ -113,18 +114,27 @@
           oninput={() => (page = 0)}
         /></label
       >
+      <label
+        >Zoom
+        <select bind:value={glyphScale}>
+          <option value={1}>1×</option>
+          <option value={2}>2×</option>
+          <option value={3}>3×</option>
+          <option value={4}>4×</option>
+        </select></label
+      >
     </section>
     <p class="review-count">
       Showing {visible.length} of {filtered.length.toLocaleString()} glyphs · {mappedCount.toLocaleString()}
       mapped characters
     </p>
-    <section class="review-grid">
+    <section class="review-grid" style={`--font-scale: ${glyphScale / 3}`}>
       {#each visible as glyph (glyph.index)}
         <article class:blank={!hasInk(glyph)}>
-          <div class="glyph-preview"><ChiGlyphCanvas {glyph} scale={3} /></div>
-          <strong>{character(glyph.index) ?? 'reserved'}</strong><small
-            >#{glyph.index.toString().padStart(3, '0')} · ID {glyph.index}</small
-          >
+          <div class="glyph-preview"><ChiGlyphCanvas {glyph} scale={glyphScale} /></div>
+          {#if glyphScale > 1}<strong>{character(glyph.index) ?? 'reserved'}</strong><small
+              >#{glyph.index.toString().padStart(3, '0')} · ID {glyph.index}</small
+            >{/if}
         </article>
       {/each}
     </section>
@@ -163,17 +173,17 @@
   }
   .review-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(calc(104px * var(--font-scale, 1)), 1fr));
+    gap: calc(8px * var(--font-scale, 1));
   }
   .review-grid article {
     display: grid;
     justify-items: center;
-    gap: 4px;
-    min-height: 126px;
-    padding: 8px 5px;
+    gap: calc(4px * var(--font-scale, 1));
+    min-height: calc(126px * var(--font-scale, 1));
+    padding: calc(8px * var(--font-scale, 1)) calc(5px * var(--font-scale, 1));
     border: 1px solid #d6dee7;
-    border-radius: 9px;
+    border-radius: calc(9px * var(--font-scale, 1));
     background: #fff;
   }
   .review-grid article.blank {
@@ -183,13 +193,23 @@
     max-width: 100%;
     overflow: hidden;
     color: #17212b;
-    font-size: 0.76rem;
+    font-size: calc(0.76rem * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .review-grid article small {
     color: #667789;
-    font-size: 0.68rem;
+    font-size: calc(0.68rem * var(--font-scale, 1));
+  }
+  .review-grid article .glyph-preview {
+    width: calc(82px * var(--font-scale, 1));
+    height: calc(66px * var(--font-scale, 1));
+    background-size: calc(12px * var(--font-scale, 1)) calc(12px * var(--font-scale, 1));
+    background-position:
+      0 0,
+      0 calc(6px * var(--font-scale, 1)),
+      calc(6px * var(--font-scale, 1)) calc(-6px * var(--font-scale, 1)),
+      calc(-6px * var(--font-scale, 1)) 0;
   }
   .bottom-nav {
     display: flex;

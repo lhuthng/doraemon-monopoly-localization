@@ -640,17 +640,18 @@
     font-size: 0.66rem;
   }
   .grid {
-    column-width: 148px;
+    --asset-scale: 1;
+    column-width: calc(148px * var(--asset-scale));
     column-count: auto;
-    column-gap: 9px;
+    column-gap: calc(9px * var(--asset-scale));
   }
   .asset {
     position: relative;
     display: block;
     width: 100%;
     min-width: 0;
-    margin: 0 0 9px;
-    padding: 6px;
+    margin: 0 0 calc(9px * var(--asset-scale));
+    padding: calc(6px * var(--asset-scale));
     overflow: hidden;
     break-inside: avoid;
     text-align: left;
@@ -667,39 +668,39 @@
       linear-gradient(-45deg, #dbe2e8 25%, transparent 25%),
       linear-gradient(45deg, transparent 75%, #dbe2e8 75%),
       linear-gradient(-45deg, transparent 75%, #dbe2e8 75%);
-    background-size: 16px 16px;
+    background-size: calc(16px * var(--asset-scale, 1)) calc(16px * var(--asset-scale, 1));
     background-position:
       0 0,
-      0 8px,
-      8px -8px,
-      -8px 0;
+      0 calc(8px * var(--asset-scale, 1)),
+      calc(8px * var(--asset-scale, 1)) calc(-8px * var(--asset-scale, 1)),
+      calc(-8px * var(--asset-scale, 1)) 0;
   }
   .preview canvas {
     max-width: calc(100% - 8px);
-    max-height: 150px;
+    max-height: calc(150px * var(--asset-scale, 1));
     width: auto !important;
     height: auto !important;
     object-fit: contain;
     image-rendering: pixelated;
   }
   .preview {
-    min-height: 34px;
-    max-height: 190px;
-    padding: 4px;
+    min-height: calc(34px * var(--asset-scale, 1));
+    max-height: calc(190px * var(--asset-scale, 1));
+    padding: calc(4px * var(--asset-scale, 1));
     overflow: hidden;
   }
   .preview-label {
     position: absolute;
     z-index: 1;
-    top: 4px;
-    left: 5px;
+    top: calc(4px * var(--asset-scale, 1));
+    left: calc(5px * var(--asset-scale, 1));
     max-width: calc(100% - 10px);
     overflow: hidden;
-    padding: 2px 4px;
-    border-radius: 3px;
+    padding: calc(2px * var(--asset-scale, 1)) calc(4px * var(--asset-scale, 1));
+    border-radius: calc(3px * var(--asset-scale, 1));
     color: #273543;
     background: rgb(255 255 255 / 0.8);
-    font-size: 0.62rem;
+    font-size: calc(0.62rem * var(--asset-scale, 1));
     line-height: 1.15;
     text-overflow: ellipsis;
     white-space: nowrap;

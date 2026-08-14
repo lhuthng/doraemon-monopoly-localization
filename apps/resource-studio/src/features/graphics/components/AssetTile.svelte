@@ -9,6 +9,7 @@
     scale = 1,
     modified = false,
     checked = false,
+    minimal = false,
     onopen,
     oncheck
   }: {
@@ -18,14 +19,15 @@
     scale?: number;
     modified?: boolean;
     checked?: boolean;
+    minimal?: boolean;
     onopen?: () => void;
     oncheck?: (checked: boolean) => void;
   } = $props();
 </script>
 
-<button class="asset" class:modified onclick={onopen} title={`Open ${image.id}`}>
+<button class="asset" class:modified class:minimal onclick={onopen} title={`Open ${image.id}`}>
   <span class="preview">
-    <b class="preview-label">#{image.id}</b>
+    {#if !minimal}<b class="preview-label">#{image.id}</b>{/if}
     <IndexedCanvas {image} {palette} {fitVisible} {scale} />
   </span>
   {#if oncheck}
