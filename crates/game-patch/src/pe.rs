@@ -1452,6 +1452,30 @@ fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
     Ok(true)
 }
 
+/// Installs the CD-check bypass into an already portable canonical executable.
+/// Every portable layout places the CD-verification cave at the start of its
+/// `.port` section, so the original call at `0x3723a` can be redirected there.
+fn install_no_disc_jump(output: &mut [u8]) -> Result<bool> {
+    const ORIGINAL: &[u8] = &[0xff, 0x15, 0xac, 0x90, 0x4b, 0x00];
+    let current = output
+        .get(0x3723a..0x37240)
+        .ok_or("no-disc jump site lies outside Doraemon.exe")?;
+    if current[0] == 0xe9 {
+        let displacement = i32::from_le_bytes(current[1..5].try_into().unwrap());
+        let destination = (0x0043_723a + 5) as i64 + displacement as i64;
+        if destination == PORT_VA as i64 {
+            return Ok(false);
+        }
+        return Err(format!(
+            "unexpected existing jump at {:#x} in the no-disc call site",
+            0x0043_723a
+        ));
+    }
+    expect_bytes(output, 0x3723a, ORIGINAL)?;
+    patch_jump(output, 0x0043_723a, PORT_VA, 6)?;
+    Ok(true)
+}
+
 /// Installs modern SFX volume support into an existing `.port` section.
 fn install_modern_sfx_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     let section = find_section(output, b".port")?;
@@ -1584,6 +1608,16 @@ pub fn patch_compatible(
         } else {
             false
         };
+        let added_no_disc = if canonical_layout && no_disc {
+            install_no_disc_jump(&mut output)?
+        } else {
+            false
+        };
+        let (output, added_no_reg) = if canonical_layout && no_reg {
+            patch_registry_at(&output, 0x2cc11)?
+        } else {
+            (output, false)
+        };
         let mut actions = Vec::new();
         if upgraded_bgm_runtime {
             actions.push(
@@ -1603,6 +1637,12 @@ pub fn patch_compatible(
         }
         if upgraded_sfx_volume {
             actions.push("enabled modern SFX volume control".into());
+        }
+        if added_no_disc {
+            actions.push("bypassed the original CD check".into());
+        }
+        if added_no_reg {
+            actions.push("bypassed the Setup registry requirement".into());
         }
         return Ok(CompatibilityPatch {
             bytes: output,
@@ -2856,6 +2896,47 @@ mod tests {
         let december = patch_language_runtime(&december, true, true, true, false, false).unwrap();
         assert!(has_vietnamese_font_hook(&december.bytes));
         assert!(!december.local_audio_supported);
+    }
+
+    #[test]
+    fn portable_reapply_adds_missing_no_disc_when_fixtures_are_available() {
+        let (Ok(canonical_path),) = (std::env::var("DORAEMON_TEST_CANONICAL_EXE"),) else {
+            return;
+        };
+        let canonical = std::fs::read(canonical_path).unwrap();
+        // First: a portable build with local music but WITHOUT the disc bypass.
+        let local_music = patch_compatible(&canonical, false, true, true, false).unwrap();
+        assert!(find_section(&local_music.bytes, b".port").is_ok());
+        assert_ne!(
+            local_music.bytes[0x3723a], 0xe9,
+            "local-music build must not have the no-disc jump"
+        );
+        // Then: re-patch that already-portable build with the disc bypass.
+        let with_disc = patch_compatible(&local_music.bytes, true, false, true, false).unwrap();
+        assert_eq!(
+            with_disc.bytes[0x3723a], 0xe9,
+            "re-patching a portable build must install the missing no-disc jump"
+        );
+        assert_eq!(
+            &with_disc.bytes[0x2cc11..0x2cc18],
+            &[0xc7, 0x45, 0xf4, 0, 0, 0, 0],
+            "re-patching must keep the registry bypass in place"
+        );
+        assert_eq!(
+            &with_disc.bytes[0x85043..0x85048],
+            &[0x8b, 0x55, 0x08, 0x89, 0x55],
+            "clearing local music must restore the original MCI routine"
+        );
+        assert!(
+            with_disc
+                .actions
+                .iter()
+                .any(|a| a.contains("bypassed the original CD check")),
+            "the reapply must report the installed CD bypass"
+        );
+        // Reapplying the same request must be a no-op.
+        let again = patch_compatible(&with_disc.bytes, true, false, true, false).unwrap();
+        assert_eq!(again.bytes, with_disc.bytes, "the reapply must be idempotent");
     }
 }
 
