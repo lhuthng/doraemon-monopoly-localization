@@ -1782,8 +1782,25 @@ pub fn apply_split_with_progress(
     created.sort_by(|a, b| a.0.cmp(&b.0));
     created.dedup_by(|a, b| a.0 == b.0);
 
-    let mut changed = Vec::new();
+    // The install is transactional. If any step fails — for example a locked
+    // executable because the game is still running — every file written so far
+    // is removed and every original set aside is put back, so the folder is
+    // never left half-applied with executables that reference resources that
+    // were never created.
+    let mut written = Vec::new();
+    let mut removed_now = Vec::new();
     let created_names: HashSet<String> = created.iter().map(|(name, _)| name.clone()).collect();
+    let rollback = |w: &[String], r: &[String]| {
+        for name in w.iter().rev() {
+            let _ = fs::remove_file(folder.join(name));
+        }
+        for name in r {
+            let source = backup_original.join(name);
+            let _ = fs::copy(&source, folder.join(name));
+        }
+        let _ = fs::remove_file(backup.join("split-manifest.json"));
+        let _ = fs::remove_dir_all(&staging);
+    };
     for (name, bytes) in &created {
         progress(
             sink,
@@ -1791,8 +1808,13 @@ pub fn apply_split_with_progress(
             format!("Writing {name}…"),
             Some(50),
         );
-        write_synced(&folder.join(name), bytes)?;
-        changed.push(name.clone());
+        if let Err(error) = write_synced(&folder.join(name), bytes) {
+            rollback(&written, &removed_now);
+            return Err(format!(
+                "write {name}: {error}; the partial install was rolled back, close the game and try again"
+            ));
+        }
+        written.push(name.clone());
     }
     for name in &plan.removed_originals {
         // A pristine original listed in `removed_originals` may have just been
@@ -1804,14 +1826,27 @@ pub fn apply_split_with_progress(
             continue;
         }
         if let Ok(path) = find_file(folder, name) {
-            fs::remove_file(&path).map_err(|e| e.to_string())?;
+            if let Err(error) = fs::remove_file(&path) {
+                rollback(&written, &removed_now);
+                return Err(format!(
+                    "remove {}: {error}; the partial install was rolled back, close the game and try again",
+                    path.display()
+                ));
+            }
+            removed_now.push(name.clone());
         }
-        changed.push(format!("<removed> {}", name));
     }
-    write_synced(
+    let mut changed = written.clone();
+    changed.extend(removed_now.iter().map(|name| format!("<removed> {name}")));
+    if let Err(error) = write_synced(
         &backup.join("split-manifest.json"),
         split_manifest(&changed, &plan.removed_originals).as_bytes(),
-    )?;
+    ) {
+        rollback(&written, &removed_now);
+        return Err(format!(
+            "write split manifest: {error}; the partial install was rolled back"
+        ));
+    }
     fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
 
     progress(
@@ -2091,6 +2126,135 @@ mod tests {
                 "pristine {base_name} must be seeded into backup/original"
             );
         }
+
+        fs::remove_dir_all(folder).unwrap();
+    }
+
+    /// A failed apply must roll back cleanly. A locked executable (the game is
+    /// still running, holding `Doraemon.exe` open) previously left the folder
+    /// half-applied: language executables were written but the suffixed
+    /// resources they reference were never created, so launching the game
+    /// crashed on a null sprite buffer.
+    #[test]
+    fn failed_apply_rolls_back_when_fixtures_are_available() {
+        let (Ok(data_dir), Ok(parts_dir)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PARTS_ENGLISH"),
+        ) else {
+            return;
+        };
+        let mut parts = Vec::new();
+        for name in ["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"] {
+            let bytes = std::fs::read(Path::new(&parts_dir).join(name)).unwrap();
+            parts.push(crate::payload::decode_part(&bytes).unwrap());
+        }
+        let payload = crate::merge_parts(&parts).unwrap();
+
+        let folder = std::env::temp_dir().join(format!(
+            "doraemon-split-rollback-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir(&folder).unwrap();
+        fs::copy(Path::new(&data_dir).join("Doraemon.exe"), folder.join("Doraemon.exe")).unwrap();
+        for name in ["strings.dat", "voice.dat", "sysfont.dat", "Sprite1.dat", "sprite2.dat", "bitmaps.dat"] {
+            fs::copy(Path::new(&data_dir).join(name), folder.join(name)).unwrap();
+        }
+
+        // Simulate the game running: the root executable cannot be overwritten.
+        let mut perms = fs::metadata(folder.join("Doraemon.exe")).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(folder.join("Doraemon.exe"), perms).unwrap();
+
+        let selection = SplitSelection {
+            include_original: true,
+            languages: vec![
+                SplitLanguage { language: Language::English, payload: payload.clone(), icon: None },
+                SplitLanguage { language: Language::Vietnamese, payload: payload, icon: None },
+            ],
+        };
+        let options = ApplyOptions {
+            no_disc: true,
+            no_reg: true,
+            local_audio: true,
+            modern_volume: false,
+            cue: std::env::var("DORAEMON_TEST_CUE").ok().map(PathBuf::from),
+            ..ApplyOptions::default()
+        };
+        let result = apply_split_with_progress(
+            &folder,
+            &selection,
+            &options,
+            &std::env::current_exe().unwrap(),
+            &mut |_| {},
+        );
+        assert!(result.is_err(), "a locked executable must fail the apply");
+
+        // The folder must be back to the pristine pre-apply state: no patched
+        // executables, no suffixed resources, no local-music staging, no
+        // manifest — exactly what prevents the null-resource startup crash.
+        for name in [
+            "Doraemon-en.exe",
+            "Doraemon-vi.exe",
+            "BGM.dat",
+            "bitmaps-en.dat",
+            "bitmaps-vi.dat",
+            "sprite1-en.dat",
+            "sprite1-vi.dat",
+            "sprite2-en.dat",
+            "sprite2-vi.dat",
+            "strings-en.dat",
+            "strings-vi.dat",
+            "sysfont-en.dat",
+            "sysfont-vi.dat",
+        ] {
+            assert!(
+                !folder.join(name).exists(),
+                "rollback must remove the half-written '{name}'"
+            );
+        }
+        assert!(!folder.join("backup/split-manifest.json").exists());
+        assert!(!folder.join(".doraemon-split-staging").exists());
+        assert!(folder.join("Doraemon.exe").exists(), "pristine executable must remain");
+        for name in ["strings.dat", "voice.dat", "sysfont.dat", "Sprite1.dat", "sprite2.dat", "bitmaps.dat"] {
+            assert!(folder.join(name).exists(), "pristine resource {name} must remain");
+        }
+
+        // Recovery: once the lock goes away (the game is closed), re-running the
+        // apply must succeed and leave every referenced resource present — the
+        // fix for the folder that previously crashed on startup.
+        let mut perms = fs::metadata(folder.join("Doraemon.exe")).unwrap().permissions();
+        perms.set_readonly(false);
+        fs::set_permissions(folder.join("Doraemon.exe"), perms).unwrap();
+        let result = apply_split_with_progress(
+            &folder,
+            &selection,
+            &options,
+            &std::env::current_exe().unwrap(),
+            &mut |_| {},
+        );
+        assert!(result.is_ok(), "re-applying after the lock must succeed: {result:?}");
+        for name in [
+            "Doraemon-en.exe",
+            "Doraemon-vi.exe",
+            "bitmaps-en.dat",
+            "sprite1-en.dat",
+            "sprite2-en.dat",
+            "strings-en.dat",
+            "sysfont-en.dat",
+        ] {
+            assert!(folder.join(name).is_file(), "re-applied install must contain '{name}'");
+        }
+        if options.cue.is_some() {
+            assert!(
+                folder.join("BGM.dat").is_file(),
+                "re-applied install must contain 'BGM.dat' when a music source is available"
+            );
+        }
+        assert!(
+            folder.join("backup/split-manifest.json").is_file(),
+            "re-applied install must leave a restore manifest"
+        );
 
         fs::remove_dir_all(folder).unwrap();
     }
@@ -2521,5 +2685,77 @@ mod tests {
             .iter()
             .any(|(name, _)| name == "sprite1-vi.dat"));
         assert!(plan.removed_originals.contains(&"Doraemon.exe".to_string()));
+    }
+
+    #[test]
+    fn original_build_adds_disc_bypass_when_base_is_already_portable() {
+        let (Ok(base), Ok(parts_dir)) = (
+            std::env::var("DORAEMON_TEST_DATA_DIR"),
+            std::env::var("DORAEMON_TEST_PARTS_ENGLISH"),
+        ) else {
+            return;
+        };
+        let mut parts = Vec::new();
+        for name in ["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"] {
+            let bytes = std::fs::read(Path::new(&parts_dir).join(name)).unwrap();
+            parts.push(crate::payload::decode_part(&bytes).unwrap());
+        }
+        let payload = crate::merge_parts(&parts).unwrap();
+
+        let folder = std::env::temp_dir().join(format!(
+            "doraemon-original-portable-base-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir(&folder).unwrap();
+        // A prior local-music install left the root already portable, with no
+        // disc bypass. This is the state backup/original gets seeded from.
+        let pristine = fs::read(Path::new(&base).join("Doraemon.exe")).unwrap();
+        let portable =
+            pe::patch_compatible(&pristine, false, true, true, false).unwrap().bytes;
+        assert_ne!(portable[0x3723a], 0xe9, "portable base must skip the disc bypass");
+        fs::write(folder.join("Doraemon.exe"), &portable).unwrap();
+        for name in ["strings.dat", "voice.dat", "sysfont.dat", "Sprite1.dat", "sprite2.dat", "bitmaps.dat"] {
+            fs::copy(Path::new(&base).join(name), folder.join(name)).unwrap();
+        }
+
+        let selection = SplitSelection {
+            include_original: true,
+            languages: vec![
+                SplitLanguage { language: Language::English, payload: payload.clone(), icon: None },
+                SplitLanguage { language: Language::Vietnamese, payload: payload, icon: None },
+            ],
+        };
+        let options = ApplyOptions {
+            no_disc: true,
+            no_reg: true,
+            local_audio: false,
+            modern_volume: false,
+            ..ApplyOptions::default()
+        };
+        apply_split_with_progress(
+            &folder,
+            &selection,
+            &options,
+            &std::env::current_exe().unwrap(),
+            &mut |_| {},
+        )
+        .unwrap();
+
+        let original = fs::read(folder.join("Doraemon.exe")).unwrap();
+        assert_eq!(
+            original[0x3723a], 0xe9,
+            "<original> must add the disc bypass even when the base is portable"
+        );
+        assert_eq!(
+            &original[0x85043..0x85048],
+            &[0x8b, 0x55, 0x08, 0x89, 0x55],
+            "<original> with local music off must restore the MCI routine"
+        );
+        for suffix in ["en", "vi"] {
+            let lang = fs::read(folder.join(format!("Doraemon-{suffix}.exe"))).unwrap();
+            assert_eq!(lang[0x3723a], 0xe9, "Doraemon-{suffix} must bypass the disc check");
+        }
+        fs::remove_dir_all(folder).unwrap();
     }
 }
