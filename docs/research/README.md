@@ -8,5 +8,9 @@ Historical reverse-engineering notes and investigation journals.
 - [`font-rendering-journal.md`](font-rendering-journal.md) - Discovery of the
   sysfont/chifont text renderers, their four Chinese-branch interception
   points, and the design of the `patch_vietnamese` executable hook.
+- [`voice-bank1-transcript.md`](voice-bank1-transcript.md) - Transcript of
+  `Voice.dat` bank-1 slots `000`–`022` (shared menu/action/misc lines) with
+  the SenseVoice + consistency + ear-check method and audio-vs-code
+  inconsistencies.
 - [`legacy/`](legacy/) - Additional research documents migrated from the
   original archive directory.

@@ -47,4 +47,5 @@ apps/gatekeeper/coupons.registry.json
 .terraform/
 *.tfstate
 *.tfstate.*
+.wrangler/
 
