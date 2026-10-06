@@ -15,6 +15,7 @@ import {
   parseStrings,
   rebuildStrings,
   decodeVoiceRecord,
+  normalizeWavLayout,
   parseVoiceArchive,
   parseWav,
   readStoredZip,
@@ -149,7 +150,7 @@ async function voiceFiles(language: DubbingLanguage) {
     for (const entry of await readdir(directory)) {
       if (!entry.toLowerCase().endsWith('.wav')) throw new Error(`Unexpected voice file ${owner}/${entry}.`);
       const path = resolve(directory, entry);
-      const bytes = new Uint8Array(await readFile(path));
+      const bytes = normalizeWavLayout(new Uint8Array(await readFile(path)));
       const info = parseWav(bytes);
       if (
         info.format !== 1 ||

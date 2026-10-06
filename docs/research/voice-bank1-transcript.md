@@ -26,7 +26,7 @@ Confidence vocabulary follows
 | `00*/001/010` | 拜拜。 | model + consistency |
 | `00*/001/011` | 前进。 | model + consistency, matches `000/031` link in code |
 | `00*/001/012` | 百宝袋。 | ear-checked; **disagrees with** `000/032` 使用道具 link in code |
-| `00*/001/013` | 百宝袋。 | ear-checked; **disagrees with** `000/033` 系统 link in code |
+| `00*/001/013` | 系统设定。 | model + ear-checked; voice adds 设定 vs `000/033` 系统 |
 | `00*/001/014` | 睇睇地图先啦。 | ear-checked; fuller sentence than `000/034` 地图 |
 | `00*/001/015` | 资料统计。 | model + consistency, matches `000/035` link in code |
 | `00*/001/016` | 好鬼大富翁。 | ear-checked, Doraemon only |
@@ -79,13 +79,25 @@ the remaining check.
 
 ## Inconsistencies found (audio vs code links)
 
-- Slot `012` says 百宝袋 ("treasure bag") but
-  `dialogueVoicePath`/`globalActionVoiceSlot` territory (`000/031`–`035`
-  → slots `011`–`015` in `packages/dubbing-core/src/dubbing.ts`) pairs it
-  with `000/032` 使用道具 ("use item").
-- Slot `013` says 百宝袋 but pairs with `000/033` 系统 ("system");
-  slot `014` speaks a full sentence (睇睇地圖先) where `000/034` has one
-  word (地图). Only `011`/`015` match their linked text exactly.
+Open question: should slots `011`–`013` match their linked menu text
+(`000/031`–`000/033`)? Current evidence:
+
+- Slot `011` says 前进, matching `000/031` 前进 exactly.
+- Slot `013` says 系统设定, one word more than `000/033` 系统.
+- Slot `012` says 百宝袋 ("treasure bag") but pairs with `000/032`
+  使用道具 ("use item").
+
+So the pattern is inconsistent: exact, near, and no match side by side.
+Slot `014` is the same story (full sentence 睇睇地圖先 vs one-word
+`000/034` 地图), while `015` matches `000/035` exactly.
+Undecided whether the code links, the menu labels, or the recordings
+drifted during development. Needs a runtime check (which voice the game
+plays when highlighting each action-menu item) before claiming either side.
+
+Dubbing rule used for the Vietnamese replacements: slots `013`/`014`/`015`
+say the in-game translated menu strings (Hệ Thống / Bản Đồ / Chỉ số from
+`000/033`–`000/035` in the Vietnamese `strings.dat`), not literal
+translations of the heard audio. Drafts live in `tmp/voice-translation-vi.json`.
 - The `legacy/VOICE_DAT_RESEARCH.md` formula (`000/N` → slot `N−8`)
   predicts slot `002` = `000/010` (sage-robot luck line); the recording is a
   "let's start playing" menu prompt. That formula does not hold for these

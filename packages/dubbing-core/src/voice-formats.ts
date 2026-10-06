@@ -152,6 +152,27 @@ export function voiceBankStorage(archive: VoiceArchive, character: number, bank:
   return raw > records.length / 2 ? 'raw' : 'compressed';
 }
 
+/** Rebuild a WAV as canonical `fmt, data` (`data` at offset 36, no leading
+ * metadata). TTS/ffmpeg outputs often emit `LIST` before `data`, which the
+ * 1998 parser does not skip. Trailing metadata is dropped: only PCM matters.
+ */
+export function normalizeWavLayout(wav: Uint8Array): Uint8Array {
+  const info = parseWav(wav);
+  const pcm = wav.slice(info.dataOffset, info.dataOffset + info.dataLength);
+  const out = new Uint8Array(12 + 8 + 16 + 8 + pcm.length);
+  const view = new DataView(out.buffer);
+  out.set(RIFF, 0);
+  putU32(out, 4, out.length - 8);
+  out.set(WAVE, 8);
+  out.set(new TextEncoder().encode('fmt '), 12);
+  putU32(out, 16, 16);
+  out.set(wav.slice(20, 36), 20);
+  out.set(new TextEncoder().encode('data'), 36);
+  putU32(out, 40, pcm.length);
+  out.set(pcm, 44);
+  return out;
+}
+
 export function packVoiceReplacement(archive: VoiceArchive, record: VoiceRecord, wav: Uint8Array) {
   const info = parseWav(wav);
   if (
@@ -162,6 +183,7 @@ export function packVoiceReplacement(archive: VoiceArchive, record: VoiceRecord,
   ) {
     throw new Error('Replacement must be normalized to mono 22.05 kHz 16-bit PCM WAV.');
   }
+  wav = normalizeWavLayout(wav);
   if (wav.length > VOICE_CACHE_BYTES) {
     throw new Error(
       `Replacement uses ${wav.length.toLocaleString()} decoded bytes; the game cache allows ${VOICE_CACHE_BYTES.toLocaleString()}.`
@@ -176,6 +198,11 @@ export function rebuildVoiceArchive(
   archive: VoiceArchive,
   replacements: ReadonlyMap<string, Uint8Array | null>
 ) {
+  // Canonicalize layouts up front so packing and verification compare the
+  // same bytes regardless of which tool produced the input WAV.
+  const canonical = new Map<string, Uint8Array | null>();
+  for (const [id, wav] of replacements) canonical.set(id, wav ? normalizeWavLayout(wav) : wav);
+  replacements = canonical;
   const packed = new Map<string, Uint8Array>();
   const emptyMarker = archive.records.find((record) => record.storage === 'empty');
   const emptyBytes = emptyMarker

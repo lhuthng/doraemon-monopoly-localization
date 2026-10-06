@@ -105,4 +105,25 @@ describe('Voice.dat', () => {
       duration: 1
     });
   });
+
+  test('normalizes LIST-first WAVs to fmt,data order on pack', () => {
+    const clean = encodePcmWav(Float32Array.from([0, 0.25, -0.25, 0.5]));
+    const tag = new Uint8Array([
+      ...new TextEncoder().encode('LIST'),
+      26, 0, 0, 0,
+      ...new TextEncoder().encode('INFOISFT\r\x00\x00\x00Lavf63'),
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    const rearranged = new Uint8Array(clean.length + tag.length);
+    rearranged.set(clean.slice(0, 36), 0);
+    rearranged.set(tag, 36);
+    rearranged.set(clean.slice(36), 36 + tag.length);
+    new DataView(rearranged.buffer).setUint32(4, rearranged.length - 8, true);
+    const archive = parseVoiceArchive(voiceFixture([4]));
+    const record = archive.records.find((candidate) => candidate.id === '000/000/000')!;
+    const rebuilt = rebuildVoiceArchive(archive, new Map([['000/000/000', rearranged]]));
+    const out = decodeVoiceRecord(parseVoiceArchive(rebuilt), parseVoiceArchive(rebuilt).records[0])!;
+    expect(out.slice(36, 40)).toEqual(new Uint8Array([0x64, 0x61, 0x74, 0x61]));
+    expect(decodeVoiceRecord(parseVoiceArchive(rebuilt), parseVoiceArchive(rebuilt).records[0])).toEqual(clean);
+  });
 });
