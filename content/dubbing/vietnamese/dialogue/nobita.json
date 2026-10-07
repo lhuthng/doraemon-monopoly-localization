@@ -4,7 +4,7 @@
   "records": [
     {
       "id": "004/000",
-      "translation": "Chơi cờ Đại Phú Gia là sở trường của mình, mọi\nngười đều tiêu đời rồi!"
+      "translation": "Chơi cờ Đại Phú Gia là sở trường của\nmình, các\ncậu thua chắc rồi!"
     },
     {
       "id": "004/001",
@@ -24,7 +24,7 @@
     },
     {
       "id": "004/005",
-      "translation": "Ugh! Xui xẻo quá!"
+      "translation": "Trời ơi! Sao mình xui thế!?"
     },
     {
       "id": "004/006",
@@ -44,7 +44,7 @@
     },
     {
       "id": "004/010",
-      "translation": "Mình sẽ bắt mọi người trả gấp đôi!"
+      "translation": "Các cậu sẽ phải trả gấp đôi cho mình!"
     },
     {
       "id": "004/011",
@@ -116,7 +116,7 @@
     },
     {
       "id": "004/035",
-      "translation": "bảo bối này hiện đang được sử dụng!"
+      "translation": "Bảo bối này hiện đang được sử dụng!"
     },
     {
       "id": "004/036",
@@ -172,7 +172,7 @@
     },
     {
       "id": "004/049",
-      "translation": "Ugh! Lại thêm lo lắng nữa!"
+      "translation": "Trời! Lại thêm rắc rối nữa!"
     },
     {
       "id": "004/050",
@@ -192,7 +192,7 @@
     },
     {
       "id": "004/054",
-      "translation": "Thở dài!"
+      "translation": "Haiz..."
     },
     {
       "id": "004/055",
@@ -224,7 +224,7 @@
     },
     {
       "id": "004/062",
-      "translation": "Này! Mở cửa nhanh lên!"
+      "translation": "Mở cửa cho mình với!"
     },
     {
       "id": "004/063",
@@ -236,7 +236,7 @@
     },
     {
       "id": "004/065",
-      "translation": "Ha! Đưa cho mình ngay!"
+      "translation": "Ha! Đưa cho mình đi!"
     },
     {
       "id": "004/066",
@@ -244,7 +244,7 @@
     },
     {
       "id": "004/067",
-      "translation": "Mình có con ong nhỏ của mình, cậu không thể thắng mình!"
+      "translation": "Mình có ong nhỏ rồi, cậu không thắng\nđược mình đâu!"
     },
     {
       "id": "004/068",
@@ -252,7 +252,7 @@
     },
     {
       "id": "004/069",
-      "translation": "Mình được bảo vệ bởi một người bảo hộ linh hồn, mình không sợ những đòn tấn công của các ngươi!"
+      "translation": "Mình có hồn ma hộ vệ rồi, không sợ\nđòn của các cậu đâu!"
     },
     {
       "id": "004/070",
@@ -284,7 +284,7 @@
     },
     {
       "id": "004/077",
-      "translation": "Hôm nay mình sẽ tha cho các ngươi!"
+      "translation": "Hôm nay mình bỏ qua đó!"
     },
     {
       "id": "004/078",
@@ -304,7 +304,7 @@
     },
     {
       "id": "004/082",
-      "translation": "Chết tiệt! Mình không cần món này!"
+      "translation": "Thôi! Mình không cần món này!"
     },
     {
       "id": "004/083",
@@ -312,7 +312,7 @@
     },
     {
       "id": "004/084",
-      "translation": "Tập tin đã tồn tại, cậu có muốn ghi đè lên không?"
+      "translation": "Tệp đã tồn tại, cậu có muốn ghi đè lên\nkhông?"
     },
     {
       "id": "004/085",
@@ -320,11 +320,11 @@
     },
     {
       "id": "004/086",
-      "translation": "Cậu có muốn in giấy chứng nhận không?"
+      "translation": "Cậu có muốn in chứng chỉ không?"
     },
     {
       "id": "004/087",
-      "translation": "Giấy chứng nhận đã in có đúng không?"
+      "translation": "Chứng chỉ đã in có đúng không?"
     },
     {
       "id": "004/088",
@@ -380,7 +380,7 @@
     },
     {
       "id": "004/102",
-      "translation": "Ugh! Cho mình ngủ thêm một chút nữa!"
+      "translation": "Ưm... Cho mình ngủ thêm một chút nữa!"
     },
     {
       "id": "004/104",
@@ -392,7 +392,7 @@
     },
     {
       "id": "004/106",
-      "translation": "Ah! Sao mình không dùng được đồ nào?"
+      "translation": "À! Sao mình không dùng được đồ nào?"
     },
     {
       "id": "004/107",
@@ -404,11 +404,11 @@
     },
     {
       "id": "004/109",
-      "translation": "Này! Trả tiền thuê đi! Đừng đi!"
+      "translation": "Cậu trả tiền thuê cho mình đi! Đừng đi\nmà!"
     },
     {
       "id": "004/110",
-      "translation": "Ah! Mình không mua được đất! Ồ!"
+      "translation": "À! Mình không mua được đất! Ồ!"
     },
     {
       "id": "004/111",
@@ -416,7 +416,7 @@
     },
     {
       "id": "004/112",
-      "translation": "Ah! Sao mình không lên cấp được?"
+      "translation": "À! Sao mình không lên cấp được?"
     },
     {
       "id": "004/113",
@@ -452,7 +452,7 @@
     },
     {
       "id": "004/121",
-      "translation": "Xui xẻo!"
+      "translation": "Xui quá!"
     },
     {
       "id": "004/122",
