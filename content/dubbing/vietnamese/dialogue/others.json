@@ -4,19 +4,19 @@
   "records": [
     {
       "id": "000/000",
-      "translation": "Kính gửi toàn thể đồng nghiệp từ Soft-World, xin chân thành\ncảm ơn mọi người đã dành thời gian quý báu để chơi thử game\n<Đô-rê-mon Đại Phú Gia>. Rất mong nhận được những ý kiến\nđóng góp của mọi người!"
+      "translation": "Kính gửi toàn thể đồng nghiệp từ Soft-World, xin\nchân thành cảm ơn mọi người đã dành thời gian\nquý báu để chơi thử game <Cờ Tỷ Phú Đô-rê-mon>.\nRất mong nhận được những ý kiến đóng góp\ncủa mọi người!"
     },
     {
       "id": "000/001",
-      "translation": "Đây mới chỉ là phiên bản Alpha nên một số tính năng vẫn chưa được hoàn thiện. Rất mong các bạn thông cảm!"
+      "translation": "Đây mới chỉ là phiên bản Alpha nên một số tính năng\nvẫn chưa được hoàn thiện. Rất mong các bạn\nthông cảm!"
     },
     {
       "id": "000/002",
-      "translation": "Tốc độ chạy của trò chơi hiện vẫn chưa được tối ưu. Ở phiên bản chính thức, trò chơi sẽ vận hành nhanh và mượt hơn."
+      "translation": "Tốc độ chạy của trò chơi hiện vẫn chưa được tối\nưu. Ở phiên bản chính thức, trò chơi sẽ vận hành\nnhanh và mượt hơn."
     },
     {
       "id": "000/003",
-      "translation": "Được rồi! Bây giờ hãy cùng bước vào thế giới kỳ diệu của Đô-rê-mon!"
+      "translation": "Được rồi! Bây giờ hãy cùng bước vào thế giới kỳ\ndiệu của Đô-rê-mon!"
     },
     {
       "id": "000/004",
@@ -40,7 +40,7 @@
     },
     {
       "id": "000/009",
-      "translation": "Gặp được ta là phúc của ngươi. Ta ban cho ngươi một\nchiếc rương. Tốt hay xấu, đều tùy vào vận số của\nngươi."
+      "translation": "Gặp được ta là phúc của ngươi. Ta ban cho ngươi\nmột chiếc rương. Tốt hay xấu, đều tùy vào vận số\ncủa ngươi."
     },
     {
       "id": "000/010",
@@ -104,7 +104,7 @@
     },
     {
       "id": "000/025",
-      "translation": "Muốn lấy bánh rán của ta? Mơ đi cưng! Đừng quên Robo-cô\ncủa ta!"
+      "translation": "Muốn lấy bánh rán của ta? Mơ đi cưng! Đừng quên\nRobo-cô của ta!"
     },
     {
       "id": "000/026",
@@ -128,23 +128,23 @@
     },
     {
       "id": "000/031",
-      "translation": " Di Chuyển "
+      "translation": "Tiến Lên"
     },
     {
       "id": "000/032",
-      "translation": " Bảo Bối "
+      "translation": "Túi Thần Kỳ"
     },
     {
       "id": "000/033",
-      "translation": " Hệ Thống "
+      "translation": "Cài Đặt"
     },
     {
       "id": "000/034",
-      "translation": " Bản Đồ "
+      "translation": "Bản Đồ"
     },
     {
       "id": "000/035",
-      "translation": " Chỉ số "
+      "translation": "Chỉ số"
     },
     {
       "id": "001/000",
@@ -316,7 +316,7 @@
     },
     {
       "id": "002/000",
-      "translation": "Ha! Hôm nay ngươi gặp may đấy! Ta sẽ tặng nó cho ngươi ["
+      "translation": "Ha! Hôm nay ngươi gặp may đấy! Ta sẽ tặng nó\ncho ngươi ["
     },
     {
       "id": "002/001",
@@ -340,7 +340,7 @@
     },
     {
       "id": "002/006",
-      "translation": "Được rồi! Hôm nay ta rộng tay ban phúc! Mong tất cả\ncác ngươi đều gặp vận may!"
+      "translation": "Được rồi! Hôm nay ta rộng tay ban phúc! Mong tất\ncả các ngươi đều gặp vận may!"
     },
     {
       "id": "002/007",
@@ -352,19 +352,19 @@
     },
     {
       "id": "002/009",
-      "translation": "Ta sẽ che chở ngươi. Không ai có thể động đến ngươi!"
+      "translation": "Ta sẽ che chở ngươi. Không ai có thể động\nđến ngươi!"
     },
     {
       "id": "002/010",
-      "translation": "Ta ban cho mỗi người các ngươi\n"
+      "translation": "Ta ban cho mỗi người các ngươi"
     },
     {
       "id": "002/011",
-      "translation": " cái bánh rán nhé!"
+      "translation": "cái bánh rán nhé!"
     },
     {
       "id": "002/012",
-      "translation": "Ta ban cho ngươi \n"
+      "translation": "Ta ban cho ngươi"
     },
     {
       "id": "002/013",
@@ -384,11 +384,11 @@
     },
     {
       "id": "002/017",
-      "translation": "Ta ban cho ngươi mỗi công trình \n"
+      "translation": "Ta ban cho ngươi mỗi công trình"
     },
     {
       "id": "002/018",
-      "translation": " cái bánh rán!"
+      "translation": "cái bánh rán!"
     },
     {
       "id": "002/019",
@@ -412,7 +412,7 @@
     },
     {
       "id": "002/024",
-      "translation": "Đành chịu thôi! Từ giờ ngươi không thể mua đất nữa!"
+      "translation": "Đành chịu thôi! Từ giờ ngươi không thể mua đất\nnữa!"
     },
     {
       "id": "002/025",
@@ -432,7 +432,7 @@
     },
     {
       "id": "002/029",
-      "translation": "Ta sẽ thu nhỏ tất cả các ngươi! Hô hô hô!\n"
+      "translation": "Ta sẽ thu nhỏ tất cả các ngươi! Hô hô hô!"
     },
     {
       "id": "002/030",
@@ -448,7 +448,7 @@
     },
     {
       "id": "002/033",
-      "translation": "Tất cả các ngươi sẽ phải trả gấp đôi tiền thuê! Hô hô\nhô!"
+      "translation": "Tất cả các ngươi sẽ phải trả gấp đôi tiền thuê! Hô\nhô hô!"
     },
     {
       "id": "002/034",
@@ -456,19 +456,19 @@
     },
     {
       "id": "002/035",
-      "translation": "Ta phải phạt tất cả các ngươi "
+      "translation": "Ta phải phạt tất cả các ngươi"
     },
     {
       "id": "002/036",
-      "translation": " cái bánh rán! Hô hô hô!"
+      "translation": "cái bánh rán! Hô hô hô!"
     },
     {
       "id": "002/037",
-      "translation": "Ta phạt ngươi "
+      "translation": "Ta phạt ngươi"
     },
     {
       "id": "002/038",
-      "translation": " cái bánh rán! Hô hô hô!"
+      "translation": "cái bánh rán! Hô hô hô!"
     },
     {
       "id": "002/039",
@@ -488,11 +488,11 @@
     },
     {
       "id": "002/043",
-      "translation": "Mỗi pháo đài ta phạt ngươi "
+      "translation": "Mỗi pháo đài ta phạt ngươi"
     },
     {
       "id": "002/044",
-      "translation": " cái bánh rán!"
+      "translation": "cái bánh rán!"
     },
     {
       "id": "002/045",
@@ -508,7 +508,7 @@
     },
     {
       "id": "002/048",
-      "translation": "Các ngươi phải nộp cho ta một chiếc bánh rán cho\nmỗi công trình của các ngươi! Khà khà khà!"
+      "translation": "Các ngươi phải nộp cho ta một chiếc bánh rán\ncho mỗi công trình của các ngươi! Khà khà khà!"
     },
     {
       "id": "002/049",

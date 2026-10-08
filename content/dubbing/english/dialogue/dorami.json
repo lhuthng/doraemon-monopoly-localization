@@ -92,7 +92,7 @@
     },
     {
       "id": "005/029",
-      "translation": "Hmm! I have a personal item!"
+      "translation": "Hmm! I have my own item!"
     },
     {
       "id": "005/030",
@@ -140,7 +140,7 @@
     },
     {
       "id": "005/041",
-      "translation": "There are already buildings on this ground! This won't do!"
+      "translation": "There are already buildings on this land! This won't\ndo!"
     },
     {
       "id": "005/042",
@@ -188,7 +188,7 @@
     },
     {
       "id": "005/053",
-      "translation": "Ah! We can sell land!"
+      "translation": "Ah! I can sell land!"
     },
     {
       "id": "005/054",
@@ -216,7 +216,7 @@
     },
     {
       "id": "005/060",
-      "translation": "What a lucky day! I found a gadget lying on the\nground!"
+      "translation": "What a lucky day! I found a gadget lying on\nthe ground!"
     },
     {
       "id": "005/061",
@@ -228,7 +228,7 @@
     },
     {
       "id": "005/063",
-      "translation": "Hee hee! You're not getting my Dorayaki that easily!"
+      "translation": "Hee hee! You're not getting my Dorayaki\nthat easily!"
     },
     {
       "id": "005/064",
@@ -268,7 +268,7 @@
     },
     {
       "id": "005/073",
-      "translation": "Ha! The unlucky cat is really useful!"
+      "translation": "Ha! The bad-luck gauge really works!"
     },
     {
       "id": "005/074",
@@ -312,7 +312,7 @@
     },
     {
       "id": "005/084",
-      "translation": "The file already exists, do you want to overwrite it?"
+      "translation": "The file already exists, do you want to overwrite\nit?"
     },
     {
       "id": "005/085",
@@ -424,7 +424,7 @@
     },
     {
       "id": "005/114",
-      "translation": "Why won't I buy items?"
+      "translation": "Why can't I buy items?!"
     },
     {
       "id": "005/115",
@@ -464,7 +464,7 @@
     },
     {
       "id": "005/124",
-      "translation": "Huh? Something seems to be missing from my 4D Pocket?"
+      "translation": "Huh? Something seems to be missing from my 4D\nPocket?"
     },
     {
       "id": "005/127",

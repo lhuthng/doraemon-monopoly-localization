@@ -4,7 +4,7 @@
   "records": [
     {
       "id": "004/000",
-      "translation": "Board games are my specialty! You guys don't stand\na chance!"
+      "translation": "Board games are my specialty! You guys don't\nstand a chance!"
     },
     {
       "id": "004/001",
@@ -44,7 +44,7 @@
     },
     {
       "id": "004/010",
-      "translation": "You'll pay me back twice over for that!"
+      "translation": "That'll cost you double!"
     },
     {
       "id": "004/011",
@@ -120,7 +120,7 @@
     },
     {
       "id": "004/036",
-      "translation": "Cannot be used on maps with fewer than two buildings!"
+      "translation": "Only works on maps with two or more buildings!"
     },
     {
       "id": "004/037",
@@ -128,11 +128,11 @@
     },
     {
       "id": "004/038",
-      "translation": "No opponent is hypnotized, cannot use!"
+      "translation": "No hypnotized opponent! Can't use it!"
     },
     {
       "id": "004/039",
-      "translation": "No opponent is in normal condition, cannot use!"
+      "translation": "No opponent to use it on!"
     },
     {
       "id": "004/040",
@@ -192,7 +192,7 @@
     },
     {
       "id": "004/054",
-      "translation": "Sigh!"
+      "translation": "Sigh..."
     },
     {
       "id": "004/055",
@@ -224,7 +224,7 @@
     },
     {
       "id": "004/062",
-      "translation": "Hey! Open the door quickly!"
+      "translation": "Open the door for me, please!"
     },
     {
       "id": "004/063",
@@ -236,7 +236,7 @@
     },
     {
       "id": "004/065",
-      "translation": "Ha! Give it to me quickly!"
+      "translation": "Ha! Give it to me!"
     },
     {
       "id": "004/066",
@@ -252,7 +252,7 @@
     },
     {
       "id": "004/069",
-      "translation": "I have the protection of a soul guardian, I'm not afraid of your attacks!"
+      "translation": "I have the protection of a soul guardian, I'm\nnot afraid of your attacks!"
     },
     {
       "id": "004/070",
@@ -304,7 +304,7 @@
     },
     {
       "id": "004/082",
-      "translation": "Damn it! I don't need this item!"
+      "translation": "Aw, man! I don't need this item!"
     },
     {
       "id": "004/083",
@@ -404,7 +404,7 @@
     },
     {
       "id": "004/109",
-      "translation": "Hey! Pay rent! Don't go!"
+      "translation": "Wait! You have to pay rent!"
     },
     {
       "id": "004/110",
@@ -456,7 +456,7 @@
     },
     {
       "id": "004/122",
-      "translation": "Ah! You overcharged me on my Dorayaki!"
+      "translation": "Ah! You took too many of my Dorayaki!"
     },
     {
       "id": "004/123",

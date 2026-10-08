@@ -4,19 +4,19 @@
   "records": [
     {
       "id": "000/000",
-      "translation": "Dear colleagues at Softstar Entertainment, thank you so much for taking the time to try out <Doraemon Monopoly>. Please provide your feedback!"
+      "translation": "Dear colleagues at Softstar Entertainment, thank\nyou so much for taking the time to try out\n<Doraemon Monopoly>. Please provide\nyour feedback!"
     },
     {
       "id": "000/001",
-      "translation": "As this is only an alpha version, some features are not yet available. We apologize for the inconvenience!"
+      "translation": "As this is only an alpha version, some features\nare not yet available. We apologize for\nthe inconvenience!"
     },
     {
       "id": "000/002",
-      "translation": "The game's execution speed has not been optimized; the official version will be faster."
+      "translation": "The game's execution speed has not been optimized;\nthe official version will be faster."
     },
     {
       "id": "000/003",
-      "translation": "Alright! Now let's officially enter Doraemon's wonderful world!"
+      "translation": "Alright! Now let's officially enter Doraemon's\nwonderful world!"
     },
     {
       "id": "000/004",
@@ -40,7 +40,7 @@
     },
     {
       "id": "000/009",
-      "translation": "Meeting me is your good fortune. In return, I'll grant you a\ntreasure chest. What it holds depends on your luck!"
+      "translation": "Meeting me is your good fortune. In return, I'll\ngrant you a treasure chest. What it holds depends\non your luck!"
     },
     {
       "id": "000/010",
@@ -48,7 +48,7 @@
     },
     {
       "id": "000/011",
-      "translation": "How happy! How happy! Someone has encountered bad luck!"
+      "translation": "How happy! How happy! Someone has encountered\nbad luck!"
     },
     {
       "id": "000/012",
@@ -104,7 +104,7 @@
     },
     {
       "id": "000/025",
-      "translation": "Want my Dorayaki? Don't dream! Don't\nforget I have Roboko protecting me!"
+      "translation": "Want my Dorayaki? Don't dream! Don't forget I\nhave Roboko protecting me!"
     },
     {
       "id": "000/026",
@@ -128,23 +128,23 @@
     },
     {
       "id": "000/031",
-      "translation": " Move "
+      "translation": "Forward"
     },
     {
       "id": "000/032",
-      "translation": " Gadgets "
+      "translation": "4D Pocket"
     },
     {
       "id": "000/033",
-      "translation": " System "
+      "translation": "Config"
     },
     {
       "id": "000/034",
-      "translation": " Map "
+      "translation": "Map"
     },
     {
       "id": "000/035",
-      "translation": " Statistics "
+      "translation": "Statistics"
     },
     {
       "id": "001/000",
@@ -324,11 +324,11 @@
     },
     {
       "id": "002/002",
-      "translation": "Ha! You're really lucky! You can move twice a day!"
+      "translation": "Ha! You're really lucky! You can move twice\na day!"
     },
     {
       "id": "002/003",
-      "translation": "Ha! I'll grant you the power to collect double rent!"
+      "translation": "Ha! I'll grant you the power to collect double\nrent!"
     },
     {
       "id": "002/004",
@@ -340,7 +340,7 @@
     },
     {
       "id": "002/006",
-      "translation": "Ha! I'm in a generous mood today! Good luck to everyone!"
+      "translation": "Ha! I'm in a generous mood today! Good luck\nto everyone!"
     },
     {
       "id": "002/007",
@@ -356,19 +356,19 @@
     },
     {
       "id": "002/010",
-      "translation": "I'll give each of you "
+      "translation": "I'll give each of you"
     },
     {
       "id": "002/011",
-      "translation": " Dorayaki each!"
+      "translation": "Dorayaki each!"
     },
     {
       "id": "002/012",
-      "translation": "I'll grant you "
+      "translation": "I'll grant you"
     },
     {
       "id": "002/013",
-      "translation": " Dorayaki for you!"
+      "translation": "Dorayaki for you!"
     },
     {
       "id": "002/014",
@@ -424,7 +424,7 @@
     },
     {
       "id": "002/027",
-      "translation": "Hey! You're banned from playing\nminigames!"
+      "translation": "Hey! You're banned from playing minigames!"
     },
     {
       "id": "002/028",
@@ -440,7 +440,7 @@
     },
     {
       "id": "002/031",
-      "translation": "You're all doomed to bad luck! Heh,\nheh!"
+      "translation": "You're all doomed to bad luck! Heh, heh!"
     },
     {
       "id": "002/032",
@@ -452,23 +452,23 @@
     },
     {
       "id": "002/034",
-      "translation": "You'll pay everyone double rent! Heh,\nheh!"
+      "translation": "You'll pay everyone double rent! Heh, heh!"
     },
     {
       "id": "002/035",
-      "translation": "I'm fining each of you "
+      "translation": "I'm fining each of you"
     },
     {
       "id": "002/036",
-      "translation": " Dorayaki! Heh! Heh!"
+      "translation": "Dorayaki! Heh! Heh!"
     },
     {
       "id": "002/037",
-      "translation": "I'm fining you "
+      "translation": "I'm fining you"
     },
     {
       "id": "002/038",
-      "translation": " Dorayaki! Heh! Heh!"
+      "translation": "Dorayaki! Heh! Heh!"
     },
     {
       "id": "002/039",
@@ -476,7 +476,7 @@
     },
     {
       "id": "002/040",
-      "translation": "I'm taking one of your gadgets! Heh,\nheh!"
+      "translation": "I'm taking one of your gadgets! Heh, heh!"
     },
     {
       "id": "002/041",
@@ -488,11 +488,11 @@
     },
     {
       "id": "002/043",
-      "translation": "For each turret, you'll pay "
+      "translation": "For each turret, you'll pay"
     },
     {
       "id": "002/044",
-      "translation": " Dorayaki!"
+      "translation": "Dorayaki!"
     },
     {
       "id": "002/045",
@@ -508,7 +508,7 @@
     },
     {
       "id": "002/048",
-      "translation": "Every building you own owes me a Dorayaki! Heh, heh!"
+      "translation": "Every building you own owes me a Dorayaki! Heh,\nheh!"
     },
     {
       "id": "002/049",
