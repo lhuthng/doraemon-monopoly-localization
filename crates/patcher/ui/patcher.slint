@@ -211,13 +211,13 @@ export component PatcherUI inherits Window {
                     HorizontalLayout {
                         spacing: 16px;
                         CheckBox {
-                            text: "Reduce BGM.dat";
+                            text: "Reduce BGM*.dat";
                             checked <=> root.reduce-bgm;
                             enabled: root.reduce-bgm-enabled;
                             toggled => { root.audio-options-changed(); }
                         }
                         CheckBox {
-                            text: "Reduce Voice.dat";
+                            text: "Reduce Voice*.dat";
                             checked <=> root.optimize-voice;
                             toggled => { root.audio-options-changed(); }
                         }

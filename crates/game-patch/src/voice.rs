@@ -23,7 +23,11 @@ pub fn compress_audio(source: &[u8], quality: Compression) -> Result<Vec<u8>> {
     let records = strings::packed_records(source)?;
     let mut replacements = std::collections::BTreeMap::new();
     for (id, record) in records {
-        let decoded = if record.starts_with(b"RIFF") && record.get(8..12) == Some(b"WAVE") {
+        // Raw-storage leaves (bank 1 menu voices) must stay raw; compressed
+        // leaves must stay compressed. Packing a raw leaf with strings::compress
+        // silences it in-game.
+        let raw = record.starts_with(b"RIFF") && record.get(8..12) == Some(b"WAVE");
+        let decoded = if raw {
             record.clone()
         } else {
             match strings::decompress(&record) {
@@ -37,11 +41,15 @@ pub fn compress_audio(source: &[u8], quality: Compression) -> Result<Vec<u8>> {
             }
         };
         let candidate = transcode_wav(&decoded, quality)?;
-        let packed = strings::compress(&candidate)?;
-        let replacement = if packed.len() < candidate.len() {
-            packed
-        } else {
+        let replacement = if raw {
             candidate
+        } else {
+            let packed = strings::compress(&candidate)?;
+            if packed.len() < candidate.len() {
+                packed
+            } else {
+                candidate
+            }
         };
         if replacement != record {
             replacements.insert(id, replacement);

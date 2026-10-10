@@ -137,6 +137,32 @@ fn find_file(folder: &Path, wanted: &str) -> Result<PathBuf> {
     Err(format!("missing {wanted} in {}", folder.display()))
 }
 
+/// Lists `Voice*.dat` / `BGM*.dat` files (case-insensitive) in `folder`,
+/// sorted by name. Used by the audio reduce paths so split installs with
+/// suffixed files (`Voice-en.dat`, `BGM-vi.dat`) are all processed.
+fn find_audio_dat(folder: &Path, prefix: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    if let Ok(rd) = fs::read_dir(folder) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if is_audio_dat(name, prefix) {
+                    found.push(path);
+                }
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+fn file_name(path: &Path) -> &str {
+    path.file_name().and_then(|n| n.to_str()).unwrap_or("")
+}
+
 /// Discovers the playable game executables in `folder` (any `doraemon*.exe`,
 /// e.g. `Doraemon.exe`, `Doraemon-en.exe`), sorted by name.
 fn find_builds(folder: &Path) -> Vec<PathBuf> {
@@ -634,32 +660,29 @@ fn apply_audio(
     let mut prepared: Vec<(String, Option<PathBuf>, PathBuf, hash::Hash)> = Vec::new();
 
     if options.optimize_voice {
-        let source_path = find_file(folder, "voice.dat")?;
-        let source =
-            fs::read(&source_path).map_err(|error| format!("{}: {error}", source_path.display()))?;
-        progress(sink, TaskState::Working, "Preparing Voice.dat...", Some(10));
-        let output = voice::compress_audio(&source, options.voice_compression)?;
-        if output != source {
-            let staged = staging.join("voice.dat");
-            write_synced(&staged, &output)?;
-            prepared.push((
-                "voice.dat".into(),
-                Some(source_path),
-                staged,
-                hash::bytes(&output),
-            ));
-        } else {
-            progress(
-                sink,
-                TaskState::Skipped,
-                "Voice.dat is already using the selected quality.",
-                Some(30),
-            );
+        for source_path in find_audio_dat(folder, "voice") {
+            let name = file_name(&source_path).to_string();
+            let source = fs::read(&source_path)
+                .map_err(|error| format!("{}: {error}", source_path.display()))?;
+            progress(sink, TaskState::Working, &format!("Preparing {name}..."), Some(10));
+            let output = voice::compress_audio(&source, options.voice_compression)?;
+            if output != source {
+                let staged = staging.join(&name);
+                write_synced(&staged, &output)?;
+                prepared.push((name, Some(source_path), staged, hash::bytes(&output)));
+            } else {
+                progress(
+                    sink,
+                    TaskState::Skipped,
+                    &format!("{name} is already using the selected quality."),
+                    Some(30),
+                );
+            }
         }
     }
 
     if options.reduce_bgm {
-        progress(sink, TaskState::Working, "Preparing BGM.dat...", Some(35));
+        progress(sink, TaskState::Working, "Preparing BGM data...", Some(35));
         if matches!(
             options.voice_compression,
             voice::Compression::Balanced | voice::Compression::Compact
@@ -685,34 +708,38 @@ fn apply_audio(
                 );
             }
         }
-        let staged = staging.join("BGM.dat");
         let wav = folder.join("DoraemonMusic.wav");
-        if cue::valid_wav(&wav) {
-            music::encode_wav_quality(&wav, &staged, options.voice_compression)?;
-        } else if let Some(cue_path) = options.cue.as_ref().filter(|path| cue::valid_cue(path)) {
-            music::encode_cue_quality(cue_path, &staged, options.voice_compression)?;
-        } else {
+        let have_source = cue::valid_wav(&wav)
+            || options.cue.as_ref().is_some_and(|path| cue::valid_cue(path));
+        if !have_source {
             return Err(
                 "BGM reduction needs the verified CUE/BIN or DoraemonMusic.wav source".into(),
             );
         }
-        let target = folder.join("BGM.dat");
-        let digest = hash::file(&staged)?;
-        if target.exists() && hash::file(&target)? == digest {
-            fs::remove_file(&staged).ok();
-            progress(
-                sink,
-                TaskState::Skipped,
-                "BGM.dat is already reduced.",
-                Some(50),
-            );
-        } else {
-            prepared.push((
-                "BGM.dat".into(),
-                target.exists().then_some(target),
-                staged,
-                digest,
-            ));
+        let mut targets = find_audio_dat(folder, "bgm");
+        if targets.is_empty() {
+            return Err("no BGM*.dat found to reduce".into());
+        }
+        for target_path in targets.drain(..) {
+            let name = file_name(&target_path).to_string();
+            let staged = staging.join(&name);
+            if cue::valid_wav(&wav) {
+                music::encode_wav_quality(&wav, &staged, options.voice_compression)?;
+            } else if let Some(cue_path) = options.cue.as_ref().filter(|path| cue::valid_cue(path)) {
+                music::encode_cue_quality(cue_path, &staged, options.voice_compression)?;
+            }
+            let digest = hash::file(&staged)?;
+            if hash::file(&target_path)? == digest {
+                fs::remove_file(&staged).ok();
+                progress(
+                    sink,
+                    TaskState::Skipped,
+                    &format!("{name} is already reduced."),
+                    Some(50),
+                );
+            } else {
+                prepared.push((name, Some(target_path), staged, digest));
+            }
         }
     }
 
@@ -1328,9 +1355,9 @@ pub fn compressed_audio_files(backup: &Path, game: &Path) -> Result<Vec<String>>
             .split_once(':')
             .ok_or("invalid backup manifest file entry")?;
         let name = name.trim().trim_matches('"').to_string();
-        if name.eq_ignore_ascii_case("voice.dat") {
+        if is_audio_dat(&name, "voice") {
             let expected = hash::parse(digest.trim().trim_matches('"'))?;
-            if let Ok(path) = find_file(game, "voice.dat") {
+            if let Ok(path) = find_file(game, &name) {
                 if hash::file(&path)? != expected {
                     compressed.push(name);
                 }
@@ -1339,14 +1366,25 @@ pub fn compressed_audio_files(backup: &Path, game: &Path) -> Result<Vec<String>>
     }
 
     let created = manifest_created_files(&manifest)?;
-    if let Some(expected) = created.get("BGM.dat") {
-        let bgm_path = game.join("BGM.dat");
-        if bgm_path.exists() && hash::file(&bgm_path)? != *expected {
-            compressed.push("BGM.dat".into());
+    for (name, expected) in &created {
+        if !is_audio_dat(name, "bgm") {
+            continue;
+        }
+        if let Ok(path) = find_file(game, name) {
+            if hash::file(&path)? != *expected {
+                compressed.push(name.clone());
+            }
         }
     }
 
     Ok(compressed)
+}
+
+/// Matches `Voice*.dat` / `BGM*.dat` (case-insensitive), e.g. `Voice.dat`,
+/// `VOICE2.DAT`, `BGM.dat`, `bgm-en.dat`.
+fn is_audio_dat(name: &str, prefix: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".dat") && lower[..lower.len() - 4].starts_with(prefix)
 }
 
 pub fn restore_skipping(backup: &Path, skip: &[&str]) -> Result<Vec<String>> {
