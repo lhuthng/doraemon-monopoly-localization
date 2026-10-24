@@ -1,29 +1,9 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-#[cfg(windows)]
-const PARTS_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/parts-bundle.bin"));
-#[cfg(windows)]
-const ENGLISH_PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/english-payload.bin"));
-#[cfg(windows)]
-const VIETNAMESE_PAYLOAD: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/vietnamese-payload.bin"));
+/// Language packs: downloaded and cached at runtime instead of being embedded
+/// in the executable. Compiled on every platform so its format tests run in CI.
+mod packs;
 
-/// Header prefix for zstd-compressed embedded data: four magic bytes followed
-/// by the little-endian decompressed length, then a zstd frame.
-const DZC_MAGIC: &[u8; 4] = b"DZC1";
-
-#[cfg(windows)]
-fn decompress(data: &[u8]) -> Vec<u8> {
-    if data.len() >= 12 && &data[..4] == DZC_MAGIC {
-        let original_len =
-            u64::from_le_bytes(data[4..12].try_into().unwrap()) as usize;
-        match zstd::bulk::decompress(&data[12..], original_len) {
-            Ok(bytes) => return bytes,
-            Err(e) => eprintln!("DIAG: embedded data failed to decompress ({e})"),
-        }
-    }
-    data.to_vec()
-}
 #[cfg(windows)]
 const ENGLISH_ICON: &[u8] = include_bytes!("../../../content/assets/icons/english.ico");
 #[cfg(windows)]
@@ -32,75 +12,6 @@ const VIETNAMESE_ICON: &[u8] = include_bytes!("../../../content/assets/icons/vie
 #[cfg(not(windows))]
 fn main() {
     eprintln!("Doraemon patcher GUI is Windows-only. Use patch-build on this platform.");
-}
-
-#[cfg(windows)]
-fn decode_parts_blob(blob: &[u8]) -> Option<Vec<Vec<u8>>> {
-    if blob.len() < 7 || &blob[..5] != b"DPART" {
-        return None;
-    }
-    let count = u16::from_le_bytes(blob[5..7].try_into().ok()?) as usize;
-    let toc_size = 7 + count * 8;
-    if blob.len() < toc_size {
-        return None;
-    }
-    let mut parts = Vec::with_capacity(count);
-    for i in 0..count {
-        let offset = 7 + i * 8;
-        let start = u32::from_le_bytes(blob[offset..offset + 4].try_into().ok()?) as usize;
-        let len = u32::from_le_bytes(blob[offset + 4..offset + 8].try_into().ok()?) as usize;
-        if start + len > blob.len() {
-            return None;
-        }
-        parts.push(blob[start..start + len].to_vec());
-    }
-    Some(parts)
-}
-
-#[cfg(windows)]
-fn load_language(
-    lang_name: &str,
-    parts_blob: &[u8],
-    monolithic: &[u8],
-) -> Option<doraemon_game_patch::payload::Payload> {
-    let parts_blob = decompress(parts_blob);
-    let monolithic = decompress(monolithic);
-    if parts_blob.len() < 5 {
-        eprintln!("DIAG {lang_name}: parts_blob too small ({})", parts_blob.len());
-    } else if &parts_blob[..5] != b"DPART" {
-        eprintln!("DIAG {lang_name}: parts_blob has wrong magic ({:?}) - expecting DPART", &parts_blob[..5]);
-    } else if let Some(part_bytes) = decode_parts_blob(&parts_blob) {
-        let mut parts = Vec::new();
-        let mut decoded = 0u32;
-        let mut errors = 0u32;
-        for bytes in &part_bytes {
-            if !bytes.is_empty() {
-                match doraemon_game_patch::payload::decode_part(bytes) {
-                    Ok(part) => { decoded += 1; parts.push(part); }
-                    Err(e) => { errors += 1; eprintln!("DIAG {lang_name}: decode_part failed ({e})"); }
-                }
-            }
-        }
-        if decoded > 0 {
-            eprintln!("DIAG {lang_name}: multipart OK - {decoded} parts decoded, {errors} skipped");
-            match doraemon_game_patch::merge_parts(&parts) {
-                Ok(payload) => return Some(payload),
-                Err(error) => eprintln!("DIAG {lang_name}: multipart merge failed ({error})"),
-            }
-        }
-        eprintln!("DIAG {lang_name}: multipart failed: {decoded} decoded, {errors} errors");
-    }
-    if !monolithic.is_empty() {
-        eprintln!("DIAG {lang_name}: trying monolithic payload ({} bytes)", monolithic.len());
-        match doraemon_game_patch::payload::decode(&monolithic) {
-            Ok(payload) => { eprintln!("DIAG {lang_name}: monolithic OK"); return Some(payload); }
-            Err(e) => { eprintln!("DIAG {lang_name}: monolithic decode failed ({e})"); }
-        }
-    } else {
-        eprintln!("DIAG {lang_name}: monolithic payload is empty");
-    }
-    eprintln!("DIAG {lang_name}: NO PAYLOAD AVAILABLE");
-    None
 }
 
 #[cfg(windows)]
@@ -125,6 +36,8 @@ mod windows_app {
     };
 
     slint::include_modules!();
+
+    use crate::packs;
 
     fn cue_files(game: &std::path::Path) -> Vec<PathBuf> {
         let mut cues: Vec<_> = std::fs::read_dir(game).into_iter().flatten()
@@ -312,38 +225,24 @@ mod windows_app {
             executable.parent().ok_or("the patcher executable has no parent game folder")?.to_path_buf()
         };
 
-        let bundle = super::decompress(super::PARTS_BUNDLE);
-        let english_len = if bundle.len() >= 16 {
-            u64::from_le_bytes(bundle[0..8].try_into().unwrap()) as usize
-        } else {
-            0
-        };
-        let english_parts = if bundle.len() >= 8 + english_len {
-            &bundle[8..8 + english_len]
-        } else {
-            &[]
-        };
-        let vietnamese_len = if bundle.len() >= 8 + english_len + 8 {
-            let start = 8 + english_len;
-            u64::from_le_bytes(bundle[start..start + 8].try_into().unwrap()) as usize
-        } else {
-            0
-        };
-        let vietnamese_parts = if bundle.len() >= 8 + english_len + 8 + vietnamese_len {
-            &bundle[8 + english_len + 8..8 + english_len + 8 + vietnamese_len]
-        } else {
-            &[]
-        };
-        eprintln!("DIAG: PARTS_BUNDLE compressed={}B decompressed={}B (English parts={}B, Vietnamese parts={}B)", super::PARTS_BUNDLE.len(), bundle.len(), english_len, vietnamese_len);
-        eprintln!("DIAG: ENGLISH_PAYLOAD={}B VIETNAMESE_PAYLOAD={}B", super::ENGLISH_PAYLOAD.len(), super::VIETNAMESE_PAYLOAD.len());
-        let english = super::load_language("English", english_parts, super::ENGLISH_PAYLOAD);
-        let vietnamese = super::load_language("Vietnamese", vietnamese_parts, super::VIETNAMESE_PAYLOAD);
+        // Language packs are release assets now, so only read what is already
+        // on disk here. Anything missing is downloaded when it is first used.
+        let english = packs::cached(payload::Language::English);
+        let vietnamese = packs::cached(payload::Language::Vietnamese);
+        let any_cached = english.is_some() || vietnamese.is_some();
 
-        let english_available = english.is_some();
-        let vietnamese_available = vietnamese.is_some();
-
-        let wrapper_available = english.as_ref().or(vietnamese.as_ref()).is_some_and(|p|
-            p.bundled.iter().any(|f| !f.name.eq_ignore_ascii_case("doraudio.dll")));
+        // Release builds bundle the graphics wrapper inside every pack. Until a
+        // pack is on disk we cannot look, so the button stays available.
+        let wrapper_available = english
+            .as_ref()
+            .or(vietnamese.as_ref())
+            .map(|payload| {
+                payload
+                    .bundled
+                    .iter()
+                    .any(|file| !file.name.eq_ignore_ascii_case("doraudio.dll"))
+            })
+            .unwrap_or(true);
 
         let ui = Rc::new(PatcherUI::new().map_err(|e| e.to_string())?);
         let log_model: Rc<VecModel<LogRow>> = Rc::new(VecModel::default());
@@ -355,10 +254,10 @@ mod windows_app {
         ui.set_clock_index(0);
         ui.set_clock_hint(SharedString::from(CLOCK_HINT));
         ui.set_language_original(true);
-        ui.set_language_english(english_available);
-        ui.set_language_vietnamese(vietnamese_available);
-        ui.set_language_english_enabled(english_available);
-        ui.set_language_vietnamese_enabled(vietnamese_available);
+        ui.set_language_english(english.is_some() || !any_cached);
+        ui.set_language_vietnamese(vietnamese.is_some());
+        ui.set_language_english_enabled(true);
+        ui.set_language_vietnamese_enabled(true);
         ui.set_quality_index(0);
         ui.set_restore_mode(restore_mode);
         ui.set_no_disc(true);
@@ -379,10 +278,8 @@ mod windows_app {
             ui.set_subtitle(SharedString::from("Restore Doraemon Monopoly"));
             append_log(&log_model, TaskState::Working, "Ready to restore the original game files.");
         }
-        if english.is_none() && vietnamese.is_none() {
-            append_log(&log_model, TaskState::Failed, &format!(
-                "No embedded language payloads found. English parts blob={}B, Vietnamese parts blob={}B. The patch data may not have been linked in.",
-                english_len, vietnamese_len));
+        if !any_cached {
+            append_log(&log_model, TaskState::Skipped, "No language pack is on disk yet. Applying a language downloads it once, then keeps it cached.");
         }
 
         let english = Rc::new(english);
@@ -463,31 +360,19 @@ mod windows_app {
                     voice_compression: doraemon_game_patch::voice::Compression::Original, keep_compressed_audio: false,
                 };
                 let include_original = ui.get_language_original();
-                let mut languages: Vec<install::SplitLanguage> = Vec::new();
+                // A ticked language without a payload is downloaded by the worker.
+                let mut requested: Vec<(payload::Language, Option<Payload>)> = Vec::new();
                 if ui.get_language_english() {
-                    if let Some(payload) = en.as_ref().as_ref() {
-                        languages.push(install::SplitLanguage {
-                            language: payload::Language::English,
-                            payload: payload.clone(),
-                            icon: Some(super::ENGLISH_ICON.to_vec()),
-                        });
-                    }
+                    requested.push((payload::Language::English, en.as_ref().as_ref().cloned()));
                 }
                 if ui.get_language_vietnamese() {
-                    if let Some(payload) = vi.as_ref().as_ref() {
-                        languages.push(install::SplitLanguage {
-                            language: payload::Language::Vietnamese,
-                            payload: payload.clone(),
-                            icon: Some(super::VIETNAMESE_ICON.to_vec()),
-                        });
-                    }
+                    requested.push((payload::Language::Vietnamese, vi.as_ref().as_ref().cloned()));
                 }
-                if languages.is_empty() {
+                if requested.is_empty() {
                     spawn_original_restore(&t, (*g).clone());
                     return;
                 }
-                let selection = install::SplitSelection { include_original, languages };
-                spawn_split_apply(&t, (*g).clone(), selection, options, exe.clone());
+                spawn_split_apply(&t, (*g).clone(), requested, include_original, options, exe.clone());
             });
         }
 
@@ -563,12 +448,26 @@ mod windows_app {
                 b.set(true);
                 enable_controls(&ui, true, c.restore_mode, c.wrapper_available, c.can_play, &g);
                 append_log(&l, TaskState::Working, "Adding the graphics wrapper…");
-                let payload = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned().unwrap_or_else(empty_payload);
+                let payload = en.as_ref().as_ref().or(vi.as_ref().as_ref()).cloned();
                 let tx = t.clone();
                 let game = (*g).clone();
                 thread::spawn(move || {
-                    let result = panic::catch_unwind(AssertUnwindSafe(|| install::add_wrapper(&game, &payload)))
-                        .unwrap_or_else(|_| Err("The graphics-wrapper task stopped unexpectedly; no files were added.".into()));
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                        // The wrapper rides inside every language pack, so a first
+                        // run fetches one pack before writing the files.
+                        let payload = match payload {
+                            Some(payload) => payload,
+                            None => packs::resolve(payload::Language::English, &mut |message| {
+                                let _ = tx.send(UiEvent::Progress(TaskProgress {
+                                    state: TaskState::Working,
+                                    message: message.into(),
+                                    progress: Some(2),
+                                }));
+                            })?,
+                        };
+                        install::add_wrapper(&game, &payload)
+                    }))
+                    .unwrap_or_else(|_| Err("The graphics-wrapper task stopped unexpectedly; no files were added.".into()));
                     let _ = tx.send(UiEvent::Wrapper(result));
                 });
             });
@@ -773,7 +672,8 @@ mod windows_app {
     fn spawn_split_apply(
         tx: &mpsc::Sender<UiEvent>,
         game: PathBuf,
-        selection: install::SplitSelection,
+        requested: Vec<(payload::Language, Option<Payload>)>,
+        include_original: bool,
         options: ApplyOptions,
         executable: PathBuf,
     ) {
@@ -781,6 +681,7 @@ mod windows_app {
         let game_clone = game.clone();
         thread::spawn(move || {
             let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                let selection = resolve_selection(&tx, requested, include_original)?;
                 let _ = tx.send(UiEvent::Progress(TaskProgress { state: TaskState::Working, message: "Restoring the original files before installing the split build…".into(), progress: Some(3) }));
                 // The backup is the source of truth for a reapply: the install
                 // reads every original out of backup/original/. All we do here
@@ -807,6 +708,44 @@ mod windows_app {
             }
             let _ = tx.send(UiEvent::Finished(result));
         });
+    }
+
+    /// Turns the ticked languages into an install selection, downloading and
+    /// checking any pack that is not on disk yet.
+    fn resolve_selection(
+        tx: &mpsc::Sender<UiEvent>,
+        requested: Vec<(payload::Language, Option<Payload>)>,
+        include_original: bool,
+    ) -> Result<install::SplitSelection, String> {
+        let mut languages = Vec::with_capacity(requested.len());
+        for (language, payload) in requested {
+            let payload = match payload {
+                Some(payload) => payload,
+                None => packs::resolve(language, &mut |message| {
+                    let _ = tx.send(UiEvent::Progress(TaskProgress {
+                        state: TaskState::Working,
+                        message: message.into(),
+                        progress: Some(2),
+                    }));
+                })
+                .map_err(|error| {
+                    format!("could not fetch the {} language pack: {error}", packs::name(language))
+                })?,
+            };
+            languages.push(install::SplitLanguage {
+                language,
+                payload,
+                icon: Some(language_icon(language).to_vec()),
+            });
+        }
+        Ok(install::SplitSelection { include_original, languages })
+    }
+
+    fn language_icon(language: payload::Language) -> &'static [u8] {
+        match language {
+            payload::Language::Vietnamese => super::VIETNAMESE_ICON,
+            _ => super::ENGLISH_ICON,
+        }
     }
 
     fn wrapper_config_prompt(ui: &PatcherUI, pd: &Rc<RefCell<Option<PendingDialog>>>, game: &std::path::Path) {

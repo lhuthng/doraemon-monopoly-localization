@@ -5,19 +5,21 @@ Monopoly localization release pipeline. Every command reads several WORKSPACE
 inputs and rejects ambiguous or unsupported base files, so candidate and tracked
 outputs never silently diverge.
 
-Build the release patcher with:
+Build the release artifacts with:
 
 ```sh
-cargo run -p patch-build -- universal \
-  --english-payload-dir content/patches/english \
-  --vietnamese-payload-dir content/patches/vietnamese \
-  --output-dir workspace/release \
-  --cnc-ddraw-dir vendor/cnc-ddraw
+# one downloadable pack per language
+cargo run -p patch-build -- pack \
+  --language english --parts-dir content/patches/english --output-dir workspace/release
+# -> workspace/release/english-pack.bin (+ .sha256)
+
+# the patcher itself, which carries no patch data
+cargo run -p patch-build -- universal --output-dir workspace/release
 # -> workspace/release/patcher.exe (+ .sha256, README.txt)
 ```
 
-`make build-patcher` wraps this. Run `patch-build` with no arguments for the
-short usage text.
+`make packs` and `make build-patcher` wrap these; `make release` runs both. Run
+`patch-build` with no arguments for the short usage text.
 
 ## Language payloads
 
@@ -34,6 +36,11 @@ Each is a `DMPT` part blob; a language payload is their merge. Legacy monolithic
 (`DMPATCH4`/`DMPATCH5`) and old multipart (`loc-*.dmpatch`) inputs stay readable
 for migration.
 
+`pack` turns those three parts into the single asset the patcher downloads: a
+`DPART` container of the part files, zstd-19 compressed behind a `DZC1` header
+(magic, uncompressed length, then the frame). `crates/patcher/src/packs.rs` reads
+exactly this layout and verifies the `.sha256` sidecar before installing.
+
 ## Subcommands
 
 | Command | Flags | What it does |
@@ -43,7 +50,8 @@ for migration.
 | `materialize` | `--payload` `--base-dir` `--output-dir` | Verify a monolithic payload against a base folder, then rebuild the patched local game files (`strings.dat`, file patches, voice, sysfont) into `output-dir`. |
 | `materialize-file` | `--payload` `--base-dir` `--file` `--output` | `materialize` for a single resource (e.g. `strings.dat`). |
 | `materialize-parts` | `--parts-dir` `--base-dir` `--output-dir` | `materialize` using a parts directory instead of a monolithic payload. |
-| `universal` | `--output-dir` `(--english-payload\|--english-payload-dir)` `(--vietnamese-payload\|--vietnamese-payload-dir)` `[--cnc-ddraw-dir]` | Build the single Windows patcher that installs `<original>`, English, and Vietnamese side-by-side. Language inputs can be monolithic payloads or parts directories; `--cnc-ddraw-dir` bundles the graphics wrapper (validated for `ddraw.dll`, `ddraw.ini`, `cnc-ddraw config.exe`). Outputs `patcher.exe` + `patcher.exe.sha256` + `README.txt`. |
+| `pack` | `--language english\|vietnamese` `--parts-dir` `--output-dir` | Package one language's parts into `<language>-pack.bin` + `.sha256`. Refuses a parts directory whose merged language does not match `--language`. |
+| `universal` | `--output-dir` | Build the Windows patcher that installs `<original>`, English, and Vietnamese side-by-side. It embeds no patch data: the patcher downloads the `pack` assets on first use. Outputs `patcher.exe` + `patcher.exe.sha256` + `README.txt`. |
 | `package` | `--output-dir` `--payload` | Build `Doraemon-<Language>-Patcher.exe` (single-language monolithic). |
 | `release` | `--language` `--base-dir` `--target-dir` `--output-dir` `[--payload-only]` | Legacy single-language release as `Doraemon-<Language>-Patcher.exe`; `--payload-only` writes the `.dmpatch` without building the EXE. |
 | `portable` | `--output-dir` | Build `Doraemon-Portable-Patcher.exe`: compatibility-only (Custom language, no localizable resources) with the cnc-ddraw wrapper built in through the runtime component. |
@@ -55,16 +63,12 @@ Cargo flags forwarded to the Windows build (`--target`, `--release`) are also
 accepted by the packaging commands. Outputs are read back and verified where a
 bit flip is easy to miss (executables, `BGM.dat`, packaged patches).
 
-## Compiling payloads into the patcher
+## Patcher resources
 
-The patcher's `build.rs` reads these environment variables (also documented in
-`crates/patcher/build.rs`):
-
-| Variable | Meaning |
-| --- | --- |
-| `DORAEMON_PATCH_PARTS_ENGLISH` / `DORAEMON_PATCH_PARTS_VIETNAMESE` | Parts directories whose `dubbing` / `sprites` / `runtime` files become a zstd-19 `DPART` bundle embedded in the EXE. |
-| `DORAEMON_PATCH_PAYLOAD_ENGLISH` / `DORAEMON_PATCH_PAYLOAD_VIETNAMESE` | Monolithic payload files embedded as fallback payloads. |
-| `DORAEMON_PATCH_PAYLOAD` | Monolithic payload for single-language builds. |
+`patcher.exe` carries only code: its `build.rs` compiles the Slint UI and stamps
+the window icon. Patch data always comes from a pack, which the patcher looks for
+in `packs/` beside the EXE and then in its per-user cache, downloading it from
+the `patcher-v<version>` release when neither has it.
 
 On `x86_64-pc-windows-gnu` the patcher EXE is resource-stamped with the 32-bit
 language icon. Nothing on the Windows target requires a running game; all
@@ -72,6 +76,8 @@ verification is fingerprint-based.
 
 ## Publishing
 
-Pushing a `patcher-v*` tag runs `release-language.yml`, which rebuilds the parts
-bundle from `content/patches/`, runs `universal` with `--cnc-ddraw-dir
-vendor/cnc-ddraw`, and attaches `release/patcher.exe` to the GitHub release.
+Pushing a `patcher-v*` tag runs `release-language.yml`, which runs `pack` for
+both languages from `content/patches/`, builds the patcher with `universal`, and
+attaches the two packs, their `.sha256` sidecars, `patcher.exe`, and `README.txt`
+to the GitHub release. The tag version must match `workspace.package.version`,
+because that is the release the patcher downloads from.

@@ -7,6 +7,12 @@ PUBLISH ?=
 PATCHER ?=
 CNC_DDRAW_DIR ?=
 LANGUAGE ?=
+WEB_INSTALL ?= $(BASE_DIR)
+# The browser port lives outside this repository (see the win32-shim-kit sibling).
+# tmp/ is ignored, so a fresh clone does not have it; the web-* targets say so.
+BROWSER_PORT ?= tmp/browser-port
+MUSIC ?=
+VOICE_QUALITY ?=
 CONTRIBUTION ?=
 PATCHER_CNC_DDRAW_DIR := $(if $(strip $(CNC_DDRAW_DIR)),$(CNC_DDRAW_DIR),vendor/cnc-ddraw)
 RESOURCE_FILES := strings.dat sysfont.dat Sprite1.dat sprite2.dat bitmaps.dat voice.dat
@@ -19,7 +25,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help dependencies check-mingw check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution update-catalogue studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release translator-build translator-dev check-language check-studio check-origin check-publish check-patcher check-wrapper check-resources check-game check-payloads
+.PHONY: help dependencies check-mingw check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution update-catalogue studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release web-build translator-build translator-dev check-language check-studio check-origin check-publish check-patcher check-wrapper check-resources check-game check-payloads check-browser-port web-host-build web-host-check web-host-serve web-served-check packs
 
 help:
 	@printf '%s\n' \
@@ -79,10 +85,22 @@ help:
 	  '      Build only the runtime component.' \
 	  '  make build-patch LANGUAGE=english PUBLISH=1' \
 	  '      Export Studio dubbing to content/dubbing/, then build all three components.' \
+	  '  make web-build LANGUAGE=english [WEB_INSTALL=<install-dir>] [MUSIC=<BGM.dat|DoraemonMusic.wav|DORAEMON.cue>]' \
+	  '      Convert an install and that localization into the build served beside the page.' \
+	  '  make web-host-serve' \
+	  '      Build the guest CPU wasm module, then serve the page and its build on :8080.' \
+	  '  make web-host-check' \
+	  '      Build that module and run its headless smoke test against the reference image.' \
+	  '  make web-served-check' \
+	  '      Fetch the served build the way the page does and boot it, without a browser.' \
 	  '  make build-patcher' \
-	  '      Embed tracked components into workspace/release/patcher.exe.' \
+	  '      Build workspace/release/patcher.exe. It ships without patch data and' \
+	  '      downloads a language pack on first use.' \
+	  '  make packs' \
+	  '      Package content/patches/<language> into workspace/release/<language>-pack.bin' \
+	  '      plus its .sha256, the files the patcher downloads.' \
 	  '  make release' \
-	  '      Validate payload presence and build the local patcher artifact.' \
+	  '      Validate payload presence, package both language packs, and build patcher.exe.' \
 	  '' \
 	  'PUBLISH=1 writes tracked content/patches/. Without it, output goes to ignored workspace/patches/.' \
 	  '' \
@@ -231,7 +249,35 @@ build-patch: check-language check-publish check-game check-studio check-mingw ex
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target sprites
 	cargo run -p patch-build -- release-parts --language "$(LANGUAGE)" --base-dir "$(BASE_DIR)" --target-dir "apps/resource-studio/local-game/$(LANGUAGE)" --output-dir "$(PATCH_DIR)/$(LANGUAGE)" --target runtime --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)"
 
-release: check-payloads build-patcher
+check-browser-port:
+	@if [ ! -d "$(BROWSER_PORT)/web" ]; then \
+	  printf '%s\n' 'The browser port is not in this repository; expected at $(BROWSER_PORT).' \
+	    'It is developed beside this checkout (win32-shim-kit); set BROWSER_PORT=<path> to point at it.'; \
+	  exit 2; \
+	fi
+
+web-host-build: check-browser-port
+	@cargo build -p doraemon-web-host --lib --target wasm32-unknown-unknown --release
+	@cp target/wasm32-unknown-unknown/release/doraemon_web_host.wasm "$(BROWSER_PORT)/web/web-host.wasm"
+	@printf '%s\n' 'Built $(BROWSER_PORT)/web/web-host.wasm'
+
+web-host-check: web-host-build
+	@bun "$(BROWSER_PORT)/web/smoke.ts" "$(WEB_INSTALL)/Doraemon.exe" "$(WEB_INSTALL)"
+
+web-served-check: web-host-build
+	@if [ ! -f "$(BROWSER_PORT)/web/build/files.json" ]; then printf '%s\n' 'No build beside the page; run make web-build LANGUAGE=english first.'; exit 2; fi
+	@bun "$(BROWSER_PORT)/web/served.ts"
+
+web-host-serve: web-host-build
+	@if [ ! -f "$(BROWSER_PORT)/web/build/files.json" ]; then printf '%s\n' 'No build beside the page; run make web-build LANGUAGE=english first.'; exit 2; fi
+	@printf '%s\n' 'Serving $(BROWSER_PORT)/web on http://localhost:8080 (Ctrl-C to stop)'
+	@cd "$(BROWSER_PORT)/web" && python3 -m http.server 8080
+
+web-build: check-language check-browser-port
+	@if [ ! -d "$(WEB_INSTALL)" ]; then printf '%s\n' 'WEB_INSTALL=$(WEB_INSTALL) does not exist; point it at your game folder.'; exit 2; fi
+	@bun "$(BROWSER_PORT)/convert.ts" --install "$(WEB_INSTALL)" --language "$(LANGUAGE)" --out "$(BROWSER_PORT)/web/build" $(if $(strip $(MUSIC)),--music "$(MUSIC)") $(if $(strip $(VOICE_QUALITY)),--voice-quality "$(VOICE_QUALITY)")
+
+release: check-payloads packs build-patcher
 
 translator-build:
 	@cd apps/translator-workshop && bun run build
@@ -240,10 +286,12 @@ translator-build:
 translator-dev:
 	@cd apps/translator-workshop && bun run dev
 
+packs: check-payloads
+	@mkdir -p "$(RELEASE_DIR)"
+	@for language in english vietnamese; do \
+	  cargo run -p patch-build -- pack --language $$language --parts-dir content/patches/$$language --output-dir "$(RELEASE_DIR)" || exit 1; \
+	done
+
 build-patcher: check-mingw
 	@mkdir -p "$(RELEASE_DIR)"
-	@set --; \
-	if [ -d content/patches/english ]; then set -- "$$@" --english-payload-dir content/patches/english; else printf '%s\n' 'English components missing.'; fi; \
-	if [ -d content/patches/vietnamese ]; then set -- "$$@" --vietnamese-payload-dir content/patches/vietnamese; else printf '%s\n' 'Vietnamese components missing.'; fi; \
-	if [ "$$#" -eq 0 ]; then exit 2; fi; \
-	cargo run -p patch-build -- universal --output-dir "$(RELEASE_DIR)" --cnc-ddraw-dir "$(PATCHER_CNC_DDRAW_DIR)" "$$@"
+	cargo run -p patch-build -- universal --output-dir "$(RELEASE_DIR)"

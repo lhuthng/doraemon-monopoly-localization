@@ -29,7 +29,10 @@ not distributed here. Use the tools only with game files you legally own.
 Download a patcher from [GitHub Releases](https://github.com/lhuthng/doraemon-monopoly-localization/releases).
 Copy `patcher.exe` beside your own `Doraemon.exe`, run it, tick the builds you
 want - **`<original>`**, **English**, and/or **Vietnamese** - pick any
-compatibility extras, and press **Apply patch**. The patcher validates the
+compatibility extras, and press **Apply patch**. The patch data ships as separate
+language packs: the first apply downloads the packs you ticked (about 70 MB for
+English, 60 MB for Vietnamese) and caches them, so later applies and restores
+work offline. The patcher validates the
 installation against the public fingerprints, backs up files before changing
 them, and creates a restore tool.
 
@@ -107,6 +110,7 @@ automatically.
 | `crates/game-patch/` | Archive, executable, audio, and installation logic. |
 | `crates/patch-build/` | Payload generation and Windows release packaging. |
 | `crates/patcher/` | Native Windows patcher UI. |
+| `crates/web-host/` | Experimental browser re-host: PE loader, x86 interpreter, and Win32/DirectX shims for a WASM build ([research notes](docs/research/BROWSER_REHOST_PLAN.md)). |
 | `tools/dubbing/` | Filesystem-oriented dubbing import, check, and sync tools. |
 | `docs/reference/` | Stable format documentation. |
 | `docs/research/` | Historical reverse-engineering notes. |
@@ -129,9 +133,11 @@ The data flow:
            │ 4. build-patch
            ▼
   content/patches/<lang>   (.dmpatch components)
-           │ 5. build-patcher
+           │ 5. packs + build-patcher
            ▼
-  workspace/release/patcher.exe  ──►  players
+  workspace/release/patcher.exe        ──►  players
+  workspace/release/<lang>-pack.bin    ──►  (downloaded by the patcher on
+                                            first use, then cached)
 
   auto catalogue regen (apply/export/import/build-patch)
   or manual: make update-catalogue
@@ -313,6 +319,12 @@ The result is `workspace/release/patcher.exe`. Copy it beside a test game's
 `Doraemon.exe` on Windows 11, apply the selected language, test Play/Restore,
 and verify local music and wrapper options when relevant.
 
+Run `make release` instead to build the patcher together with both language
+packs in `workspace/release/`. The patcher looks for a pack beside itself in a
+`packs/` folder first, then in its per-user cache, so putting
+`english-pack.bin`/`vietnamese-pack.bin` next to `patcher.exe` is also a valid
+way to ship a fully offline copy.
+
 To publish it as a GitHub release, push a tag:
 
 ```sh
@@ -320,8 +332,10 @@ git tag patcher-v1.x.x
 git push origin patcher-v1.x.x
 ```
 
-The `release-language.yml` workflow builds `patcher.exe` from the tracked
-`content/patches/` components and uploads it to GitHub Releases.
+The `release-language.yml` workflow packages both language packs from the
+tracked `content/patches/` components, builds `patcher.exe`, and uploads all of
+them to one GitHub release. The patcher fetches the packs from the release whose
+tag matches its own version.
 
 Notes:
 
@@ -362,8 +376,9 @@ Run `make help` for the same workflow in the terminal.
 | `make build-sprites LANGUAGE=... PUBLISH=1` | Build the graphics component. |
 | `make build-runtime LANGUAGE=... PUBLISH=1` | Build the runtime component. |
 | `make build-patch LANGUAGE=... PUBLISH=1` | Export Studio dubbing, build all components, and regenerate the Workshop catalogue. |
-| `make build-patcher` | Embed tracked components into `workspace/release/patcher.exe`. |
-| `make release` | Check payload presence and build a local patcher. |
+| `make build-patcher` | Build `workspace/release/patcher.exe`. It holds no patch data and downloads a language pack on first use. |
+| `make packs` | Package each `content/patches/<language>/` into `workspace/release/<language>-pack.bin` + `.sha256`, the assets the patcher downloads. |
+| `make release` | Check payload presence, package both language packs, and build a local patcher. |
 | `make translator-dev` | Run the public Workshop locally. |
 | `make translator-build` | Build the static Workshop into `workspace/contributor-kit/`. |
 

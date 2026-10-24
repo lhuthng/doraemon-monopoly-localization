@@ -75,7 +75,7 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build directsound-8bit --input Doraemon.exe --output Doraemon-8bit.exe\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload-dir DIR] [--vietnamese-payload-dir DIR] [--cnc-ddraw-dir DIR]\n  (legacy monolithic and multipart inputs remain supported for migration)");
+    eprintln!("Usage:\n  patch-build directsound-8bit --input Doraemon.exe --output Doraemon-8bit.exe\n  patch-build voice-quality --input voice.dat --output voice.dat --quality original|high|balanced|compact\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build localized-image --language english|vietnamese --no-disc --no-reg [--local-audio] [--modern-volume] --input Doraemon.exe --output Doraemon.exe\n  patch-build music --input BGM.dat|DoraemonMusic.wav|DORAEMON.cue --output BGM.dat\n  patch-build pack --language english|vietnamese --parts-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload-dir DIR] [--vietnamese-payload-dir DIR] [--cnc-ddraw-dir DIR]\n  (legacy monolithic and multipart inputs remain supported for migration)");
     std::process::exit(2)
 }
 
@@ -344,6 +344,132 @@ fn materialize_parts(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes the executable that belongs in a language bundle.
+///
+/// Vietnamese needs the CC/CD font dispatch the desktop patcher installs, or its
+/// accented text renders as Chinese glyphs; English needs no font change. Both
+/// need the two portability patches, and are refused without them: a rehost has
+/// no CD drive and no Setup registry entry, so the guest's own checks are lifted
+/// here, the same way the patcher's two checkboxes lift them on the desktop.
+/// `--local-audio` additionally installs the BGM.dat streaming runtime, since a
+/// browser has no MCI CD device either. The routine is the patcher's, so the
+/// browser bundle and a desktop install with the same boxes ticked cannot drift.
+fn localized_image(arguments: &[String]) -> Result<(), String> {
+    let vietnamese = match value(arguments, "--language").as_deref() {
+        Some("english") => false,
+        Some("vietnamese") => true,
+        _ => usage(),
+    };
+    let ticked = |flag: &str| arguments.iter().any(|argument| argument == flag);
+    if !ticked("--no-disc") || !ticked("--no-reg") {
+        return Err(
+            "a ported image needs --no-disc and --no-reg: the browser has no CD drive and no \
+             Setup registry entry, so both of the guest's checks must be lifted"
+                .into(),
+        );
+    }
+    let local_audio = ticked("--local-audio");
+    // A browser has no mixer to read: the guest's `mixerGetControlDetailsA`
+    // fails, so its options screen opens with the SFX knob at zero while new
+    // DirectSound buffers are already at full volume. The patcher's modern SFX
+    // block answers that read and drives the slider through buffer volume, which
+    // is the same fix a desktop port needs on a machine whose mixer is missing.
+    let modern_volume = ticked("--modern-volume");
+    let input = PathBuf::from(value(arguments, "--input").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    let original =
+        fs::read(&input).map_err(|error| format!("{}: {error}", input.display()))?;
+    let patched = pe::patch_language_runtime(
+        &original,
+        vietnamese,
+        true,
+        true,
+        local_audio,
+        modern_volume,
+    )
+    .map_err(|error| format!("unsupported base Doraemon.exe structure: {error}"))?;
+    fs::write(&output, &patched.bytes)
+        .map_err(|error| format!("write {}: {error}", output.display()))?;
+    println!("{}: {}", output.display(), patched.actions.join("; "));
+    Ok(())
+}
+
+/// Re-encodes `voice.dat` at one of the patcher's quality levels.
+///
+/// The desktop installer applies this to the copy it installs, from the same
+/// UI choice; a browser build has no installer, so the conversion runs here on
+/// the tree the localized parts were just materialized into. `compact` is
+/// 11 kHz 8-bit stereo, which is what makes a fully dubbed build small enough
+/// to serve — the same reduction the installer's "Compact" tick produces.
+fn voice_quality(arguments: &[String]) -> Result<(), String> {
+    let quality = match value(arguments, "--quality").as_deref() {
+        Some("original") => voice::Compression::Original,
+        Some("high") => voice::Compression::High,
+        Some("balanced") => voice::Compression::Balanced,
+        Some("compact") => voice::Compression::Compact,
+        _ => usage(),
+    };
+    let input = PathBuf::from(value(arguments, "--input").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    let source = fs::read(&input).map_err(|error| format!("{}: {error}", input.display()))?;
+    let encoded = voice::compress_audio(&source, quality)
+        .map_err(|error| format!("{}: {error}", input.display()))?;
+    fs::write(&output, &encoded).map_err(|error| format!("write {}: {error}", output.display()))?;
+    println!(
+        "{}: {} bytes from {} bytes",
+        output.display(),
+        encoded.len(),
+        source.len()
+    );
+    Ok(())
+}
+
+/// Writes the compressed BGM.dat the local-music runtime streams.
+///
+/// Accepts an already-encoded BGM.dat (verified and copied), the verified
+/// DoraemonMusic.wav disc extraction, or a verified CUE/BIN pair. Encoding is
+/// the desktop patcher's, so a browser bundle and a desktop install with local
+/// music enabled play identical data. `--pcm` emits version 2, raw 16-bit PCM:
+/// that is what a browser build wants, because the guest would otherwise spend
+/// about one instruction in seven decoding ADPCM inside a timer callback.
+fn music(arguments: &[String]) -> Result<(), String> {
+    let input = PathBuf::from(value(arguments, "--input").unwrap_or_else(|| usage()));
+    let output = PathBuf::from(value(arguments, "--output").unwrap_or_else(|| usage()));
+    let pcm = arguments.iter().any(|argument| argument == "--pcm");
+    let extension = input
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match (extension.as_str(), pcm) {
+        ("dat", false) => {
+            if !doraemon_game_patch::music::valid(&input) {
+                return Err(format!("{} is not a valid BGM.dat", input.display()));
+            }
+            fs::copy(&input, &output)
+                .map_err(|error| format!("{}: {error}", output.display()))?;
+        }
+        ("dat", true) => doraemon_game_patch::music::to_pcm(&input, &output)
+            .map_err(|error| error.to_string())?,
+        ("wav", false) => doraemon_game_patch::music::encode_wav(&input, &output)
+            .map_err(|error| error.to_string())?,
+        ("wav", true) => doraemon_game_patch::music::encode_wav_pcm(&input, &output)
+            .map_err(|error| error.to_string())?,
+        ("cue", false) => doraemon_game_patch::music::encode_cue(&input, &output)
+            .map_err(|error| error.to_string())?,
+        ("cue", true) => doraemon_game_patch::music::encode_cue_pcm(&input, &output)
+            .map_err(|error| error.to_string())?,
+        _ => {
+            return Err(format!(
+                "{}: expected BGM.dat, DoraemonMusic.wav, or DORAEMON.cue",
+                input.display()
+            ))
+        }
+    }
+    println!("{}: {}", output.display(), fs::metadata(&output).map_err(|error| error.to_string())?.len());
+    Ok(())
+}
+
 fn package(arguments: &[String]) -> Result<(), String> {
     let payload_path = PathBuf::from(value(arguments, "--payload").unwrap_or_else(|| usage()));
     let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
@@ -420,170 +546,136 @@ fn package(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Header prefix for the compressed language packs: four magic bytes followed
+/// by the little-endian uncompressed length, then a zstd frame. The patcher
+/// reads this exact layout, which is the one it used to embed at build time.
+const PACK_MAGIC: &[u8; 4] = b"DZC1";
+const PACK_ZSTD_LEVEL: i32 = 19;
+
+fn language_named(name: &str) -> Result<Language, String> {
+    match name {
+        "english" => Ok(Language::English),
+        "vietnamese" => Ok(Language::Vietnamese),
+        other => Err(format!(
+            "unknown language {other}; expected english or vietnamese"
+        )),
+    }
+}
+
+fn pack_file_name(language: Language) -> &'static str {
+    match language {
+        Language::English => "english-pack.bin",
+        _ => "vietnamese-pack.bin",
+    }
+}
+
+/// Publishes one language as a single download asset: the same DPART container
+/// of `.dmpatch` parts the patcher used to embed, zstd-compressed. Shipping it
+/// as a release asset instead of linking it into `patcher.exe` is what keeps
+/// the executable small.
+fn pack(arguments: &[String]) -> Result<(), String> {
+    let language = language_named(&value(arguments, "--language").unwrap_or_else(|| usage()))?;
+    let parts_dir = PathBuf::from(value(arguments, "--parts-dir").unwrap_or_else(|| usage()));
+    let output_dir = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
+    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+
+    let targets: Vec<TargetName> = if parts_dir.join(TargetName::Dubbing.filename()).exists() {
+        TargetName::all().to_vec()
+    } else {
+        TargetName::legacy().to_vec()
+    };
+    let mut part_bytes: Vec<Vec<u8>> = Vec::new();
+    let mut parts = Vec::new();
+    for target in &targets {
+        let path = parts_dir.join(target.filename());
+        let bytes = if path.is_file() {
+            fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))?
+        } else {
+            println!("{}: missing, packing an empty placeholder", path.display());
+            Vec::new()
+        };
+        if !bytes.is_empty() {
+            parts.push(payload::decode_part(&bytes).map_err(|error| format!("{}: {error}", path.display()))?);
+        }
+        part_bytes.push(bytes);
+    }
+    if parts.is_empty() {
+        return Err(format!("no patch parts found in {}", parts_dir.display()));
+    }
+    let merged = doraemon_game_patch::merge_parts(&parts)?;
+    if merged.language != language {
+        return Err(format!(
+            "{} holds {} parts, not {}",
+            parts_dir.display(),
+            merged.language.suffix(),
+            language.suffix()
+        ));
+    }
+
+    // DPART is five magic bytes, a two-byte part count, one offset/length pair
+    // per part, then the parts themselves.
+    let mut blob = Vec::new();
+    blob.extend_from_slice(b"DPART");
+    blob.extend_from_slice(&(part_bytes.len() as u16).to_le_bytes());
+    let mut data_start = 7 + part_bytes.len() * 8;
+    for bytes in &part_bytes {
+        blob.extend_from_slice(&(data_start as u32).to_le_bytes());
+        blob.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+        data_start += bytes.len();
+    }
+    for bytes in &part_bytes {
+        blob.extend_from_slice(bytes);
+    }
+
+    let mut compressed = Vec::with_capacity(blob.len() / 2 + 16);
+    compressed.extend_from_slice(PACK_MAGIC);
+    compressed.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+    compressed.extend_from_slice(
+        &zstd::bulk::compress(&blob, PACK_ZSTD_LEVEL)
+            .map_err(|error| format!("compress pack: {error}"))?,
+    );
+
+    let destination = output_dir.join(pack_file_name(language));
+    fs::write(&destination, &compressed).map_err(|error| error.to_string())?;
+    fs::write(
+        output_dir.join(format!("{}.sha256", pack_file_name(language))),
+        format!(
+            "{}  {}\n",
+            hash::hex(&hash::file(&destination)?),
+            pack_file_name(language)
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    println!(
+        "Wrote {} ({} parts, {:.1} MiB compressed from {:.1} MiB).",
+        destination.display(),
+        parts.len(),
+        compressed.len() as f64 / (1024.0 * 1024.0),
+        blob.len() as f64 / (1024.0 * 1024.0)
+    );
+    Ok(())
+}
+
 fn universal(arguments: &[String]) -> Result<(), String> {
-    let english_path = value(arguments, "--english-payload").map(PathBuf::from);
-    let vietnamese_path = value(arguments, "--vietnamese-payload").map(PathBuf::from);
-    let english_dir = value(arguments, "--english-payload-dir").map(PathBuf::from);
-    let vietnamese_dir = value(arguments, "--vietnamese-payload-dir").map(PathBuf::from);
     let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-    if english_path.is_none()
-        && vietnamese_path.is_none()
-        && english_dir.is_none()
-        && vietnamese_dir.is_none()
-    {
-        return Err("universal needs at least one language payload".into());
-    }
-    let wrapper = runtime_files(arguments)?;
     let target = value(arguments, "--target").unwrap_or_else(|| "x86_64-pc-windows-gnu".into());
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-    // Load from parts directory (multipart) or monolithic payload
-    fn load_from_parts_dir(dir: &Path) -> Result<Payload, String> {
-        let mut parts = Vec::new();
-        let targets = if dir.join("dubbing.dmpatch").exists() {
-            vec!["dubbing.dmpatch", "sprites.dmpatch", "runtime.dmpatch"]
-        } else {
-            vec![
-                "loc-doraemon.dmpatch", "loc-nobita.dmpatch", "loc-dorami.dmpatch",
-                "loc-shizuka.dmpatch", "loc-suneo.dmpatch", "loc-gian.dmpatch",
-                "loc-others.dmpatch", "sprites.dmpatch", "runtime.dmpatch",
-            ]
-        };
-        for target in &targets {
-            let part_path = dir.join(target);
-            if part_path.exists() {
-                let bytes = fs::read(&part_path).map_err(|e| format!("{}: {e}", part_path.display()))?;
-                let part = payload::decode_part(&bytes)
-                    .map_err(|e| format!("{}: {e}", part_path.display()))?;
-                parts.push(part);
-            }
-        }
-        if parts.is_empty() {
-            return Err(format!("no valid parts found in {}", dir.display()));
-        }
-        let merged = doraemon_game_patch::merge_parts(&parts)
-            .map_err(|e| format!("merge parts: {e}"))?;
-        Ok(merged)
-    }
-
-    let mut english = if let Some(ref dir) = english_dir {
-        Some(load_from_parts_dir(dir)?)
-    } else {
-        english_path
-            .as_ref()
-            .map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?))
-            .transpose()?
-    };
-    let mut vietnamese = if let Some(ref dir) = vietnamese_dir {
-        Some(load_from_parts_dir(dir)?)
-    } else {
-        vietnamese_path
-            .as_ref()
-            .map(|path| payload::decode(&fs::read(path).map_err(|e| e.to_string())?))
-            .transpose()?
-    };
-
-    if english
-        .as_ref()
-        .is_some_and(|payload| payload.language != Language::English)
-        || vietnamese
-            .as_ref()
-            .is_some_and(|payload| payload.language != Language::Vietnamese)
-    {
-        return Err("universal payload language does not match its option".into());
-    }
-
-    // For component payloads, use directory-based env vars.
-    if english_dir.is_some() || vietnamese_dir.is_some() {
-        let en_dir = english_dir.map(|d| {
-            let canon = fs::canonicalize(&d).unwrap_or(d);
-            canon.to_string_lossy().to_string()
-        });
-        let vi_dir = vietnamese_dir.map(|d| {
-            let canon = fs::canonicalize(&d).unwrap_or(d);
-            canon.to_string_lossy().to_string()
-        });
-
-        // Component parts carry everything (including the runtime wrapper) inside
-        // the multipart data itself, so no monolithic fallback is embedded here.
-        // The patcher prefers multipart data, and a duplicate monolithic payload
-        // would only double the embedded size for no runtime benefit.
-        let status = Command::new("cargo")
-            .current_dir(&workspace)
-            .args([
-                "build",
-                "--release",
-                "-p",
-                "doraemon-patcher",
-                "--target",
-                &target,
-            ])
-            .env(
-                "DORAEMON_PATCH_PARTS_ENGLISH",
-                en_dir.as_deref().unwrap_or(""),
-            )
-            .env(
-                "DORAEMON_PATCH_PARTS_VIETNAMESE",
-                vi_dir.as_deref().unwrap_or(""),
-            )
-            .status()
-            .map_err(|e| format!("start Cargo: {e}"))?;
-        if !status.success() {
-            return Err(format!("Windows patcher build failed with {status}"));
-        }
-    } else {
-        // Monolithic payload fallback
-        if let Some(payload) = &mut english {
-            payload.bundled = wrapper.clone();
-        }
-        if let Some(payload) = &mut vietnamese {
-            payload.bundled = wrapper;
-        }
-        let en_temp = output.join(".english-payload.dmpatch");
-        let vi_temp = output.join(".vietnamese-payload.dmpatch");
-        fs::write(
-            &en_temp,
-            english
-                .map(|payload| payload::encode(&payload))
-                .transpose()?
-                .unwrap_or_default(),
-        )
-        .map_err(|e| e.to_string())?;
-        fs::write(
-            &vi_temp,
-            vietnamese
-                .map(|payload| payload::encode(&payload))
-                .transpose()?
-                .unwrap_or_default(),
-        )
-        .map_err(|e| e.to_string())?;
-
-        let status = Command::new("cargo")
-            .current_dir(&workspace)
-            .env(
-                "DORAEMON_PATCH_PAYLOAD_ENGLISH",
-                fs::canonicalize(&en_temp).map_err(|e| e.to_string())?,
-            )
-            .env(
-                "DORAEMON_PATCH_PAYLOAD_VIETNAMESE",
-                fs::canonicalize(&vi_temp).map_err(|e| e.to_string())?,
-            )
-            .args([
-                "build",
-                "--release",
-                "-p",
-                "doraemon-patcher",
-                "--target",
-                &target,
-            ])
-            .status()
-            .map_err(|e| format!("start Cargo: {e}"))?;
-        fs::remove_file(&en_temp).ok();
-        fs::remove_file(&vi_temp).ok();
-        if !status.success() {
-            return Err(format!("Windows patcher build failed with {status}"));
-        }
+    let status = Command::new("cargo")
+        .current_dir(&workspace)
+        .args([
+            "build",
+            "--release",
+            "-p",
+            "doraemon-patcher",
+            "--target",
+            &target,
+        ])
+        .status()
+        .map_err(|e| format!("start Cargo: {e}"))?;
+    if !status.success() {
+        return Err(format!("Windows patcher build failed with {status}"));
     }
 
     let built = workspace
@@ -599,7 +691,7 @@ fn universal(arguments: &[String]) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     fs::write(
         output.join("README.txt"),
-        "Doraemon universal patcher\r\n\r\nCopy patcher.exe into the folder containing Doraemon.exe, then run it there.\r\nChoose <original>, English, or Vietnamese, pick the compatibility options you want, and press Apply.\r\nThe patcher always works on its own folder, creates a backup before writing, and keeps the window open so you can read the log.\r\n",
+        "Doraemon universal patcher\r\n\r\nCopy patcher.exe into the folder containing Doraemon.exe, then run it there.\r\nTick <original>, English, or Vietnamese, pick the compatibility options you want, and press Apply.\r\nLanguage packs download once from the release page on first use, then stay cached; patcher.exe itself is small.\r\nThe patcher always works on its own folder, creates a backup before writing, and keeps the window open so you can read the log.\r\n",
     )
     .map_err(|e| e.to_string())?;
     println!("Built {}.", destination.display());
@@ -1156,8 +1248,12 @@ fn main() {
         Some("materialize") => materialize(&arguments[1..]),
         Some("materialize-file") => materialize_file(&arguments[1..]),
         Some("materialize-parts") => materialize_parts(&arguments[1..]),
+        Some("localized-image") => localized_image(&arguments[1..]),
+        Some("voice-quality") => voice_quality(&arguments[1..]),
+        Some("music") => music(&arguments[1..]),
         Some("release-parts") => release_parts(&arguments[1..]),
         Some("package") => package(&arguments[1..]),
+        Some("pack") => pack(&arguments[1..]),
         Some("universal") => universal(&arguments[1..]),
         Some("portable") => portable(&arguments[1..]),
         _ => usage(),
@@ -1165,5 +1261,30 @@ fn main() {
     if let Err(error) = result {
         eprintln!("Error: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A browser has neither device, so an image without both lifted checks is
+    /// not a ported image, and the step says so instead of writing one.
+    #[test]
+    fn a_ported_image_requires_both_checks_lifted() {
+        let arguments: Vec<String> = [
+            "--language",
+            "english",
+            "--input",
+            "missing.exe",
+            "--output",
+            "out.exe",
+        ]
+        .iter()
+        .map(|argument| argument.to_string())
+        .collect();
+        let error = localized_image(&arguments).expect_err("the step must refuse");
+        assert!(error.contains("--no-disc"), "{error}");
+        assert!(error.contains("--no-reg"), "{error}");
     }
 }

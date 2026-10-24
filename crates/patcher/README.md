@@ -9,6 +9,20 @@ originals afterwards.
 The GUI is Windows-only. Build the same patcher from Linux or macOS with
 [`patch-build universal`](../patch-build/README.md) - it only produces the EXE.
 
+## Language packs
+
+Patch data is not built into the EXE. Each language ships as a release asset
+(`english-pack.bin`, `vietnamese-pack.bin` plus their `.sha256` files, produced
+by `patch-build pack`), and the patcher resolves it at apply time:
+
+1. `packs/<asset>` beside `patcher.exe`,
+2. the `%LOCALAPPDATA%\DoraemonPatcher\packs\<version>\<asset>` cache,
+3. otherwise the GitHub release whose tag matches this patcher version.
+
+A download is checked against the sidecar digest, cached, then installed, so the
+second apply and every restore work offline. `DORAEMON_PATCHER_PACK_DIR` points
+the lookup at another folder (handy for testing with a locally built pack).
+
 ## What Apply does
 
 - **Restores first.** Every `Apply patch` starts by restoring the files from the
@@ -41,7 +55,7 @@ The GUI is Windows-only. Build the same patcher from Linux or macOS with
 | **Reduce Voice.dat** | Re-transcodes the WAV leaves inside `voice.dat` at the selected quality. Only standard PCM leaves are rebuilt; unsupported WAV layouts are kept unchanged. |
 | **Quality** | **Original** (22,050 Hz / 16-bit, pass-through), **High** (22,050 / 8-bit), **Balanced** (11,025 / 16-bit), **Compact** (11,025 / 8-bit). Used by both BGM and voice reduction. |
 | **Compress** | Applies the audio reductions and quality to the in-place `Doraemon.exe` without restoring anything first and without touching the language profiles. Run it again after applying a language, because applying a language restores the originals (and with them any compressed audio). |
-| **Add graphics wrapper** | Installs the bundled cnc-ddraw wrapper (`ddraw.dll` and friends) and offers to open its config tool; refuses to overwrite a pre-existing different file. Only present when built with `--cnc-ddraw-dir`. |
+| **Add graphics wrapper** | Installs the cnc-ddraw wrapper (`ddraw.dll` and friends) carried in the runtime component of every language pack, and offers to open its config tool; refuses to overwrite a pre-existing different file. Fetches a pack first if none is on disk yet. |
 | **Play** | Launches the installed game. With more than one executable in the game folder it asks which one first. |
 | **Restore backup** | Returns the game to the exact originals saved in `backup/`. |
 
@@ -69,18 +83,15 @@ the start of each apply.
 
 ## Building
 
-The patcher embeds the language payloads (a `DPART` bundle, zstd-19 compressed,
-which shrank the release EXE by about 55%):
+The EXE holds no patch data, so it builds without any payload directory:
 
 ```sh
-cargo run -p patch-build -- universal \
-  --english-payload-dir content/patches/english \
-  --vietnamese-payload-dir content/patches/vietnamese \
-  --output-dir workspace/release \
-  --cnc-ddraw-dir vendor/cnc-ddraw
+cargo run -p patch-build -- universal --output-dir workspace/release
 ```
 
-or `make build-patcher`. The result is `workspace/release/patcher.exe`. See
+or `make build-patcher`. The result is `workspace/release/patcher.exe`. Build the
+matching packs with `make packs`, which writes
+`workspace/release/<language>-pack.bin` into the same folder. See
 [`crates/patch-build`](../patch-build/README.md).
 
 ## Windows verification checklist
