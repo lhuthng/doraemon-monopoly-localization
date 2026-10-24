@@ -328,8 +328,8 @@ way to ship a fully offline copy.
 To publish it as a GitHub release, push a tag:
 
 ```sh
-git tag patcher-v1.x.x
-git push origin patcher-v1.x.x
+git tag patcher-v0.2.0        # must match `version` in Cargo.toml
+git push origin patcher-v0.2.0
 ```
 
 The `release-language.yml` workflow packages both language packs from the
