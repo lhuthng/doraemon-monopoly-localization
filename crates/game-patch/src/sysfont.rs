@@ -81,6 +81,11 @@ pub fn rebuild(font: &Font) -> Result<Vec<u8>> {
     let mut output = vec![0_u8; first];
     output[..2].copy_from_slice(&count16.to_le_bytes());
     output[2 + count * 4..first].copy_from_slice(&font.header);
+    // The stock file keeps a four-byte end offset between the table and the
+    // first glyph. Growing the table moves that field, so writing the old size
+    // back verbatim would leave the file claiming a length it no longer has;
+    // readers use it to find the last glyph's end.
+    let stores_end_offset = font.header.len() == 4;
     for (index, glyph) in font.glyphs.iter().enumerate() {
         if glyph.width == 0
             || glyph.height == 0
@@ -94,6 +99,11 @@ pub fn rebuild(font: &Font) -> Result<Vec<u8>> {
         output.push(glyph.width);
         output.push(glyph.height);
         output.extend_from_slice(&glyph.pixels);
+    }
+    if stores_end_offset {
+        let end = u32::try_from(output.len()).map_err(|_| "sysfont exceeds 4 GiB".to_string())?;
+        let slot = 2 + count * 4;
+        output[slot..slot + 4].copy_from_slice(&(end as u32).to_le_bytes());
     }
     if parse(&output)?.glyphs != font.glyphs {
         return Err("rebuilt sysfont verification failed".into());
@@ -257,6 +267,44 @@ pub fn encoded_bytes(character: char) -> Option<[u8; 2]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stock-shaped font: four-byte end offset before the glyphs.
+    fn stock_shaped(count: usize) -> Vec<u8> {
+        let glyphs = vec![
+            Glyph {
+                width: 8,
+                height: 8,
+                pixels: vec![0xff; 64],
+            };
+            count
+        ];
+        let first = 2 + count * 4 + 4;
+        let mut data = vec![0_u8; first];
+        data[..2].copy_from_slice(&(count as u16).to_le_bytes());
+        let mut cursor = first;
+        for (index, glyph) in glyphs.iter().enumerate() {
+            data[2 + index * 4..6 + index * 4]
+                .copy_from_slice(&(cursor as u32).to_le_bytes());
+            data.push(glyph.width);
+            data.push(glyph.height);
+            data.extend_from_slice(&glyph.pixels);
+            cursor += 2 + glyph.pixels.len();
+        }
+        data[2 + count * 4..2 + count * 4 + 4].copy_from_slice(&(cursor as u32).to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn rebuilding_keeps_the_end_offset_in_step_with_the_file() {
+        let original = stock_shaped(128);
+        let font = parse(&original).unwrap();
+        assert_eq!(font.header.len(), 4);
+        let rebuilt = rebuild(&font).unwrap();
+        let slot = 2 + font.glyphs.len() * 4;
+        let stored = u32::from_le_bytes(rebuilt[slot..slot + 4].try_into().unwrap());
+        assert_eq!(stored as usize, rebuilt.len());
+    }
+
     #[test]
     fn mapping_is_stable() {
         assert_eq!(vietnamese_characters().len(), 134);

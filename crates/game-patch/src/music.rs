@@ -7,6 +7,12 @@ use std::{
 use crate::{install::replace_file, Result};
 
 pub const MAGIC: &[u8; 8] = b"DBGM1\0\0\0";
+/// Version 1 is IMA ADPCM in 4096-frame blocks; version 2 is raw 16-bit PCM.
+/// The embedded runtime decodes the first in the guest and streams the second
+/// straight into the DirectSound buffer, which keeps the music off the
+/// interpreter's instruction budget.
+pub const VERSION_IMA: u32 = 1;
+pub const VERSION_PCM: u32 = 2;
 pub const HEADER_SIZE: usize = 192;
 pub const TRACK_COUNT: usize = 10;
 pub const SAMPLE_RATE: u32 = 22_050;
@@ -201,6 +207,283 @@ fn encode_reader<R: Read + Seek>(
     replace_file(&temporary, output)
 }
 
+fn track_frames_for(source_frames_per_output: u32) -> Vec<u32> {
+    TRACK_FRAMES
+        .iter()
+        .map(|frames| frames * 2 / source_frames_per_output)
+        .collect()
+}
+
+fn write_header(
+    header: &mut [u8],
+    version: u32,
+    sample_rate: u32,
+    entries: &[(u32, u32, u32, u32)],
+) {
+    header[..8].copy_from_slice(MAGIC);
+    put_u32(header, 8, version);
+    put_u32(header, 12, TRACK_COUNT as u32);
+    put_u32(header, 16, sample_rate);
+    put_u16(header, 20, 1);
+    put_u16(header, 22, 16);
+    put_u32(header, 24, BLOCK_FRAMES as u32);
+    for (index, (id, offset, length, frames)) in entries.iter().enumerate() {
+        let at = 32 + index * 16;
+        put_u32(header, at, *id);
+        put_u32(header, at + 4, *offset);
+        put_u32(header, at + 8, *length);
+        put_u32(header, at + 12, *frames);
+    }
+}
+
+/// Writes the header over the placeholder, verifies the result, and puts it in
+/// place next to the sources.
+fn finish_container(
+    mut target: File,
+    temporary: &Path,
+    output: &Path,
+    version: u32,
+    sample_rate: u32,
+    entries: &[(u32, u32, u32, u32)],
+) -> Result<()> {
+    let mut header = [0_u8; HEADER_SIZE];
+    write_header(&mut header, version, sample_rate, entries);
+    target
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| error.to_string())?;
+    target
+        .write_all(&header)
+        .map_err(|error| error.to_string())?;
+    target.sync_all().map_err(|error| error.to_string())?;
+    drop(target);
+    if !valid(temporary) {
+        let _ = fs::remove_file(temporary);
+        return Err("generated BGM.dat failed verification".into());
+    }
+    replace_file(temporary, output)
+}
+
+/// Writes one raw-PCM track, downmixing the stereo source to mono.
+fn encode_track_pcm<R: Read>(
+    source: &mut R,
+    target: &mut File,
+    frames: u32,
+    source_frames_per_output: usize,
+) -> Result<u32> {
+    let mut remaining = frames as usize;
+    let mut written = 0_u32;
+    let mut block = Vec::with_capacity(BLOCK_FRAMES * 2);
+    while remaining != 0 {
+        let count = remaining.min(BLOCK_FRAMES);
+        let bytes_per_output = source_frames_per_output * 4;
+        let mut pcm = vec![0_u8; count * bytes_per_output];
+        source
+            .read_exact(&mut pcm)
+            .map_err(|error| format!("read source PCM: {error}"))?;
+        block.clear();
+        for frame in 0..count {
+            let at = frame * bytes_per_output;
+            block.extend_from_slice(&mono_sample(&pcm[at..at + bytes_per_output]).to_le_bytes());
+        }
+        target
+            .write_all(&block)
+            .map_err(|error| format!("write BGM.dat PCM: {error}"))?;
+        written = written
+            .checked_add(block.len() as u32)
+            .ok_or("BGM.dat track exceeds 4 GiB")?;
+        remaining -= count;
+    }
+    Ok(written)
+}
+
+fn encode_reader_pcm<R: Read + Seek>(
+    source: &mut R,
+    output: &Path,
+    source_frames_per_output: u32,
+) -> Result<()> {
+    let sample_rate = 44_100 / source_frames_per_output;
+    let track_frames = track_frames_for(source_frames_per_output);
+    let temporary = output.with_extension("dat.dmpatch.tmp");
+    let mut target =
+        File::create(&temporary).map_err(|error| format!("{}: {error}", temporary.display()))?;
+    target
+        .write_all(&[0_u8; HEADER_SIZE])
+        .map_err(|error| error.to_string())?;
+    let mut entries = Vec::with_capacity(TRACK_COUNT);
+    for (index, frames) in track_frames.iter().copied().enumerate() {
+        let offset = target
+            .stream_position()
+            .map_err(|error| error.to_string())? as u32;
+        let length = encode_track_pcm(
+            source,
+            &mut target,
+            frames,
+            source_frames_per_output as usize,
+        )?;
+        entries.push((index as u32 + 2, offset, length, frames));
+        if index + 1 != TRACK_COUNT {
+            source
+                .seek(SeekFrom::Current(SEGUE_BYTES as i64))
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    finish_container(
+        target,
+        &temporary,
+        output,
+        VERSION_PCM,
+        sample_rate,
+        &entries,
+    )
+}
+
+/// Decodes one IMA track into raw 16-bit samples.
+fn decode_track_into<W: Write>(
+    bytes: &[u8],
+    offset: usize,
+    length: usize,
+    frames: u32,
+    target: &mut W,
+) -> Result<()> {
+    let end = offset
+        .checked_add(length)
+        .ok_or("BGM.dat track offset overflows")?;
+    if end > bytes.len() {
+        return Err("BGM.dat track lies outside the file".into());
+    }
+    let mut at = offset;
+    let mut left = frames;
+    let mut block = Vec::with_capacity(BLOCK_FRAMES * 2);
+    while left != 0 {
+        if at + 6 > end {
+            return Err("BGM.dat block header is truncated".into());
+        }
+        let count = get_u16(bytes, at) as u32;
+        let first = get_u16(bytes, at + 2) as i16;
+        let mut step_index = bytes[at + 4] as i32;
+        if count == 0
+            || count > BLOCK_FRAMES as u32
+            || count > left
+            || step_index > 88
+            || bytes[at + 5] != 0
+        {
+            return Err("BGM.dat block header is invalid".into());
+        }
+        let packed = count as usize / 2;
+        if at + 6 + packed > end {
+            return Err("BGM.dat block is truncated".into());
+        }
+        let mut predictor = first as i32;
+        block.clear();
+        block.extend_from_slice(&first.to_le_bytes());
+        let mut produced = 1_u32;
+        'nibbles: for &byte in &bytes[at + 6..at + 6 + packed] {
+            for nibble in [byte & 15, byte >> 4] {
+                if produced == count {
+                    break 'nibbles;
+                }
+                let step = STEP_TABLE[step_index as usize];
+                let mut difference = step >> 3;
+                if nibble & 1 != 0 {
+                    difference += step >> 2;
+                }
+                if nibble & 2 != 0 {
+                    difference += step >> 1;
+                }
+                if nibble & 4 != 0 {
+                    difference += step;
+                }
+                if nibble & 8 != 0 {
+                    predictor -= difference;
+                } else {
+                    predictor += difference;
+                }
+                predictor = predictor.clamp(i16::MIN as i32, i16::MAX as i32);
+                step_index = (step_index + INDEX_TABLE[nibble as usize]).clamp(0, 88);
+                block.extend_from_slice(&(predictor as i16).to_le_bytes());
+                produced += 1;
+            }
+        }
+        if produced != count {
+            return Err("BGM.dat block has too few samples".into());
+        }
+        target
+            .write_all(&block)
+            .map_err(|error| format!("write PCM track: {error}"))?;
+        at += 6 + packed;
+        left -= count;
+    }
+    Ok(())
+}
+
+fn header_tracks(bytes: &[u8]) -> Result<(u32, u32, Vec<(u32, u32, u32, u32)>)> {
+    if bytes.len() < HEADER_SIZE || &bytes[..8] != MAGIC {
+        return Err("not a Doraemon BGM.dat".into());
+    }
+    let version = get_u32(bytes, 8);
+    let sample_rate = get_u32(bytes, 16);
+    if (version != VERSION_IMA && version != VERSION_PCM)
+        || get_u32(bytes, 12) != TRACK_COUNT as u32
+        || get_u16(bytes, 20) != 1
+        || get_u16(bytes, 22) != 16
+        || get_u32(bytes, 24) != BLOCK_FRAMES as u32
+    {
+        return Err("unsupported BGM.dat header".into());
+    }
+    let mut tracks = Vec::with_capacity(TRACK_COUNT);
+    for index in 0..TRACK_COUNT {
+        let at = 32 + index * 16;
+        tracks.push((
+            get_u32(bytes, at),
+            get_u32(bytes, at + 4),
+            get_u32(bytes, at + 8),
+            get_u32(bytes, at + 12),
+        ));
+    }
+    Ok((version, sample_rate, tracks))
+}
+
+/// Rewrites an existing BGM.dat as raw 16-bit PCM, decoding version 1 first.
+pub fn to_pcm(input: &Path, output: &Path) -> Result<()> {
+    if !valid(input) {
+        return Err(format!("{} is not a valid BGM.dat", input.display()));
+    }
+    let bytes = fs::read(input).map_err(|error| format!("{}: {error}", input.display()))?;
+    let (version, sample_rate, tracks) = header_tracks(&bytes)?;
+    if version == VERSION_PCM {
+        return replace_file(input, output);
+    }
+    let temporary = output.with_extension("dat.dmpatch.tmp");
+    let mut target =
+        File::create(&temporary).map_err(|error| format!("{}: {error}", temporary.display()))?;
+    target
+        .write_all(&[0_u8; HEADER_SIZE])
+        .map_err(|error| error.to_string())?;
+    let mut entries = Vec::with_capacity(TRACK_COUNT);
+    for (index, (id, offset, length, frames)) in tracks.iter().copied().enumerate() {
+        let at = target
+            .stream_position()
+            .map_err(|error| error.to_string())? as u32;
+        decode_track_into(&bytes, offset as usize, length as usize, frames, &mut target)?;
+        let written = frames
+            .checked_mul(2)
+            .ok_or("BGM.dat track exceeds 4 GiB")?;
+        entries.push((id, at, written, frames));
+        if id != index as u32 + 2 {
+            let _ = fs::remove_file(&temporary);
+            return Err("BGM.dat track ids are out of order".into());
+        }
+    }
+    finish_container(
+        target,
+        &temporary,
+        output,
+        VERSION_PCM,
+        sample_rate,
+        &entries,
+    )
+}
+
 pub fn encode_wav(wav: &Path, output: &Path) -> Result<()> {
     if !crate::cue::valid_wav(wav) {
         return Err("DoraemonMusic.wav is not the verified disc extraction".into());
@@ -223,6 +506,30 @@ pub fn encode_cue(cue_path: &Path, output: &Path) -> Result<()> {
         .seek(SeekFrom::Start(102_263 * 2_352))
         .map_err(|error| error.to_string())?;
     encode_reader(&mut source, output, 2)
+}
+
+pub fn encode_wav_pcm(wav: &Path, output: &Path) -> Result<()> {
+    if !crate::cue::valid_wav(wav) {
+        return Err("DoraemonMusic.wav is not the verified disc extraction".into());
+    }
+    let mut source = File::open(wav).map_err(|error| format!("{}: {error}", wav.display()))?;
+    source
+        .seek(SeekFrom::Start(44))
+        .map_err(|error| error.to_string())?;
+    encode_reader_pcm(&mut source, output, 2)
+}
+
+pub fn encode_cue_pcm(cue_path: &Path, output: &Path) -> Result<()> {
+    let cue = crate::cue::parse(cue_path)?;
+    if !crate::cue::valid_cue(cue_path) {
+        return Err("CUE/BIN is not the verified Doraemon disc image".into());
+    }
+    let mut source = File::open(&cue.bin_path)
+        .map_err(|error| format!("{}: {error}", cue.bin_path.display()))?;
+    source
+        .seek(SeekFrom::Start(102_263 * 2_352))
+        .map_err(|error| error.to_string())?;
+    encode_reader_pcm(&mut source, output, 2)
 }
 
 fn quality_factor(quality: crate::voice::Compression) -> u32 {
@@ -284,7 +591,7 @@ pub fn valid(path: &Path) -> bool {
         _ => return false,
     };
     if &header[..8] != MAGIC
-        || get_u32(&header, 8) != 1
+        || (get_u32(&header, 8) != VERSION_IMA && get_u32(&header, 8) != VERSION_PCM)
         || get_u32(&header, 12) != TRACK_COUNT as u32
         || get_u32(&header, 16) != sample_rate
         || get_u16(&header, 20) != 1
@@ -293,6 +600,7 @@ pub fn valid(path: &Path) -> bool {
     {
         return false;
     }
+    let raw = get_u32(&header, 8) == VERSION_PCM;
     let mut previous_end = HEADER_SIZE as u64;
     for index in 0..TRACK_COUNT {
         let at = 32 + index * 16;
@@ -307,6 +615,13 @@ pub fn valid(path: &Path) -> bool {
             || offset + length > size
         {
             return false;
+        }
+        if raw {
+            if length != frames as u64 * 2 {
+                return false;
+            }
+            previous_end = offset + length;
+            continue;
         }
         if file.seek(SeekFrom::Start(offset)).is_err() {
             return false;
@@ -405,6 +720,59 @@ mod tests {
     }
 
     #[test]
+    fn pcm_decode_reconstructs_the_encoder_predictor() {
+        let first = 1000_i16;
+        let mut predictor = first as i32;
+        let mut step_index = 0_i32;
+        let mut expected = vec![first];
+        let mut nibbles = Vec::new();
+        for sample in [1200_i16, 1300, 900, -400, 0, 32767, -32768, 1234] {
+            nibbles.push(encode_nibble(sample, &mut predictor, &mut step_index));
+            expected.push(predictor as i16);
+        }
+        let mut block = Vec::new();
+        block.extend_from_slice(&((expected.len() as u16).to_le_bytes()));
+        block.extend_from_slice(&first.to_le_bytes());
+        block.push(0);
+        block.push(0);
+        for pair in nibbles.chunks(2) {
+            block.push(pair[0] | (pair.get(1).copied().unwrap_or(0) << 4));
+        }
+        let mut decoded = Vec::new();
+        decode_track_into(&block, 0, block.len(), expected.len() as u32, &mut decoded).unwrap();
+        let samples: Vec<i16> = decoded
+            .chunks_exact(2)
+            .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+            .collect();
+        assert_eq!(samples, expected);
+    }
+
+    #[test]
+    fn pcm_container_validates_and_reports_bad_lengths() {
+        let path = synthetic_path("pcm-container");
+        let mut entries = Vec::new();
+        let mut bytes = vec![0_u8; HEADER_SIZE];
+        for (index, frames) in TRACK_FRAMES.into_iter().enumerate() {
+            let offset = bytes.len() as u32;
+            bytes.resize(bytes.len() + frames as usize * 2, index as u8);
+            entries.push((index as u32 + 2, offset, frames * 2, frames));
+        }
+        let mut header = [0_u8; HEADER_SIZE];
+        write_header(&mut header, VERSION_PCM, SAMPLE_RATE, &entries);
+        bytes[..HEADER_SIZE].copy_from_slice(&header);
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(valid(&path));
+
+        put_u32(&mut bytes, 32 + 8, TRACK_FRAMES[0] * 2 + 2);
+        let damaged = synthetic_path("pcm-length");
+        std::fs::write(&damaged, &bytes).unwrap();
+        assert!(!valid(&damaged));
+        std::fs::remove_file(damaged).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
+
+
+    #[test]
     fn all_track_durations_match_the_corrected_music() {
         let seconds: Vec<_> = TRACK_FRAMES
             .into_iter()
@@ -422,7 +790,7 @@ mod tests {
         let original = std::fs::read(&path).unwrap();
         for (label, offset, value) in [
             ("magic", 0, b'X'),
-            ("version", 8, 2),
+            ("version", 8, 3),
             ("track-id", 32, 3),
             ("frame-count", 44, 0),
         ] {

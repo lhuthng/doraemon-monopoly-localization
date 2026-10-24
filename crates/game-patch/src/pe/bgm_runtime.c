@@ -9,6 +9,7 @@
 #define HEADER_SIZE 192
 #define SAMPLE_RATE 22050
 #define BLOCK_FRAMES 4096
+#define REFILL_SLICES 4
 #define INVALID_FILE ((HANDLE)(intptr_t)-1)
 
 typedef DWORD (__stdcall *GetModuleFileNameA_t)(HMODULE, char *, DWORD);
@@ -67,11 +68,21 @@ typedef struct {
     DWORD generation;
     DWORD level;
     DWORD sample_rate, sample_bytes, half_frames, half_bytes, buffer_bytes;
+    /* Bytes the reader caches per chunk: encoded ADPCM bytes, or raw PCM bytes
+       for a version 2 file. */
+    DWORD source_bytes;
     int error;
     int active_track;
     int current_half;
     int playing;
     int full_track;
+    /* Version 2 stores plain 16-bit PCM, so a refill is a file read instead of
+       a guest-side ADPCM decode. */
+    int raw;
+    /* One half is decoded a slice at a time so the guest never spends a whole
+       timer tick on two seconds of IMA audio at once. */
+    int filling;
+    DWORD fill_offset, fill_frames;
     Track tracks[TRACKS];
     DWORD track_offset, encoded_left, frames_left;
     DWORD block_left;
@@ -83,7 +94,7 @@ static State state = { INVALID_FILE };
 
 /* The marker lets the Rust patcher upgrade known embedded streamer revisions
    together with their dispatch pointer while rejecting unknown layouts. */
-__declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT5";
+__declspec(dllexport) const char BgmRuntimeMarker[] = "BGMRT7";
 
 static const DWORD track_frames[TRACKS] = {
     7437612,2821812,880824,2350824,129948,2086224,1497636,1332702,1859844,264894
@@ -139,7 +150,7 @@ static int read_cached(BYTE *target, DWORD length) {
         DWORD available, take, got = 0;
         if (state.input_at == state.input_len) {
             take = state.encoded_left;
-            if (take > state.half_bytes) take = state.half_bytes;
+            if (take > state.source_bytes) take = state.source_bytes;
             if (!take || !ReadFile_(state.file, state.input, take, &got, 0) || got != take) return 0;
             state.input_at = 0;
             state.input_len = take;
@@ -158,6 +169,11 @@ static int validate_tracks(void) {
     int i;
     for (i=0;i<TRACKS;++i) {
         DWORD encoded=state.tracks[i].length, frames=state.tracks[i].frames;
+        if (state.raw) {
+            /* A raw track is exactly its 16-bit PCM. */
+            if (encoded != frames*2) return 0;
+            continue;
+        }
         if (!seek_file(state.tracks[i].offset)) return 0;
         while (frames) {
             BYTE h[6];
@@ -184,6 +200,25 @@ static int reset_track(void) {
     state.block_left = 0;
     state.first_sample = 0;
     state.high_nibble = 0;
+    return 1;
+}
+
+/* Raw PCM keeps the same track looping for as long as the game asks for it.
+   The buffer itself loops, so a refill that reads past the track's last frame
+   would walk into the next song in the bank and the soundtrack would advance
+   instead of repeating. */
+static int read_raw(BYTE *target, DWORD length) {
+    while (length) {
+        DWORD available, take;
+        if (state.frames_left == 0 && !reset_track()) return 0;
+        available = state.frames_left * 2;
+        take = length < available ? length : available;
+        if (!read_cached(target, take)) return 0;
+        state.encoded_left -= take;
+        state.frames_left -= take / 2;
+        target += take;
+        length -= take;
+    }
     return 1;
 }
 
@@ -241,6 +276,25 @@ static int next_sample(int16_t *sample) {
 
 static int decode(BYTE *target, DWORD frames) {
     DWORD i;
+    if (state.raw) {
+        if (!read_raw(target, frames*2)) {
+            if (state.sample_bytes == 1) {
+                zero_bytes(target, frames);
+            } else {
+                zero_bytes(target, frames*2);
+            }
+            return 0;
+        }
+        /* An 8-bit primary buffer keeps the same guarded format the game
+           selected; convert after reading, before any byte is overwritten. */
+        if (state.sample_bytes == 1) {
+            for (i = 0; i < frames; ++i) {
+                int s = (int)(int16_t)(target[i*2] | ((WORD)target[i*2+1] << 8));
+                target[i] = (BYTE)((s + 32768) >> 8);
+            }
+        }
+        return 1;
+    }
     for (i = 0; i < frames; ++i) {
         int16_t sample;
         if (!next_sample(&sample)) {
@@ -333,6 +387,19 @@ static void set_volume(void) {
 
 static int refill(DWORD offset, DWORD frames) {
     void *a=0,*b=0; DWORD an=0,bn=0;
+    /* Raw 16-bit audio needs no decoding, so the file read lands straight in
+       the playing buffer and the guest never walks the samples. */
+    if (state.raw && state.sample_bytes == 2) {
+        if (lock_buffer(state.buffer, offset, frames*state.sample_bytes, &a,&an,&b,&bn) != 0) {
+            com0(state.buffer, 20);
+            if (lock_buffer(state.buffer, offset, frames*state.sample_bytes, &a,&an,&b,&bn) != 0) return 0;
+        }
+        if ((!an || read_raw((BYTE*)a, an)) && (!bn || read_raw((BYTE*)b, bn))) {
+            return unlock_buffer(state.buffer,a,an,b,bn) == 0;
+        }
+        unlock_buffer(state.buffer,a,an,b,bn);
+        return 0;
+    }
     if (!decode(state.scratch, frames)) return 0;
     if (lock_buffer(state.buffer, offset, frames*state.sample_bytes, &a,&an,&b,&bn) != 0) {
         com0(state.buffer, 20);
@@ -361,7 +428,10 @@ static int create_buffer(DWORD frames) {
     seed = (BYTE*)game_alloc(bytes + 44);
     if (!seed) return 0;
     wave_header(seed,bytes);
-    if (!decode(seed + 44, frames)) { game_free(seed); return 0; }
+    /* The seed only makes the game's SFX loader allocate the buffer; the
+       streamer fills it from the track before playback starts. Decoding into
+       the seed would decode the same seconds twice and stall the guest. */
+    zero_bytes(seed + 44, bytes);
     slot = reserve_slot(state.manager);
     if (slot < 0 || slot >= 8) { game_free(seed); return 0; }
     if (!play_memory(state.manager, slot, seed, 1)) {
@@ -383,6 +453,30 @@ static int create_buffer(DWORD frames) {
     return 1;
 }
 
+static DWORD fill_slice(void) {
+    DWORD slice = (state.half_frames + REFILL_SLICES - 1) / REFILL_SLICES;
+    if (slice > state.fill_frames) slice = state.fill_frames;
+    return slice;
+}
+
+static int start_fill(DWORD offset) {
+    state.fill_offset = offset;
+    state.fill_frames = state.half_frames;
+    state.filling = 1;
+    return 1;
+}
+
+static int continue_fill(void) {
+    DWORD slice;
+    if (!state.filling) return 1;
+    slice = fill_slice();
+    if (!slice || !refill(state.fill_offset, slice)) { state.playing = 0; state.filling = 0; return 0; }
+    state.fill_offset += slice * state.sample_bytes;
+    state.fill_frames -= slice;
+    if (!state.fill_frames) state.filling = 0;
+    return 1;
+}
+
 static void __stdcall BgmTimerCallback(UINT id, UINT message, DWORD user, DWORD first, DWORD second) {
     DWORD cursor, half;
     (void)id; (void)message; (void)first; (void)second;
@@ -391,9 +485,14 @@ static void __stdcall BgmTimerCallback(UINT id, UINT message, DWORD user, DWORD 
         state.buffer && get_position(state.buffer,&cursor) == 0) {
         half = cursor >= state.half_bytes;
         if ((int)half != state.current_half) {
-            if (refill(half ? 0 : state.half_bytes, state.half_frames)) state.current_half = (int)half;
-            else state.playing = 0;
+            state.current_half = (int)half;
+            /* The half that just stopped is the one that will be needed after
+               the playing half ends, so refill it with the next sequential
+               audio.  Restarting or chaining fills here would decode audio out
+               of order and make the music skip. */
+            if (!state.filling) start_fill(half ? 0 : state.half_bytes);
         }
+        continue_fill();
     }
     unlock();
 }
@@ -413,6 +512,7 @@ static int start_timer(void) {
 static void close_locked(void) {
     ++state.generation;
     state.playing = 0;
+    state.filling = 0;
     state.error = 0;
     stop_timer();
     if (state.buffer) { com0(state.buffer,18); com0(state.buffer,2); state.buffer=0; }
@@ -424,7 +524,7 @@ static void close_locked(void) {
 }
 
 __declspec(dllexport) DWORD __stdcall BgmInit(void *manager) {
-    BYTE h[HEADER_SIZE]; char path[MAX_PATH]; DWORD n,size,previous=HEADER_SIZE; int i;
+    BYTE h[HEADER_SIZE]; char path[MAX_PATH]; DWORD n,size,previous=HEADER_SIZE,version,work; int i;
     acquire(); close_locked(); state.manager=manager; state.level=65535;
     n=GetModuleFileNameA_(0,path,MAX_PATH);
     if (!n || n>=MAX_PATH) { unlock(); return 0; }
@@ -434,11 +534,13 @@ __declspec(dllexport) DWORD __stdcall BgmInit(void *manager) {
     if (state.file==INVALID_FILE || !read_exact(h,HEADER_SIZE)) { close_locked(); unlock(); return 0; }
     size=SetFilePointer_(state.file,0,0,FILE_END);
     state.sample_rate=le32(h+16);
-    if (!equal(h,"DBGM1\0\0\0",8) || le32(h+8)!=1 || le32(h+12)!=TRACKS ||
+    version=le32(h+8);
+    if (!equal(h,"DBGM1\0\0\0",8) || (version!=1 && version!=2) || le32(h+12)!=TRACKS ||
         (state.sample_rate!=22050 && state.sample_rate!=14700 && state.sample_rate!=11025) ||
         le16(h+20)!=1 || le16(h+22)!=16 || le32(h+24)!=BLOCK_FRAMES) {
         close_locked(); unlock(); return 0;
     }
+    state.raw = version==2;
     /* The game's primary WAVEFORMATEX lives at manager+0xf8. When the
        executable's guarded primary format is patched to 8-bit, local music
        must follow it instead of opening a second 16-bit DMA5 buffer. */
@@ -446,6 +548,8 @@ __declspec(dllexport) DWORD __stdcall BgmInit(void *manager) {
     state.half_frames=state.sample_rate*2;
     state.half_bytes=state.half_frames*state.sample_bytes;
     state.buffer_bytes=state.half_bytes*2;
+    state.source_bytes = state.raw ? state.half_frames*2 : state.half_bytes;
+    work = state.source_bytes > state.half_bytes ? state.source_bytes : state.half_bytes;
     for (i=0;i<TRACKS;++i) {
         BYTE *e=h+32+i*16; Track *t=&state.tracks[i];
         t->id=le32(e); t->offset=le32(e+4); t->length=le32(e+8); t->frames=le32(e+12);
@@ -456,8 +560,8 @@ __declspec(dllexport) DWORD __stdcall BgmInit(void *manager) {
         previous=t->offset+t->length;
     }
     if (previous!=size || !validate_tracks() ||
-        !(state.input=(BYTE*)game_alloc(state.half_bytes)) ||
-        !(state.scratch=(BYTE*)game_alloc(state.half_bytes))) { close_locked(); unlock(); return 0; }
+        !(state.input=(BYTE*)game_alloc(work)) ||
+        !(state.scratch=(BYTE*)game_alloc(work))) { close_locked(); unlock(); return 0; }
     start_timer();
     unlock(); return 1;
 }
@@ -467,17 +571,30 @@ __declspec(dllexport) DWORD __stdcall BgmPlay(DWORD id) {
     acquire();
     if (id>=2 && id<=11 && state.file!=INVALID_FILE && state.scratch) {
         if (state.buffer) com0(state.buffer,18);
+        state.filling=0;
         state.active_track=(int)id-2;
         if (reset_track()) {
             if (!state.buffer) ok=create_buffer(state.buffer_bytes/state.sample_bytes);
-            else ok=refill(0, state.half_frames) && refill(state.half_bytes, state.half_frames) &&
-                com0(state.buffer,18)==0 && com1(state.buffer,13,0)==0 && play_buffer(state.buffer)==0;
+            else ok=1;
+            if (ok) {
+                /* Decode only the half that plays first.  The second half is
+                   filled in slices by the timer while the first one plays, so
+                   starting a track does not stall the guest for two seconds
+                   of ADPCM work. */
+                ok=refill(0, state.half_frames) &&
+                    com0(state.buffer,18)==0 && com1(state.buffer,13,0)==0 &&
+                    play_buffer(state.buffer)==0;
+            }
+            if (ok) {
+                state.current_half=0;
+                start_fill(state.half_bytes);
+            }
             if (ok && !state.timer) {
                 ok=start_timer();
             }
         }
     }
-    state.playing=ok; state.current_half=0; unlock(); return ok;
+    state.playing=ok; unlock(); return ok;
 }
 __declspec(dllexport) DWORD __stdcall BgmStop(void) { acquire(); state.playing=0; if(state.buffer)com0(state.buffer,18); unlock(); return 1; }
 __declspec(dllexport) DWORD __stdcall BgmDuration(DWORD id) {

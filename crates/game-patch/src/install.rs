@@ -2587,7 +2587,7 @@ mod tests {
         assert_eq!(&executable[0x88e92..0x88e96], &44_100u32.to_le_bytes());
         assert_eq!(&executable[0x88ea0..0x88ea2], &2u16.to_le_bytes());
         assert_eq!(&executable[0x88eac..0x88eae], &8u16.to_le_bytes());
-        assert!(executable.windows(7).any(|bytes| bytes == b"BGMRT5\0"));
+        assert!(executable.windows(7).any(|bytes| bytes == b"BGMRT7\0"));
         assert_eq!(executable[0x8b3b0], 0xe8);
         restore(&folder.join("backup")).unwrap();
         assert!(!folder.join("BGM.dat").exists());

@@ -1247,7 +1247,10 @@ fn install_local_music_bgm_volume_hook(
 
 /// Upgrades an older `.port` patch with the current BGM volume hook in place.
 fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"BGMRT5\0").is_some() {
+    if find_bytes(output, b"BGMRT7\0").is_some()
+        || find_bytes(output, b"BGMRT6\0").is_some()
+        || find_bytes(output, b"BGMRT5\0").is_some()
+    {
         let (_, labels) = portable_section(false, b"\0")?;
         return install_local_music_bgm_volume_hook(
             output,
@@ -1283,14 +1286,17 @@ fn install_local_music_volume_upgrade(output: &mut [u8]) -> Result<bool> {
     )
 }
 
-/// Replaces the previous embedded streamer with the format-adaptive build.
-/// Its entry point may move when the C payload changes, so the dispatch pointer
-/// in the fixed `.port` core is updated together with the runtime bytes.
-fn install_bgm_runtime_v5_upgrade(output: &mut [u8]) -> Result<bool> {
-    if find_bytes(output, b"BGMRT5\0").is_some() {
+/// Replaces an older embedded streamer with the current build. Its entry point
+/// may move when the C payload changes, so the dispatch pointer in the fixed
+/// `.port` core is updated together with the runtime bytes.
+fn install_bgm_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
+    if find_bytes(output, b"BGMRT7\0").is_some() {
         return Ok(false);
     }
-    if find_bytes(output, b"BGMRT4\0").is_none() {
+    if find_bytes(output, b"BGMRT6\0").is_none()
+        && find_bytes(output, b"BGMRT5\0").is_none()
+        && find_bytes(output, b"BGMRT4\0").is_none()
+    {
         return Ok(false);
     }
     let section = find_section(output, b".port")?;
@@ -1311,7 +1317,7 @@ fn install_bgm_runtime_v5_upgrade(output: &mut [u8]) -> Result<bool> {
         .copy_from_slice(&bgm_symbols::BGMDISPATCH.to_le_bytes());
     output[raw + PORT_BGM_OFFSET..raw + PORT_BGM_OFFSET + BGM_RUNTIME.len()]
         .copy_from_slice(BGM_RUNTIME);
-    if find_bytes(output, b"BGMRT5\0").is_none() {
+    if find_bytes(output, b"BGMRT7\0").is_none() {
         return Err("embedded BGM runtime upgrade failed verification".into());
     }
     Ok(true)
@@ -1322,7 +1328,7 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
     if find_bytes(output, b"doraudio.dll\0").is_some() {
         return Err("this executable uses the retired doraudio.dll/Music.dat backend; restore the original executable before enabling BGM.dat".into());
     }
-    if find_bytes(output, b"BGMRT5\0").is_none() {
+    if find_bytes(output, b"BGMRT7\0").is_none() && find_bytes(output, b"BGMRT6\0").is_none() {
         return Err("this older portable build predates embedded BGM.dat streaming; restore the original executable before enabling local music".into());
     }
     let (_, labels) = portable_section(false, b"\0")?;
@@ -1388,7 +1394,9 @@ fn install_local_music_runtime_upgrade(output: &mut [u8]) -> Result<bool> {
 
 /// Restores the original CD/MCI Music routines and constructor fallback.
 fn disable_local_music_runtime(output: &mut [u8]) -> Result<bool> {
-    if (find_bytes(output, b"BGMRT5\0").is_none()
+    if (find_bytes(output, b"BGMRT7\0").is_none()
+        && find_bytes(output, b"BGMRT6\0").is_none()
+        && find_bytes(output, b"BGMRT5\0").is_none()
         && find_bytes(output, b"BGMRT4\0").is_none())
         || output.get(0x85043) != Some(&0xe9)
     {
@@ -1591,7 +1599,7 @@ pub fn patch_compatible(
     let already_portable = find_section(input, b".port").is_ok();
     if already_portable {
         let mut output = input.to_vec();
-        let upgraded_bgm_runtime = install_bgm_runtime_v5_upgrade(&mut output)?;
+        let upgraded_bgm_runtime = install_bgm_runtime_upgrade(&mut output)?;
         let added_credit = install_title_credit_in_existing_port(&mut output)?;
         let upgraded_local_music = if canonical_layout && local_audio_requested {
             install_local_music_runtime_upgrade(&mut output)?
@@ -2269,7 +2277,7 @@ mod tests {
             bgm_symbols::BGMDISPATCH
         );
         assert!(find_bytes(&section, b"BGM.dat\0").is_some());
-        assert!(find_bytes(&section, b"BGMRT5\0").is_some());
+        assert!(find_bytes(&section, b"BGMRT7\0").is_some());
         assert!(find_bytes(&section, b"doraudio.dll\0").is_none());
         let open = (labels["open_music"] - PORT_VA) as usize;
         let play = (labels["play"] - PORT_VA) as usize;
@@ -2521,7 +2529,7 @@ mod tests {
         let old = std::fs::read(path).unwrap();
         assert!(find_bytes(&old, b"BGMRT4\0").is_some());
         let upgraded = patch_compatible(&old, true, true, true, false).unwrap();
-        assert!(find_bytes(&upgraded.bytes, b"BGMRT5\0").is_some());
+        assert!(find_bytes(&upgraded.bytes, b"BGMRT7\0").is_some());
         let combined = patch_primary_directsound_8bit(&upgraded.bytes).unwrap();
         assert_eq!(&combined[0x88e92..0x88e96], &44_100u32.to_le_bytes());
         assert_eq!(&combined[0x88ea0..0x88ea2], &2u16.to_le_bytes());
@@ -2566,7 +2574,7 @@ mod tests {
                                     assert_eq!(&combined[0x88eac..0x88eae], &8u16.to_le_bytes());
                                 }
                                 if local_audio {
-                                    assert!(find_bytes(&combined, b"BGMRT5\0").is_some());
+                                    assert!(find_bytes(&combined, b"BGMRT7\0").is_some());
                                     assert_eq!(combined[0x85043], 0xe9);
                                 }
                                 if modern_volume {
@@ -2756,7 +2764,7 @@ mod tests {
             .iter()
             .any(|action| action == "added the title-screen patch credit"));
         let mut v4_portable = portable.clone();
-        let marker = find_bytes(&v4_portable, b"BGMRT5\0").unwrap();
+        let marker = find_bytes(&v4_portable, b"BGMRT7\0").unwrap();
         v4_portable[marker..marker + 7].copy_from_slice(b"BGMRT4\0");
         assert!(patch_primary_directsound_8bit(&v4_portable).is_err());
         let port = find_section(&v4_portable, b".port").unwrap();
@@ -2768,7 +2776,7 @@ mod tests {
             .copy_from_slice(&0xdead_beefu32.to_le_bytes());
         let upgraded_runtime =
             patch_compatible(&v4_portable, true, true, true, false).unwrap();
-        assert!(find_bytes(&upgraded_runtime.bytes, b"BGMRT5\0").is_some());
+        assert!(find_bytes(&upgraded_runtime.bytes, b"BGMRT7\0").is_some());
         assert_eq!(
             &upgraded_runtime.bytes[dispatch_raw..dispatch_raw + 4],
             &bgm_symbols::BGMDISPATCH.to_le_bytes()
@@ -2776,6 +2784,28 @@ mod tests {
         assert!(upgraded_runtime.actions.iter().any(|action| {
             action == "upgraded local BGM.dat streaming for 8-bit DirectSound compatibility"
         }));
+        let mut v5_portable = portable.clone();
+        let marker = find_bytes(&v5_portable, b"BGMRT7\0").unwrap();
+        v5_portable[marker..marker + 7].copy_from_slice(b"BGMRT5\0");
+        v5_portable[dispatch_raw..dispatch_raw + 4]
+            .copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        let upgraded_v5 = patch_compatible(&v5_portable, true, true, true, false).unwrap();
+        assert!(find_bytes(&upgraded_v5.bytes, b"BGMRT7\0").is_some());
+        assert_eq!(
+            &upgraded_v5.bytes[dispatch_raw..dispatch_raw + 4],
+            &bgm_symbols::BGMDISPATCH.to_le_bytes()
+        );
+        let mut v6_portable = portable.clone();
+        let marker = find_bytes(&v6_portable, b"BGMRT7\0").unwrap();
+        v6_portable[marker..marker + 7].copy_from_slice(b"BGMRT6\0");
+        v6_portable[dispatch_raw..dispatch_raw + 4]
+            .copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        let upgraded_v6 = patch_compatible(&v6_portable, true, true, true, false).unwrap();
+        assert!(find_bytes(&upgraded_v6.bytes, b"BGMRT7\0").is_some());
+        assert_eq!(
+            &upgraded_v6.bytes[dispatch_raw..dispatch_raw + 4],
+            &bgm_symbols::BGMDISPATCH.to_le_bytes()
+        );
         let (plain_vi, portable_vi) = build_variants(&original, true).unwrap();
         assert_eq!(plain_vi.as_ref().unwrap().len(), original.len());
         assert_eq!(portable_vi.len(), original.len() + PORT_SIZE);

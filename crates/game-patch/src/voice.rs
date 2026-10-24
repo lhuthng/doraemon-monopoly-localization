@@ -41,15 +41,16 @@ pub fn compress_audio(source: &[u8], quality: Compression) -> Result<Vec<u8>> {
             }
         };
         let candidate = transcode_wav(&decoded, quality)?;
+        // A leaf that lives in a packed container must stay packed even when
+        // compression does not pay. The container's own flag is the only thing
+        // that says a record is LZW, so loose WAV bytes there are read as a
+        // length: the `RIFF` magic becomes 1,179,011,410 bytes, the guest adds a
+        // header's worth and asks for 1.1 GB of sound buffer, and the session
+        // dies on an allocation no arena can serve.
         let replacement = if raw {
             candidate
         } else {
-            let packed = strings::compress(&candidate)?;
-            if packed.len() < candidate.len() {
-                packed
-            } else {
-                candidate
-            }
+            strings::compress(&candidate)?
         };
         if replacement != record {
             replacements.insert(id, replacement);
@@ -157,6 +158,31 @@ mod tests {
             "Compact Voice.dat was {} bytes from {} bytes",
             compact.len(),
             source.len()
+        );
+    }
+
+    #[test]
+    fn compact_voice_leaves_every_packed_leaf_compressed() {
+        let Ok(path) = std::env::var("DORAEMON_TEST_VOICE_COMPRESSION") else {
+            return;
+        };
+        let source = std::fs::read(path).unwrap();
+        let compact = compress_audio(&source, Compression::Compact).unwrap();
+        // A leaf stored raw starts with `RIFF`; every other leaf has to stay a
+        // length-prefixed LZW stream. The count going up means a compacted leaf
+        // was written loose into a packed container, where its first four bytes
+        // read as a 1.1 GB length.
+        let loose = |archive: &[u8]| -> usize {
+            strings::packed_records(archive)
+                .unwrap()
+                .into_values()
+                .filter(|record| record.starts_with(b"RIFF"))
+                .count()
+        };
+        assert_eq!(
+            loose(&compact),
+            loose(&source),
+            "compacting must not turn a packed leaf into a loose WAV"
         );
     }
 
