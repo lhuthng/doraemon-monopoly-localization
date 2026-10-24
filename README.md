@@ -328,14 +328,22 @@ way to ship a fully offline copy.
 To publish it as a GitHub release, push a tag:
 
 ```sh
-git tag patcher-v0.2.0        # must match `version` in Cargo.toml
-git push origin patcher-v0.2.0
+git tag patcher-v0.5.3
+git push origin patcher-v0.5.3
 ```
 
 The `release-language.yml` workflow packages both language packs from the
 tracked `content/patches/` components, builds `patcher.exe`, and uploads all of
-them to one GitHub release. The patcher fetches the packs from the release whose
-tag matches its own version.
+them to one GitHub release. `patch-build universal` stamps that tag into the EXE,
+so every patcher downloads its packs from the release it was cut from - which is
+why a release must be tagged, then built (CI does both in one job; locally, tag
+first or pass `make build-patcher PATCHER_TAG=patcher-v0.5.3`).
+
+`content/patches/**` is a lossless, rebuildable artefact of those packs: once a
+release carries them, `make unpack-packs` restores the six `.dmpatch` files
+byte-for-byte from `workspace/release/*.bin` (or any downloaded copy), so the
+158 MB of tracked parts can be dropped from the repository and fetched again when
+needed. Until a release actually has packs, they have to stay in git.
 
 Notes:
 
@@ -378,6 +386,7 @@ Run `make help` for the same workflow in the terminal.
 | `make build-patch LANGUAGE=... PUBLISH=1` | Export Studio dubbing, build all components, and regenerate the Workshop catalogue. |
 | `make build-patcher` | Build `workspace/release/patcher.exe`. It holds no patch data and downloads a language pack on first use. |
 | `make packs` | Package each `content/patches/<language>/` into `workspace/release/<language>-pack.bin` + `.sha256`, the assets the patcher downloads. |
+| `make unpack-packs` | Rebuild `content/patches/<language>/` from `workspace/release/<language>-pack.bin`, for a checkout that does not track the parts. |
 | `make release` | Check payload presence, package both language packs, and build a local patcher. |
 | `make translator-dev` | Run the public Workshop locally. |
 | `make translator-build` | Build the static Workshop into `workspace/contributor-kit/`. |

@@ -5,6 +5,9 @@ PATCH_DIR := workspace/patches
 RELEASE_DIR := workspace/release
 PUBLISH ?=
 PATCHER ?=
+# Release the built patcher fetches its language packs from. Empty means "the
+# newest patcher-v* tag", which is right once you have tagged the release.
+PATCHER_TAG ?=
 CNC_DDRAW_DIR ?=
 LANGUAGE ?=
 WEB_INSTALL ?= $(BASE_DIR)
@@ -25,7 +28,7 @@ else
 PATCH_DESTINATION := ignored candidate
 endif
 
-.PHONY: help dependencies check-mingw check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution update-catalogue studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release web-build translator-build translator-dev check-language check-studio check-origin check-publish check-patcher check-wrapper check-resources check-game check-payloads check-browser-port web-host-build web-host-check web-host-serve web-served-check packs
+.PHONY: help dependencies check-mingw check prepare fetch-base upload-base gatekeeper-mint gatekeeper-add-coupon gatekeeper-sync-coupons gatekeeper-list-coupons gatekeeper-delete-coupon apply-dubbing export-dubbing import-contribution update-catalogue studio-en studio-vi build-dubbing build-sprites build-runtime build-patch build-patcher release web-build translator-build translator-dev check-language check-studio check-origin check-publish check-patcher check-wrapper check-resources check-game check-payloads check-browser-port web-host-build web-host-check web-host-serve web-served-check packs unpack-packs
 
 help:
 	@printf '%s\n' \
@@ -99,6 +102,9 @@ help:
 	  '  make packs' \
 	  '      Package content/patches/<language> into workspace/release/<language>-pack.bin' \
 	  '      plus its .sha256, the files the patcher downloads.' \
+	  '  make unpack-packs' \
+	  '      Rebuild content/patches/<language> from those packs instead of' \
+	  '      keeping the .dmpatch parts in the repository.' \
 	  '  make release' \
 	  '      Validate payload presence, package both language packs, and build patcher.exe.' \
 	  '' \
@@ -294,4 +300,12 @@ packs: check-payloads
 
 build-patcher: check-mingw
 	@mkdir -p "$(RELEASE_DIR)"
-	cargo run -p patch-build -- universal --output-dir "$(RELEASE_DIR)"
+	cargo run -p patch-build -- universal --output-dir "$(RELEASE_DIR)" $(if $(strip $(PATCHER_TAG)),--release-tag "$(PATCHER_TAG)")
+
+# Rebuild content/patches/<language>/ from published packs, for a checkout that
+# does not carry the 158 MB of .dmpatch parts.
+unpack-packs:
+	@for language in english vietnamese; do \
+	  test -f "$(RELEASE_DIR)/$$language-pack.bin" || { printf '%s\n' "Missing $(RELEASE_DIR)/$$language-pack.bin. Run make packs, or download it from the release first."; exit 2; }; \
+	  cargo run -p patch-build -- unpack --language $$language --pack "$(RELEASE_DIR)/$$language-pack.bin" --output-dir content/patches/$$language || exit 1; \
+	done

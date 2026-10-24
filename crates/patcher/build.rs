@@ -8,6 +8,9 @@ fn main() {
     slint_build::compile("ui/patcher.slint").unwrap();
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     println!("cargo:rerun-if-changed=ui/patcher.slint");
+    // The release tag decides where language packs are downloaded from, so a
+    // new tag must rebuild the binary even when no source changed.
+    println!("cargo:rerun-if-env-changed=DORAEMON_PATCHER_RELEASE_TAG");
 
     // Windows icon resource
     if env::var("TARGET").is_ok_and(|target| target.ends_with("windows-gnu")) {

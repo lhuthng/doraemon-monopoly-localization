@@ -22,11 +22,16 @@ use doraemon_game_patch::{
 };
 use std::path::{Path, PathBuf};
 
-/// Packs live on the release whose tag matches the build that expects them.
 const REPOSITORY: &str = "lhuthng/doraemon-monopoly-localization";
 const PACK_MAGIC: &[u8; 4] = b"DZC1";
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The release this build fetches its packs from. `patch-build universal`
+/// stamps the `patcher-v*` tag it was built for, so an installed patcher keeps
+/// asking its own release even after newer ones appear.
+pub const RELEASE_TAG: &str = match option_env!("DORAEMON_PATCHER_RELEASE_TAG") {
+    Some(tag) => tag,
+    None => concat!("patcher-v", env!("CARGO_PKG_VERSION")),
+};
 
 pub fn name(language: Language) -> &'static str {
     match language {
@@ -50,7 +55,7 @@ pub fn asset(language: Language) -> String {
 
 pub fn url(language: Language) -> String {
     format!(
-        "https://github.com/{REPOSITORY}/releases/download/patcher-v{VERSION}/{}",
+        "https://github.com/{REPOSITORY}/releases/download/{RELEASE_TAG}/{}",
         asset(language)
     )
 }
@@ -61,7 +66,8 @@ fn cache_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("XDG_CACHE_HOME"))
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
-    Some(base.join("DoraemonPatcher").join("packs").join(VERSION))
+    // One cache folder per release, so two patcher versions never share a pack.
+    Some(base.join("DoraemonPatcher").join("packs").join(RELEASE_TAG))
 }
 
 /// A pack that is already on disk: an explicit override first (handy for
@@ -265,13 +271,15 @@ mod tests {
     use super::*;
     use doraemon_game_patch::payload::PayloadPart;
 
-    /// Every published pack must name the release that this build was tagged
-    /// for, otherwise a patcher update would keep fetching an older payload.
+    /// Every published pack must name the release this build was stamped with,
+    /// otherwise a patcher update would keep fetching an older payload.
     #[test]
-    fn pack_urls_point_at_this_version() {
+    fn pack_urls_point_at_the_release_tag() {
         assert_eq!(asset(Language::English), "english-pack.bin");
-        assert!(url(Language::Vietnamese).ends_with("/vietnamese-pack.bin"));
-        assert!(url(Language::English).contains(&format!("patcher-v{VERSION}")));
+        assert!(RELEASE_TAG.starts_with("patcher-v"), "{RELEASE_TAG}");
+        let url = url(Language::Vietnamese);
+        assert!(url.contains(&format!("/download/{RELEASE_TAG}/")), "{url}");
+        assert!(url.ends_with("/vietnamese-pack.bin"), "{url}");
     }
 
     fn sample_pack(language: Language) -> Vec<u8> {

@@ -75,7 +75,7 @@ const SUPPORTED: &[(&str, &[&str])] = &[
 ];
 
 fn usage() -> ! {
-    eprintln!("Usage:\n  patch-build directsound-8bit --input Doraemon.exe --output Doraemon-8bit.exe\n  patch-build voice-quality --input voice.dat --output voice.dat --quality original|high|balanced|compact\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build localized-image --language english|vietnamese --no-disc --no-reg [--local-audio] [--modern-volume] --input Doraemon.exe --output Doraemon.exe\n  patch-build music --input BGM.dat|DoraemonMusic.wav|DORAEMON.cue --output BGM.dat\n  patch-build pack --language english|vietnamese --parts-dir DIR --output-dir DIR\n  patch-build universal --output-dir DIR [--english-payload-dir DIR] [--vietnamese-payload-dir DIR] [--cnc-ddraw-dir DIR]\n  (legacy monolithic and multipart inputs remain supported for migration)");
+    eprintln!("Usage:\n  patch-build directsound-8bit --input Doraemon.exe --output Doraemon-8bit.exe\n  patch-build voice-quality --input voice.dat --output voice.dat --quality original|high|balanced|compact\n  patch-build release-parts --language english|vietnamese --base-dir DIR --target-dir DIR --output-dir DIR [--target all|dubbing|sprites|runtime]\n  patch-build merge-parts --parts-dir DIR --output PATCH.dmpatch\n  patch-build materialize-parts --parts-dir DIR --base-dir DIR --output-dir DIR\n  patch-build localized-image --language english|vietnamese --no-disc --no-reg [--local-audio] [--modern-volume] --input Doraemon.exe --output Doraemon.exe\n  patch-build music --input BGM.dat|DoraemonMusic.wav|DORAEMON.cue --output BGM.dat\n  patch-build pack --language english|vietnamese --parts-dir DIR --output-dir DIR\n  patch-build unpack --pack PACK.bin --output-dir DIR [--language english|vietnamese]\n  patch-build universal --output-dir DIR [--release-tag patcher-vX.Y.Z]\n  (legacy monolithic and multipart inputs remain supported for migration)");
     std::process::exit(2)
 }
 
@@ -656,14 +656,140 @@ fn pack(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The release whose packs a built patcher downloads from. The tag is stamped
+/// into the EXE, so an installed patcher always asks the release it was cut
+/// from instead of guessing from the version number.
+fn latest_patcher_tag(workspace: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .current_dir(workspace)
+        .args(["describe", "--tags", "--abbrev=0", "--match", "patcher-v*"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let tag = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if tag.is_empty() {
+        None
+    } else {
+        Some(tag)
+    }
+}
+
+/// Expands a published pack back into the `.dmpatch` parts it was built from,
+/// so `content/patches/` can be rebuilt from a release instead of being carried
+/// in the repository.
+fn unpack(arguments: &[String]) -> Result<(), String> {
+    let language = value(arguments, "--language")
+        .map(|name| language_named(&name))
+        .transpose()?;
+    let pack = PathBuf::from(value(arguments, "--pack").unwrap_or_else(|| usage()));
+    let output_dir = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
+    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+
+    let bytes = fs::read(&pack).map_err(|error| format!("{}: {error}", pack.display()))?;
+    let sidecar = PathBuf::from(format!("{}.sha256", pack.display()));
+    if sidecar.is_file() {
+        let text = fs::read_to_string(&sidecar).map_err(|error| error.to_string())?;
+        let expected = text.split_whitespace().next().unwrap_or_default().to_ascii_lowercase();
+        let found = hash::hex(&hash::bytes(&bytes));
+        if expected != found {
+            return Err(format!(
+                "{} failed its checksum (expected {expected}, got {found})",
+                pack.display()
+            ));
+        }
+    } else {
+        println!("No {} beside the pack; skipping the checksum check.", sidecar.display());
+    }
+
+    // DZC1: magic, uncompressed length, then the zstd frame.
+    if bytes.len() < 12 || &bytes[..4] != PACK_MAGIC {
+        return Err(format!("{} is not a language pack", pack.display()));
+    }
+    let original = u64::from_le_bytes(bytes[4..12].try_into().unwrap()) as usize;
+    let blob = zstd::bulk::decompress(&bytes[12..], original)
+        .map_err(|error| format!("decompress {}: {error}", pack.display()))?;
+    if blob.len() < 7 || &blob[..5] != b"DPART" {
+        return Err("the pack has the wrong container header".into());
+    }
+    let count = u16::from_le_bytes(blob[5..7].try_into().unwrap()) as usize;
+    let mut written: Vec<String> = Vec::new();
+    let mut parts = Vec::new();
+    for index in 0..count {
+        let entry = 7 + index * 8;
+        let start = u32::from_le_bytes(
+            blob.get(entry..entry + 4)
+                .ok_or("the pack has a truncated part table")?
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let len = u32::from_le_bytes(
+            blob.get(entry + 4..entry + 8)
+                .ok_or("the pack has a truncated part table")?
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let part = blob
+            .get(start..start + len)
+            .ok_or("the pack has a part past its end")?;
+        if part.is_empty() {
+            continue;
+        }
+        // The part records its own target, so the filenames come from the data
+        // rather than from the order the pack happened to be built in.
+        let decoded = payload::decode_part(part).map_err(|error| error.to_string())?;
+        let name = decoded.target.filename().to_string();
+        fs::write(output_dir.join(&name), part).map_err(|error| error.to_string())?;
+        parts.push(decoded);
+        written.push(name);
+    }
+    if parts.is_empty() {
+        return Err("the pack holds no parts".into());
+    }
+    let merged = doraemon_game_patch::merge_parts(&parts)?;
+    if let Some(language) = language {
+        if merged.language != language {
+            return Err(format!(
+                "{} holds {} parts, not {}",
+                pack.display(),
+                merged.language.suffix(),
+                language.suffix()
+            ));
+        }
+    }
+    println!(
+        "Unpacked {} ({}) into {}.",
+        pack.display(),
+        written.join(", "),
+        output_dir.display()
+    );
+    Ok(())
+}
+
 fn universal(arguments: &[String]) -> Result<(), String> {
     let output = PathBuf::from(value(arguments, "--output-dir").unwrap_or_else(|| usage()));
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
     let target = value(arguments, "--target").unwrap_or_else(|| "x86_64-pc-windows-gnu".into());
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (tag, origin) = match value(arguments, "--release-tag") {
+        Some(tag) => (tag, "--release-tag"),
+        None => match latest_patcher_tag(&workspace) {
+            Some(tag) => (tag, "newest patcher-v* tag"),
+            None => (
+                format!("patcher-v{}", env!("CARGO_PKG_VERSION")),
+                "Cargo version",
+            ),
+        },
+    };
+    println!(
+        "This patcher will fetch its language packs from release {tag} (from {origin}).\n\
+         Tag the release before building so the packs land on the same tag, or pass --release-tag."
+    );
 
     let status = Command::new("cargo")
         .current_dir(&workspace)
+        .env("DORAEMON_PATCHER_RELEASE_TAG", &tag)
         .args([
             "build",
             "--release",
@@ -1254,6 +1380,7 @@ fn main() {
         Some("release-parts") => release_parts(&arguments[1..]),
         Some("package") => package(&arguments[1..]),
         Some("pack") => pack(&arguments[1..]),
+        Some("unpack") => unpack(&arguments[1..]),
         Some("universal") => universal(&arguments[1..]),
         Some("portable") => portable(&arguments[1..]),
         _ => usage(),
@@ -1267,6 +1394,65 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A published pack has to give back exactly the parts it was built from,
+    /// otherwise `content/patches/` cannot be rebuilt from a release.
+    #[test]
+    fn a_pack_unpacks_into_its_original_parts() {
+        let root = std::env::temp_dir().join(format!("doraemon-pack-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let parts = root.join("patches");
+        let packs = root.join("packs");
+        let restored = root.join("restored");
+        fs::create_dir_all(&parts).unwrap();
+
+        let part = PayloadPart {
+            format_version: 4,
+            language: Language::Vietnamese,
+            target: TargetName::Runtime,
+            base_fingerprints: Vec::new(),
+            strings: None,
+            voice: None,
+            file_patches: Vec::new(),
+            executable_plain: None,
+            executable_portable: None,
+            bundled: vec![BundledFile {
+                name: "ddraw.dll".into(),
+                hash: hash::bytes(b"wrapper"),
+                bytes: b"wrapper".to_vec(),
+            }],
+            is_empty: false,
+        };
+        let encoded = payload::encode_part(&part).unwrap();
+        fs::write(parts.join(TargetName::Runtime.filename()), &encoded).unwrap();
+
+        let arguments = |items: &[&str]| items.iter().map(|item| item.to_string()).collect::<Vec<_>>();
+        pack(&arguments(&[
+            "--language",
+            "vietnamese",
+            "--parts-dir",
+            parts.to_str().unwrap(),
+            "--output-dir",
+            packs.to_str().unwrap(),
+        ]))
+        .expect("pack");
+        let built = packs.join(pack_file_name(Language::Vietnamese));
+        unpack(&arguments(&[
+            "--pack",
+            built.to_str().unwrap(),
+            "--output-dir",
+            restored.to_str().unwrap(),
+            "--language",
+            "vietnamese",
+        ]))
+        .expect("unpack");
+
+        assert_eq!(
+            fs::read(restored.join(TargetName::Runtime.filename())).unwrap(),
+            encoded
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
 
     /// A browser has neither device, so an image without both lifted checks is
     /// not a ported image, and the step says so instead of writing one.

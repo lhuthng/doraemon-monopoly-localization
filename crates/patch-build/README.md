@@ -51,7 +51,8 @@ exactly this layout and verifies the `.sha256` sidecar before installing.
 | `materialize-file` | `--payload` `--base-dir` `--file` `--output` | `materialize` for a single resource (e.g. `strings.dat`). |
 | `materialize-parts` | `--parts-dir` `--base-dir` `--output-dir` | `materialize` using a parts directory instead of a monolithic payload. |
 | `pack` | `--language english\|vietnamese` `--parts-dir` `--output-dir` | Package one language's parts into `<language>-pack.bin` + `.sha256`. Refuses a parts directory whose merged language does not match `--language`. |
-| `universal` | `--output-dir` | Build the Windows patcher that installs `<original>`, English, and Vietnamese side-by-side. It embeds no patch data: the patcher downloads the `pack` assets on first use. Outputs `patcher.exe` + `patcher.exe.sha256` + `README.txt`. |
+| `unpack` | `--pack` `--output-dir` `[--language english\|vietnamese]` | Expand a pack back into its `.dmpatch` parts, named from the target recorded in each part. Verifies the `.sha256` sidecar when one sits beside the pack. This is how `content/patches/` is rebuilt from a release. |
+| `universal` | `--output-dir` `[--release-tag patcher-vX.Y.Z]` | Build the Windows patcher that installs `<original>`, English, and Vietnamese side-by-side. It embeds no patch data: the patcher downloads the `pack` assets on first use. `--release-tag` (default: the newest `patcher-v*` tag) is stamped into the EXE as the release it fetches from. Outputs `patcher.exe` + `patcher.exe.sha256` + `README.txt`. |
 | `package` | `--output-dir` `--payload` | Build `Doraemon-<Language>-Patcher.exe` (single-language monolithic). |
 | `release` | `--language` `--base-dir` `--target-dir` `--output-dir` `[--payload-only]` | Legacy single-language release as `Doraemon-<Language>-Patcher.exe`; `--payload-only` writes the `.dmpatch` without building the EXE. |
 | `portable` | `--output-dir` | Build `Doraemon-Portable-Patcher.exe`: compatibility-only (Custom language, no localizable resources) with the cnc-ddraw wrapper built in through the runtime component. |
@@ -77,7 +78,12 @@ verification is fingerprint-based.
 ## Publishing
 
 Pushing a `patcher-v*` tag runs `release-language.yml`, which runs `pack` for
-both languages from `content/patches/`, builds the patcher with `universal`, and
-attaches the two packs, their `.sha256` sidecars, `patcher.exe`, and `README.txt`
-to the GitHub release. The tag version must match `workspace.package.version`,
-because that is the release the patcher downloads from.
+both languages from `content/patches/`, builds the patcher with `universal
+--release-tag <pushed tag>`, and attaches the two packs, their `.sha256`
+sidecars, `patcher.exe`, and `README.txt` to that release.
+
+The tag is not derived from `workspace.package.version`: it is stamped into the
+EXE at build time, and that stamp is the release the patcher downloads packs
+from. Packs themselves are language- and format-specific but version-independent,
+so an older patcher keeps fetching the packs of its own release even after newer
+ones ship.

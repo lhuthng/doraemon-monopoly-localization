@@ -16,8 +16,10 @@ Patch data is not built into the EXE. Each language ships as a release asset
 by `patch-build pack`), and the patcher resolves it at apply time:
 
 1. `packs/<asset>` beside `patcher.exe`,
-2. the `%LOCALAPPDATA%\DoraemonPatcher\packs\<version>\<asset>` cache,
-3. otherwise the GitHub release whose tag matches this patcher version.
+2. the `%LOCALAPPDATA%\DoraemonPatcher\packs\<tag>\<asset>` cache,
+3. otherwise the GitHub release the EXE was built for. `patch-build universal`
+   stamps that tag, so a patcher never picks up a pack built for other code,
+   even when newer releases exist.
 
 A download is checked against the sidecar digest, cached, then installed, so the
 second apply and every restore work offline. `DORAEMON_PATCHER_PACK_DIR` points
